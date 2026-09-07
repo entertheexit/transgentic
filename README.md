@@ -894,7 +894,7 @@ Accidental double-clicks or rapid agentic requests with identical prompts can tr
 - **In-Flight Key**: Generates a deterministic key from `providerId::mode::model::normalizedPrompt`.
 - **Request Coalescing**: If an identical request is already pending or actively executing on that provider, Transgentic **does not perform any new DOM actions, does not type into the input box, does not click submit, and does not create new chats**.
 - **Shared Response Promise**: The duplicate request immediately latches onto the running execution promise and delivers the identical output (including local media paths) as soon as the first request completes.
-- **Exclusive WebContents DOM Lock**: Every provider webview enforces `acquireDomLock()`, ensuring that navigation, prompt injection, and response scraping execute strictly with concurrency = 1.
+- **Exclusive WebContents DOM Lock**: Every provider webview enforces `acquireDomLock()`, ensuring that navigation, prompt injection, and response extracting execute strictly with concurrency = 1.
 
 ### 3. Strict Chat Persistence & Session Lifecycle
 Transgentic uses **Chat Persistence** to keep related requests in the active conversation:
