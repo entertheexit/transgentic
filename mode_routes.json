@@ -1,0 +1,174 @@
+{
+  "main": {
+    "general": {
+      "mode": "general",
+      "defaultService": "chatgpt",
+      "primary": "chatgpt",
+      "fallbackChain": [
+        "claude",
+        "gemini",
+        "grok"
+      ],
+      "fallbacks": [
+        "claude",
+        "gemini",
+        "grok"
+      ],
+      "outputFormat": "prose_markdown",
+      "modelRouting": {},
+      "providerModels": {}
+    },
+    "coding": {
+      "mode": "coding",
+      "defaultService": "claude",
+      "primary": "claude",
+      "fallbackChain": [
+        "chatgpt",
+        "gemini",
+        "grok"
+      ],
+      "fallbacks": [
+        "chatgpt",
+        "gemini",
+        "grok"
+      ],
+      "outputFormat": "json_code",
+      "modelRouting": {},
+      "providerModels": {}
+    },
+    "writing": {
+      "mode": "writing",
+      "defaultService": "chatgpt",
+      "primary": "chatgpt",
+      "fallbackChain": [
+        "claude",
+        "grok",
+        "gemini"
+      ],
+      "fallbacks": [
+        "claude",
+        "grok",
+        "gemini"
+      ],
+      "outputFormat": "prose_markdown",
+      "modelRouting": {},
+      "providerModels": {}
+    },
+    "image": {
+      "mode": "image",
+      "defaultService": "grok",
+      "primary": "grok",
+      "fallbackChain": [
+        "chatgpt",
+        "gemini"
+      ],
+      "fallbacks": [
+        "chatgpt",
+        "gemini"
+      ],
+      "outputFormat": "file_download",
+      "modelRouting": {},
+      "providerModels": {}
+    },
+    "video": {
+      "mode": "video",
+      "defaultService": "grok",
+      "primary": "grok",
+      "fallbackChain": [
+        "gemini"
+      ],
+      "fallbacks": [
+        "gemini"
+      ],
+      "outputFormat": "file_download",
+      "modelRouting": {},
+      "providerModels": {}
+    },
+    "audio": {
+      "mode": "audio",
+      "defaultService": "gemini",
+      "primary": "gemini",
+      "fallbackChain": [],
+      "fallbacks": [],
+      "outputFormat": "file_download",
+      "modelRouting": {},
+      "providerModels": {}
+    }
+  },
+  "co": {
+    "general": {
+      "mode": "general",
+      "defaultService": "claude",
+      "primary": "claude",
+      "fallbackChain": [
+        "gemini",
+        "grok"
+      ],
+      "fallbacks": [
+        "gemini",
+        "grok"
+      ],
+      "outputFormat": "prose_markdown"
+    },
+    "coding": {
+      "mode": "coding",
+      "defaultService": "chatgpt",
+      "primary": "chatgpt",
+      "fallbackChain": [
+        "gemini",
+        "grok"
+      ],
+      "fallbacks": [
+        "gemini",
+        "grok"
+      ],
+      "outputFormat": "json_code"
+    },
+    "writing": {
+      "mode": "writing",
+      "defaultService": "claude",
+      "primary": "claude",
+      "fallbackChain": [
+        "grok",
+        "gemini"
+      ],
+      "fallbacks": [
+        "grok",
+        "gemini"
+      ],
+      "outputFormat": "prose_markdown"
+    },
+    "image": {
+      "mode": "image",
+      "defaultService": "chatgpt",
+      "primary": "chatgpt",
+      "fallbackChain": [
+        "gemini"
+      ],
+      "fallbacks": [
+        "gemini"
+      ],
+      "outputFormat": "file_download"
+    },
+    "video": {
+      "mode": "video",
+      "defaultService": "gemini",
+      "primary": "gemini",
+      "fallbackChain": [],
+      "fallbacks": [],
+      "outputFormat": "file_download"
+    },
+    "audio": {
+      "mode": "audio",
+      "defaultService": "chatgpt",
+      "primary": "chatgpt",
+      "fallbackChain": [
+        "gemini"
+      ],
+      "fallbacks": [
+        "gemini"
+      ],
+      "outputFormat": "file_download"
+    }
+  }
+}

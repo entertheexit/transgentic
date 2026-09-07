@@ -1,0 +1,74 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+dist-electron/
+out/
+release/
+
+# OS Files
+.DS_Store
+Thumbs.db
+
+# Editor directories and files
+.idea/
+.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Environment Variables
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Coverage directory used by tools like vitest / istanbul
+coverage/
+*.lcov
+
+# Local databases, secrets, and configurations
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+.transgentic*
+*.key
+transgentic_memory.db
+accounts_registry.json
+client_auth.json
+models_registry.json
+transgentic_config.json
+userData/
+Partitions/
+Cache/
+backup/
+workspace/*
+.test_*
+
+# Runtime recipes, reports, logs, and local client credentials
+custom_recipes.json
+Recipes/Custom/
+Recipes/Healed/
+Recipes/History/
+dom_healing_reports.json
+request_logs.json
+.cursor/mcp.json
+.codex/config.toml
+.claude/settings.json
+extensions/*.zip

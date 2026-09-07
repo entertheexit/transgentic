@@ -1,0 +1,107 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --hub-glass: rgba(0, 0, 0, 0.80);
+  --hub-border: rgba(255, 255, 255, 0.12);
+  --hub-shadow: 0 24px 48px -12px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+
+html, body, #root {
+  background: transparent !important;
+  background-color: transparent !important;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  user-select: none;
+  font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  -webkit-app-region: no-drag;
+}
+
+.drag-region {
+  -webkit-app-region: drag;
+}
+
+.no-drag {
+  -webkit-app-region: no-drag;
+}
+
+/* Tactile Glass Hub Card with Native macOS Vibrancy Blur */
+.glass-panel {
+  background: var(--hub-glass);
+  border: 1px solid var(--hub-border);
+  box-shadow: var(--hub-shadow);
+}
+
+/* Tactile Core Card */
+.tactile-core-card {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.1), 0 4px 16px rgba(0, 0, 0, 0.25);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.tactile-core-card:hover {
+  background: rgba(255, 255, 255, 0.09);
+  border-color: rgba(255, 255, 255, 0.16);
+}
+
+/* Modern Sleek Service List Button */
+.service-list-card {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.service-list-card:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.18);
+  transform: translateY(-1px);
+  box-shadow: 0 8px 20px -6px rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(255, 255, 255, 0.1);
+}
+
+.service-list-card:active {
+  transform: translateY(0px) scale(0.99);
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.service-list-card.is-active {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.24);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.18), 0 8px 24px -4px rgba(0, 0, 0, 0.45);
+}
+
+/* Tactile Icon Badge */
+.service-icon-box {
+  background: radial-gradient(circle at 35% 35%, rgba(65, 68, 78, 0.8) 0%, rgba(28, 30, 36, 0.9) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow: inset 0 1px 2px rgba(255, 255, 255, 0.2), 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+/* Custom Scrollbar for Drawer & Logs */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+@keyframes update-available-orb {
+  0%, 100% { background-color: #22d3ee; box-shadow: 0 0 14px #22d3ee; }
+  50% { background-color: #f87171; box-shadow: 0 0 14px #f87171; }
+}
+
+.update-available-orb { animation: update-available-orb 2s ease-in-out infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  .update-available-orb { animation: none; background-color: #f87171; box-shadow: 0 0 12px #f87171; }
+}

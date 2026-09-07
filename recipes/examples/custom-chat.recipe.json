@@ -1,0 +1,113 @@
+{
+  "version": "1.0",
+  "id": "custom_chat_example",
+  "title": "Custom Assistant (Example Recipe)",
+  "company": "Example AI Inc.",
+  "domainMatch": "chat.example.com",
+  "url": "https://chat.example.com/chat",
+  "authStrategy": "cookie_sync",
+  "auth": {
+    "authCookies": [
+      "session_token",
+      "auth_token"
+    ],
+    "minCookieLength": 16,
+    "loggedInSelector": "button[data-testid=\"user-profile\"], [data-testid=\"user-avatar\"], button[aria-label*=\"Account\" i]",
+    "loggedOutSelector": "a[href*=\"/login\"], a[href*=\"/signup\"], button[data-testid=\"login-btn\"]",
+    "loginUrls": [
+      "/login",
+      "/auth/login"
+    ]
+  },
+  "createdAt": "2026-09-07T00:00:00.000Z",
+  "selectors": {
+    "inputPrompt": "#prompt-textarea, textarea[placeholder*=\"Ask\" i], textarea[data-slot=\"textarea\"], textarea, input[placeholder*=\"Ask\" i], div[contenteditable=\"true\"], div[role=\"textbox\"]",
+    "submitButton": "button[data-testid=\"send-button\"], button:has(svg), button[aria-label*=\"Send\" i], button[type=\"submit\"]",
+    "stopButton": "button[data-testid=\"stop-button\"], button[aria-label*=\"Stop\" i], button[aria-label*=\"Cancel\" i]",
+    "modelDropdownTrigger": "button[data-testid=\"model-selector-trigger\"]"
+  },
+  "response": {
+    "container": "[data-message-author-role=\"assistant\"], [data-role=\"assistant\"], div[class*=\"message-assistant\"], div[class*=\"assistant-message\"], div[class*=\"bot-message\"], .message-bubble, main div.items-start, .response-turn",
+    "textSelector": ".response-content-markdown, .streamdown-chat-md, .markdown, .markdown-content, .prose, .prose-chat, [data-testid=\"message-text\"], [data-testid=\"response-text\"]",
+    "actionButtons": "button[aria-label*=\"Copy\" i], button[title*=\"Copy\" i], button[title*=\"Download\" i], [data-testid=\"download-button\"], svg[class*=\"copy\" i]",
+    "generatingIndicator": "[class*=\"animate-ai-spinner\"], .animate-ai-spinner-rotate, .animate-ai-spinner-pulse, [data-testid*=\"generating-placeholder\"], .streaming-indicator",
+    "excludeSelectors": [
+      "details",
+      "[data-testid*=\"thought\" i]",
+      "[data-testid*=\"reasoning\" i]",
+      ".thinking-accordion",
+      ".thought-container",
+      "sources-list",
+      "footer",
+      "[class*=\"disclaimer\" i]"
+    ],
+    "modes": {
+      "text": {
+        "enabled": true,
+        "contentSelector": ".markdown-content, .prose, .markdown",
+        "mediaKind": "text"
+      },
+      "image": {
+        "enabled": true,
+        "contentSelector": "img[alt*=\"Generated image\" i], img[title*=\"Generated image\" i], img[src*=\"storage.googleapis.com\"], img[src^=\"data:image/\"], img.generated-image, .markdown-content img",
+        "mediaKind": "image"
+      },
+      "video": {
+        "enabled": true,
+        "contentSelector": "video source, video[src], [data-testid=\"video\"], video",
+        "downloadSelector": "a[data-testid=\"download-button\"], a[download][href*=\"video\"], a[href*=\"download-video\"]",
+        "mediaKind": "video"
+      },
+      "audio": {
+        "enabled": true,
+        "contentSelector": "audio, audio source, audio[src]",
+        "downloadSelector": "a[download][href*=\"audio\"], a[download][href*=\"music\"], a[href*=\"download-audio\"]",
+        "mediaKind": "audio"
+      }
+    }
+  },
+  "models": [
+    {
+      "id": "model-chat-standard",
+      "displayName": "Assistant 1.0 (Standard)",
+      "mode": "general",
+      "modes": [
+        "general",
+        "writing"
+      ]
+    },
+    {
+      "id": "model-chat-coder",
+      "displayName": "Assistant 1.0 (Coder)",
+      "mode": "coding",
+      "modes": [
+        "general",
+        "coding"
+      ]
+    },
+    {
+      "id": "model-vision",
+      "displayName": "Vision & Image 1.0",
+      "mode": "image",
+      "modes": [
+        "image"
+      ]
+    },
+    {
+      "id": "model-media-motion",
+      "displayName": "Motion Video 1.0",
+      "mode": "video",
+      "modes": [
+        "video"
+      ]
+    },
+    {
+      "id": "model-audio-synth",
+      "displayName": "Synth Audio 1.0",
+      "mode": "audio",
+      "modes": [
+        "audio"
+      ]
+    }
+  ]
+}

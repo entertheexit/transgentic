@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Transgentic Sync</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="container">
+    <!-- Header -->
+    <header class="header">
+      <div class="brand">
+        <img src="icons/icon48.png" class="brand-logo-img" alt="Transgentic Logo" />
+        <div class="brand-info">
+          <h1 class="brand-title">TRANSGENTIC</h1>
+          <span class="brand-subtitle" id="brandSubtitle">Sync</span>
+        </div>
+      </div>
+      <div class="port-badge offline" id="portStatus">
+        <span class="pulse-dot"></span>
+        <span class="port-text" id="portText">OFFLINE</span>
+      </div>
+    </header>
+
+    <!-- Offline Warning Banner -->
+    <div id="offlineBanner" class="offline-banner">
+      <div class="offline-icon">
+        <img src="icons/ui/warning.svg" class="warning-svg-icon" alt="Warning" />
+      </div>
+      <div class="offline-content">
+        <div class="offline-title">Transgentic App is Offline</div>
+        <div class="offline-subtitle">Launch Transgentic on this computer to sync sessions.</div>
+      </div>
+    </div>
+
+    <!-- Status & Feedback Area (Positioned on top) -->
+    <div id="statusArea" class="status-area hidden">
+      <div class="status-header">
+        <span id="statusIcon" class="status-icon">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="status-svg-icon spinning"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path><path d="M3 3v5h5"></path><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"></path><path d="M16 21h5v-5"></path></svg>
+        </span>
+        <span id="statusTitle" class="status-title">Syncing...</span>
+      </div>
+      <div id="statusMessage" class="status-message">Extracting authenticated session cookies...</div>
+      <div id="statusDetails" class="status-details"></div>
+    </div>
+
+    <!-- Active Tab Detected Provider -->
+    <section class="card provider-card" id="providerCard">
+      <div class="card-header">
+        <span class="card-label">ACTIVE TAB SERVICE</span>
+        <span class="badge" id="providerBadge">Detecting...</span>
+      </div>
+      <div class="provider-details">
+        <div class="provider-icon-wrapper" id="providerIconWrapper">
+          <img id="providerIconImg" class="provider-svg-icon hidden" src="icons/services/gemini.svg" alt="Service Icon" />
+          <span id="providerFallbackEmoji" class="provider-fallback-emoji">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="provider-svg-icon"><circle cx="12" cy="12" r="10"></circle><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"></path><path d="M2 12h20"></path></svg>
+          </span>
+        </div>
+        <div class="provider-meta">
+          <div class="provider-name" id="providerName">Checking active tab...</div>
+          <div class="provider-domain" id="providerDomain">-</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Standard Actions Container (Shown for built-in or installed recipe targets) -->
+    <div id="standardActionsContainer">
+      <!-- Account Profile Selector -->
+      <div class="account-selector-row" id="accountSelectorRow">
+        <div class="label-row">
+          <label for="accountSelect" class="input-label">Target Account in Transgentic:</label>
+          <span class="label-hint" id="profileHint">Chrome Profile Mapping</span>
+        </div>
+        <select id="accountSelect" class="custom-select" disabled>
+          <option value="primary">Loading accounts from Transgentic...</option>
+        </select>
+
+        <!-- Dynamic New Account Alias Input (Shown when "+ Add New Account" is chosen) -->
+        <div id="newAccountRow" class="new-account-row hidden">
+          <input
+            type="text"
+            id="newAccountAlias"
+            class="custom-input"
+            placeholder="New account name (e.g. Work Profile)..."
+          />
+        </div>
+      </div>
+
+      <!-- Action Buttons -->
+      <div class="actions">
+        <button id="syncCurrentBtn" class="btn btn-primary" disabled>
+          <span class="btn-icon-wrapper" id="syncCurrentIcon">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" class="btn-svg-icon"><path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"></path></svg>
+          </span>
+          <span class="btn-text">Sync Current Tab</span>
+        </button>
+
+        <button id="syncAllBtn" class="btn btn-secondary" disabled>
+          <span class="btn-icon-wrapper" id="syncAllIcon">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" class="btn-svg-icon"><path d="M12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83z"></path><path d="M2 12a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 12"></path><path d="M2 17a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 17"></path></svg>
+          </span>
+          <span class="btn-text">Sync All AI Sessions</span>
+        </button>
+      </div>
+
+      <!-- Gemini Rolling Session Ticket Recommendation Notice (Shown only on Gemini tabs) -->
+      <div id="geminiTipBanner" class="gemini-tip-banner hidden">
+        <div class="gemini-tip-header">
+          <span class="gemini-tip-title">Keep Gemini Active in Transgentic</span>
+        </div>
+        <p class="gemini-tip-text">
+          Google rotates session tickets (<code>__Secure-1PSIDTS</code>) during Chrome activity, which can periodically sign out Transgentic's local session.
+        </p>
+        <p class="gemini-tip-subtext">
+          <strong>Recommendation:</strong> Enable <em>Silent Auto-Refresh</em> for Gemini below and keep Chrome open in this profile to keep Gemini continuously alive in Transgentic.
+        </p>
+        <div class="gemini-tip-action" id="geminiTipAction">
+          <button type="button" id="geminiEnableAutoBtn" class="gemini-enable-btn">
+            <span class="btn-icon-wrapper gemini-btn-icon">
+              <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="btn-svg-icon"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"></path><path d="M20 3v4"></path><path d="M22 5h-4"></path><path d="M4 17v2"></path><path d="M5 18H3"></path></svg>
+            </span>
+            <span class="btn-text">Enable Gemini Auto-Refresh</span>
+          </button>
+          <span id="geminiAutoActiveBadge" class="gemini-active-badge hidden">
+            <img src="icons/ui/check.svg" class="badge-check-icon" alt="Active" />
+            Auto-Refresh is active for Gemini
+          </span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Custom Recipe Wizard Section (Shown for unrecognized / custom AI domains) -->
+    <div id="recipeWizardSection" class="recipe-wizard-section hidden">
+      <!-- Unrecognized Domain Notice Banner -->
+      <div id="unrecognizedDomainBanner" class="gemini-tip-banner" style="border-color: rgba(59, 130, 246, 0.4); background: rgba(59, 130, 246, 0.08);">
+        <div class="gemini-tip-header" style="color: #60a5fa;">
+          <span class="gemini-tip-title" style="display: inline-flex; align-items: center; gap: 6px; color: #60a5fa;">
+            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="warning-svg-icon" style="width: 13px; height: 13px;"><polygon points="12 2 2 7 12 12 22 7 12 2"></polygon><polyline points="2 17 12 22 22 17"></polyline><polyline points="2 12 12 17 22 12"></polyline></svg>
+            <span>Custom AI Target Detected</span>
+          </span>
+        </div>
+        <p class="gemini-tip-text" style="color: #cbd5e1; font-size: 11px;">
+          This web service is not a built-in provider. Use a Custom Recipe to map selectors and synchronize authenticated sessions to Transgentic.
+        </p>
+      </div>
+
+      <!-- Action A: Upload / Paste Recipe JSON -->
+      <div class="card wizard-card">
+        <div class="card-header cursor-pointer" id="wizardImportHeader">
+          <div class="wizard-title-box">
+            <span class="card-label">ACTION A: UPLOAD / PASTE RECIPE JSON</span>
+            <span class="badge badge-accent">Direct Import</span>
+          </div>
+        </div>
+        <div class="wizard-body" id="wizardImportBody">
+          <div class="file-upload-row">
+            <label class="btn-file-upload">
+              <input type="file" id="recipeFileInput" accept=".json" class="hidden-file-input" />
+              <span class="btn-icon-wrapper file-icon-wrapper">
+                <img src="icons/ui/file.svg" class="ui-svg-icon" alt="File" />
+              </span>
+              <span class="file-upload-label">Choose .json File</span>
+            </label>
+            <button type="button" class="btn-sm" id="btnLoadExample">Load Template</button>
+          </div>
+          <textarea id="recipeJsonArea" class="recipe-textarea" placeholder="Paste Custom Recipe JSON here..."></textarea>
+          
+          <!-- Live In-Tab DOM Validation Check Badge -->
+          <div id="recipeValidationBadge" class="validation-badge hidden">
+            <span id="validationIcon" class="validation-icon-wrapper"></span>
+            <span id="validationText" class="validation-text">Validating...</span>
+          </div>
+
+          <button id="installAndSyncBtn" class="btn btn-primary" disabled>
+            <span class="btn-icon-wrapper">
+              <img src="icons/ui/sync.svg" class="btn-svg-icon" alt="Sync" />
+            </span>
+            <span class="btn-text">Save Recipe & Sync Session</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Action B: 3-Option Creation Wizard -->
+      <div class="card wizard-card">
+        <div class="card-header">
+          <span class="card-label">ACTION B: CREATE RECIPE WIZARD</span>
+          <span class="badge badge-accent">3 Methods</span>
+        </div>
+        <div class="wizard-body">
+          <div class="wizard-options-grid">
+            <!-- Option 1: Agentic Preset Clipboard -->
+            <div class="wizard-option-card option-card-copy">
+              <div class="option-header">
+                <span class="option-icon-wrapper option-icon-copy">
+                  <img src="icons/ui/copy.svg" class="option-svg-icon" alt="Copy" />
+                </span>
+                <span class="option-title">1. Agentic Client Preset</span>
+              </div>
+              <p class="option-desc">Copies prompt with pruned DOM & schema to clipboard. Paste to Claude or ChatGPT to generate valid recipe JSON.</p>
+              <button type="button" class="btn-option btn-option-copy" id="btnCopyAgenticPrompt">
+                <span class="btn-option-icon">
+                  <img src="icons/ui/copy.svg" class="ui-svg-icon" alt="Copy" />
+                </span>
+                <span class="btn-option-text">Copy Prompt to Clipboard</span>
+              </button>
+            </div>
+
+            <!-- Option 2: Local LLM Auto-Detect -->
+            <div class="wizard-option-card option-card-llm">
+              <div class="option-header">
+                <span class="option-icon-wrapper option-icon-llm">
+                  <img src="icons/ui/sync.svg" class="option-svg-icon" alt="Auto-Detect" />
+                </span>
+                <span class="option-title">2. Local LLM Auto-Detect</span>
+              </div>
+              <p class="option-desc">Transgentic Core analyzes the active tab DOM using local LLM and auto-detects selectors.</p>
+              <button type="button" class="btn-option btn-option-llm" id="btnAutoDetectSelectors">
+                <span class="btn-option-icon">
+                  <img src="icons/ui/sync.svg" class="ui-svg-icon" alt="Auto-Detect" />
+                </span>
+                <span class="btn-option-text" id="btnAutoDetectText">Auto-Detect with Local LLM</span>
+              </button>
+            </div>
+
+            <!-- Option 3: In-Tab Visual Inspector -->
+            <div class="wizard-option-card option-card-target">
+              <div class="option-header">
+                <span class="option-icon-wrapper option-icon-target">
+                  <img src="icons/ui/target.svg" class="option-svg-icon" alt="Target" />
+                </span>
+                <span class="option-title">3. In-Tab Visual Inspector</span>
+              </div>
+              <p class="option-desc">Point-and-click directly on the page to map prompt, send button, and response containers interactively.</p>
+              <button type="button" class="btn-option btn-highlight btn-option-target" id="btnLaunchInspector">
+                <span class="btn-option-icon">
+                  <img src="icons/ui/target.svg" class="ui-svg-icon" alt="Target" />
+                </span>
+                <span class="btn-option-text">Launch Visual Inspector</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Standalone Session Lifecycle Notice -->
+    <div class="session-info-notice">
+      <div class="notice-icon-wrapper">
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="notice-svg-icon"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"></path><path d="M9 18h6"></path><path d="M10 22h4"></path></svg>
+      </div>
+      <div class="notice-text">
+        <span><strong>Autonomous Local Session:</strong> Once synchronized, sessions are securely persisted in Transgentic's local Chromium instance. You do not need to keep Chrome running.</span>
+      </div>
+    </div>
+
+    <!-- Silent Background Session Refresh Section -->
+    <section class="card bg-sync-card" id="bgSyncCard">
+      <div class="card-header cursor-pointer" id="bgSyncHeader">
+        <div class="bg-sync-title-box">
+          <span class="card-label">SILENT AUTO-REFRESH</span>
+          <span class="badge" id="bgSyncSummaryBadge">15m Interval</span>
+        </div>
+        <span class="bg-sync-chevron" id="bgSyncChevron">▼</span>
+      </div>
+
+      <div class="bg-sync-body" id="bgSyncBody">
+        <p class="bg-sync-subtext">
+          Keeps Electron sessions alive by syncing updated cookies in the background when Chrome is running. Does not sync logouts.
+        </p>
+
+        <!-- Multi-Account Swap Risk Warning Callout -->
+        <div class="bg-sync-warning">
+          <span class="warning-icon-wrapper">
+            <img src="icons/ui/warning.svg" class="warning-svg-icon" alt="Warning" />
+          </span>
+          <div class="warning-content">
+            <strong>Multi-Account Warning:</strong> Do not enable auto-refresh if you use different accounts for the same service in this Chrome profile mapping to the same Transgentic profile. Session swapping can trigger provider flags or risk getting banned.
+          </div>
+        </div>
+
+        <!-- Service Toggles List -->
+        <div class="bg-sync-services-list">
+          <!-- ChatGPT -->
+          <div class="bg-sync-row">
+            <div class="bg-sync-service-meta">
+              <span class="bg-sync-service-name">ChatGPT</span>
+              <span class="bg-sync-service-domain">chatgpt.com</span>
+              <span class="bg-sync-service-status" id="bgSyncTime_chatgpt">Off</span>
+            </div>
+            <label class="toggle-switch">
+              <input type="checkbox" id="bgSyncToggle_chatgpt" data-service="chatgpt">
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+
+          <!-- Claude -->
+          <div class="bg-sync-row">
+            <div class="bg-sync-service-meta">
+              <span class="bg-sync-service-name">Claude</span>
+              <span class="bg-sync-service-domain">claude.ai</span>
+              <span class="bg-sync-service-status" id="bgSyncTime_claude">Off</span>
+            </div>
+            <label class="toggle-switch">
+              <input type="checkbox" id="bgSyncToggle_claude" data-service="claude">
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+
+          <!-- Gemini -->
+          <div class="bg-sync-row">
+            <div class="bg-sync-service-meta">
+              <span class="bg-sync-service-name">Gemini</span>
+              <span class="bg-sync-service-domain">gemini.google.com</span>
+              <span class="bg-sync-service-status" id="bgSyncTime_gemini">Off</span>
+            </div>
+            <label class="toggle-switch">
+              <input type="checkbox" id="bgSyncToggle_gemini" data-service="gemini">
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+
+          <!-- Grok -->
+          <div class="bg-sync-row">
+            <div class="bg-sync-service-meta">
+              <span class="bg-sync-service-name">Grok</span>
+              <span class="bg-sync-service-domain">grok.com / x.ai</span>
+              <span class="bg-sync-service-status" id="bgSyncTime_grok">Off</span>
+            </div>
+            <label class="toggle-switch">
+              <input type="checkbox" id="bgSyncToggle_grok" data-service="grok">
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+
+          <!-- Dynamic Custom Recipe Sync Rows -->
+          <div id="bgSyncCustomContainer"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Footer Info & Privacy Disclaimer -->
+    <footer class="footer">
+      <div class="footer-tags">
+        <span>Native Sessions</span>
+        <span class="divider">•</span>
+        <span>Isolated Partitions</span>
+        <span class="divider">•</span>
+        <span>100% Local Bridge</span>
+      </div>
+      <div class="footer-disclaimer">
+        <span><strong>Local Privacy Notice:</strong> This extension communicates exclusively with the local Transgentic app (<code>127.0.0.1:58420</code>). Session synchronization sends cookies to the local app; authenticated web sessions send the relevant cookies to their provider. Transgentic is an independent utility and is not affiliated with or endorsed by Google, OpenAI, Anthropic, or xAI.</span>
+      </div>
+    </footer>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

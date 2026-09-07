@@ -1,0 +1,2025 @@
+import express, { Request, Response } from 'express';
+import cors from 'cors';
+import http from 'http';
+import crypto from 'crypto';
+import fs from 'fs';
+import path from 'path';
+import { globalBlindingEngine } from '../security/dataBlinding.js';
+import { globalLogStorage } from '../storage/logStorage.js';
+import { DynamicRouter } from './router.js';
+import { globalRateLimiter } from './rateLimiter.js';
+import { globalSessionManager } from '../webviews/sessionManager.js';
+import { globalAssetManager } from '../storage/assetManager.js';
+import { ModelRegistryManager } from '../registry/modelRegistry.js';
+import { ModelScraperEngine } from '../registry/modelScrapers.js';
+import { AccountRegistryManager } from '../registry/accountRegistry.js';
+import { ServiceManifestManager } from '../registry/serviceManifest.js';
+import {
+  wrapBalancedCodingPrompt,
+  wrapBalancedAgenticPrompt,
+  wrapBalancedLocalLlmPrompt,
+  wrapUnbalancedAgenticPrompt,
+  formatLocalLlmMicroTaskOnlyDirective,
+  formatBalancedLocalLlmDirective,
+  formatBalancedWebAiDirective,
+  formatLocalLlmDecisionReminder,
+  formatWebAiDecisionReminder,
+  formatUnbalancedAgenticReminder,
+} from './handlers/codingHandler.js';
+import {
+  formatBalancedDoubleAgentDirective,
+  formatDualDispatchDoubleAgentDirective,
+  formatDualPerspectiveResponse,
+  executeConcurrentDualDispatch,
+  determineDispatchScenario,
+  getProviderDisplayName,
+} from './dispatchPipeline.js';
+import { classifyMicroTask } from './handlers/microTaskClassifier.js';
+import { applyRecallPipeline } from './handlers/recallHandler.js';
+import {
+  formatAgentHaltDirective,
+  estimateCooldownString,
+  emitRateLimitNotification,
+  createAgentHaltResponse,
+} from './handlers/errorHandler.js';
+import { globalThreadManager } from '../registry/threadManager.js';
+import { SseTransportManager } from './sseTransport.js';
+import { BaseMcpHandler } from './handlers/baseHandler.js';
+import { ClientAuthManager } from '../security/clientAuth.js';
+import { AccountQueueManager } from '../queue/accountQueue.js';
+import { DuplicateActionGuard } from '../security/duplicateActionGuard.js';
+import { CookieSyncManager } from '../auth/cookieSyncServer.js';
+import { createRecipeRouter } from '../auth/recipeSyncServer.js';
+import { LocalLlmClient } from '../localllm/localLlmClient.js';
+import { globalLocalZeroLeakManager } from '../localllm/localZeroLeak.js';
+import { globalLocalCompactManager } from '../localllm/localCompact.js';
+import {
+  CoreStatus,
+  McpRequestLog,
+  ProviderId,
+  TaskMode,
+  TransgenticConfig,
+  isAgentHaltGuardEnabled,
+  isRecallEnabledForMode,
+} from '../../shared/types.js';
+import { getExtensionDownloadUrl } from '../../shared/release.js';
+import { app as electronApp } from 'electron';
+
+interface SseClient {
+  id: string;
+  res: Response;
+  targetProvider?: ProviderId;
+}
+
+export class TransgenticMcpServer {
+  private app: express.Application;
+  private httpServer: http.Server | null = null;
+  private port: number = 58420;
+  private clients: Map<string, SseClient> = new Map();
+  private requestLogs: McpRequestLog[] = [];
+  private requestCounter: number = 0;
+  private startTime: number = Date.now();
+  private currentMode: TaskMode = 'general';
+  private currentCoreState: CoreStatus['state'] = 'idle';
+  private activeProvider?: ProviderId;
+  private currentTaskDescription?: string;
+  private config: TransgenticConfig | null = null;
+  private activeAbortControllers: Map<string, AbortController> = new Map();
+
+  private logListeners: Array<(log: McpRequestLog) => void> = [];
+  private coreStatusListeners: Array<(status: CoreStatus) => void> = [];
+
+  constructor(preferredPort: number = 58420) {
+    this.port = preferredPort;
+    this.app = express();
+    this.app.use(
+      cors({
+        origin: '*',
+        methods: ['GET', 'POST', 'OPTIONS', 'DELETE', 'PUT'],
+        allowedHeaders: ['Content-Type', 'Authorization', 'mcp-session-id', 'Mcp-Session-Id', 'Accept', 'Last-Event-ID'],
+        exposedHeaders: ['mcp-session-id', 'Mcp-Session-Id', 'Content-Type'],
+      })
+    );
+    this.app.use(express.json({ limit: '50mb' }));
+    this.setupRoutes();
+  }
+
+  public updateConfig(cfg: TransgenticConfig): void {
+    this.config = cfg;
+    if (cfg.localLLM) {
+      DynamicRouter.setLocalLlmConfig(cfg.localLLM);
+    }
+  }
+
+  private setupRoutes(): void {
+    // Health & Info (Unauthenticated with CORS enabled for local pre-flight checks)
+    this.app.options(['/api/health', '/health'], (req, res) => {
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+      res.sendStatus(204);
+    });
+
+    this.app.get(['/api/health', '/health'], (req, res) => {
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.json({
+        status: 'online',
+        version: '1.0',
+        activePort: this.port,
+        name: 'transgentic-mcp-server',
+        port: this.port,
+        mode: this.currentMode,
+        providers: globalSessionManager.getAllStatuses(),
+      });
+    });
+
+    // Safe Session Receiver & Multi-Account Endpoints (CORS enabled for browser origins & extensions)
+    this.app.options('/api/auth/presets', (req, res) => {
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+      res.sendStatus(204);
+    });
+
+    this.app.get('/api/auth/presets', (req, res) => {
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      try {
+        const presets = ServiceManifestManager.getAvailablePreconfigs();
+        res.json({ success: true, presets });
+      } catch (err: any) {
+        res.status(500).json({ success: false, error: err.message });
+      }
+    });
+
+    this.app.options('/api/auth/sync-session', (req, res) => {
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+      res.sendStatus(204);
+    });
+
+    this.app.post('/api/auth/sync-session', async (req, res) => {
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      try {
+        const result = await CookieSyncManager.syncSession(req.body);
+        res.json(result);
+      } catch (err: any) {
+        res.status(400).json({
+          success: false,
+          error: err.message || 'Failed to synchronize session',
+        });
+      }
+    });
+
+    this.app.options('/api/auth/accounts', (req, res) => {
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+      res.sendStatus(204);
+    });
+
+    this.app.get('/api/auth/accounts', (req, res) => {
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      try {
+        const provider = req.query.provider as string | undefined;
+        if (provider) {
+          const norm = CookieSyncManager.normalizeProviderId(provider);
+          return res.json(AccountRegistryManager.getForProvider(norm));
+        }
+        return res.json(AccountRegistryManager.getAll());
+      } catch (err: any) {
+        res.status(400).json({ error: err.message });
+      }
+    });
+
+    this.app.get('/api/auth/download-extension', (req, res) => {
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      const candidates = [
+        path.join(process.resourcesPath || '', 'extensions', 'transgentic-sync.zip'),
+        path.join(process.cwd(), 'extensions', 'transgentic-sync.zip'),
+      ];
+      for (const p of candidates) {
+        if (fs.existsSync(p)) {
+          return res.download(p, path.basename(p));
+        }
+      }
+      res.redirect(302, getExtensionDownloadUrl(electronApp.getVersion()));
+    });
+
+    // Custom Recipe & Selector Wizard Endpoints
+    this.app.use('/api/recipes', createRecipeRouter());
+
+    // MCP Client Authentication Middleware (Applied to all MCP protocol & provider routes)
+    this.app.use((req, res, next) => {
+      const p = req.originalUrl || req.url || req.path || '';
+      if (req.path === '/health' || p.startsWith('/health') || p.startsWith('/api/auth/') || p.startsWith('/api/recipes') || p.startsWith('/api/health')) return next();
+
+      // Check if this request is part of an already authenticated active SSE session
+      const sessionId = (req.query.sessionId as string) || (req.headers['mcp-session-id'] as string) || '';
+      if (sessionId && SseTransportManager.getClient(sessionId)) {
+        return next();
+      }
+
+      const authHeader = req.headers['authorization'];
+      let token: string | undefined;
+      if (authHeader && typeof authHeader === 'string' && authHeader.startsWith('Bearer ')) {
+        token = authHeader.slice(7).trim();
+      } else if (req.query && typeof req.query.token === 'string') {
+        token = req.query.token as string;
+      }
+
+      if (!ClientAuthManager.verifyToken(token)) {
+        res.status(401).json({
+          jsonrpc: '2.0',
+          error: {
+            code: -32001,
+            message: 'Unauthorized: Invalid or missing Transgentic MCP client token. Include "Authorization: Bearer <token>" header or "?token=<token>" query parameter.',
+          },
+          id: null,
+        });
+        return;
+      }
+      next();
+    });
+
+    // 1. Unified MCP Endpoint (Streamable HTTP + SSE)
+    this.app.get('/mcp', (req, res) => {
+      this.handleSseConnect(req, res, undefined, '/mcp');
+    });
+    this.app.post('/mcp', async (req, res) => {
+      await this.handleClientMessage(req, res, undefined);
+    });
+
+    // Legacy SSE Endpoints (Backward Compatibility)
+    this.app.get('/sse', (req, res) => {
+      this.handleSseConnect(req, res, undefined, '/messages');
+    });
+    this.app.post('/sse', async (req, res) => {
+      await this.handleClientMessage(req, res, undefined);
+    });
+    this.app.post('/messages', async (req, res) => {
+      await this.handleClientMessage(req, res, undefined);
+    });
+
+    // 2. Direct Provider Gateways (e.g. /claude/mcp)
+    const providers: ProviderId[] = ['chatgpt', 'claude', 'gemini', 'grok'];
+    for (const p of providers) {
+      this.app.get(`/${p}/mcp`, (req, res) => {
+        this.handleSseConnect(req, res, p, `/${p}/mcp`);
+      });
+      this.app.post(`/${p}/mcp`, async (req, res) => {
+        await this.handleClientMessage(req, res, p);
+      });
+      this.app.get(`/${p}/sse`, (req, res) => {
+        this.handleSseConnect(req, res, p, `/${p}/messages`);
+      });
+      this.app.post(`/${p}/sse`, async (req, res) => {
+        await this.handleClientMessage(req, res, p);
+      });
+      this.app.post(`/${p}/messages`, async (req, res) => {
+        await this.handleClientMessage(req, res, p);
+      });
+    }
+
+    // 3. Dedicated Mode Gateways (e.g. /image/sse, /video/sse, /audio/sse, /coding/sse, /writing/sse)
+    const modes: TaskMode[] = ['image', 'video', 'audio', 'coding', 'writing', 'general'];
+    for (const m of modes) {
+      this.app.get(`/${m}/mcp`, (req, res) => {
+        this.handleSseConnect(req, res, undefined, `/${m}/mcp`, m);
+      });
+      this.app.post(`/${m}/mcp`, async (req, res) => {
+        await this.handleClientMessage(req, res, undefined, m);
+      });
+      this.app.get(`/${m}/sse`, (req, res) => {
+        this.handleSseConnect(req, res, undefined, `/${m}/messages`, m);
+      });
+      this.app.post(`/${m}/sse`, async (req, res) => {
+        await this.handleClientMessage(req, res, undefined, m);
+      });
+      this.app.post(`/${m}/messages`, async (req, res) => {
+        await this.handleClientMessage(req, res, undefined, m);
+      });
+    }
+  }
+
+  private handleSseConnect(
+    req: Request,
+    res: Response,
+    targetProvider?: ProviderId,
+    messageEndpoint: string = '/messages',
+    defaultMode?: TaskMode
+  ): void {
+    const sessionId = crypto.randomUUID();
+    let token: string | undefined;
+    const authHeader = req.headers['authorization'];
+    if (authHeader && typeof authHeader === 'string' && authHeader.startsWith('Bearer ')) {
+      token = authHeader.slice(7).trim();
+    } else if (req.query && typeof req.query.token === 'string') {
+      token = req.query.token as string;
+    }
+
+    const queryProvider = req.query.provider as string | undefined;
+    const effectiveProvider: ProviderId | undefined = targetProvider || (queryProvider as ProviderId) || undefined;
+
+    const rawMode = (req.query.mode as string | undefined) || defaultMode;
+    let effectiveMode: TaskMode | undefined = undefined;
+    if (rawMode && ['general', 'coding', 'writing', 'image', 'video', 'audio', 'music'].includes(rawMode)) {
+      effectiveMode = rawMode === 'music' ? 'audio' : (rawMode as TaskMode);
+    }
+
+    SseTransportManager.registerClient(sessionId, res, effectiveProvider, messageEndpoint, undefined, token, effectiveMode);
+
+    req.on('close', () => {
+      SseTransportManager.removeClient(sessionId);
+    });
+  }
+
+  private async processSingleJsonRpcMessage(
+    body: any,
+    req: Request,
+    sseClient: any,
+    directProvider?: ProviderId,
+    sessionId: string = '',
+    defaultMode?: TaskMode
+  ): Promise<any> {
+    if (!body || typeof body !== 'object') {
+      return { jsonrpc: '2.0', error: { code: -32700, message: 'Parse error' }, id: null };
+    }
+
+    const { jsonrpc, method, params, id } = body;
+    const isNotification = id === undefined || id === null;
+    const reqContext = BaseMcpHandler.createContext(req, sessionId, (id || crypto.randomUUID()).toString());
+
+    try {
+      // Handle MCP Notifications
+      if (method === 'notifications/initialized' || method === 'initialized' || method === 'notifications/cancelled' || method === 'cancelled') {
+        if (method === 'notifications/cancelled' || method === 'cancelled') {
+          const targetReqId = params?.requestId;
+          if (targetReqId) {
+            const ctx = BaseMcpHandler.getContext(String(targetReqId));
+            if (ctx && !ctx.abortController.signal.aborted) {
+              ctx.abortController.abort();
+            }
+          }
+        }
+        return null;
+      }
+
+      if (method && typeof method === 'string' && method.startsWith('notifications/')) {
+        return null;
+      }
+
+      // Handle MCP methods
+      if (method === 'initialize') {
+        return {
+          jsonrpc: '2.0',
+          id,
+          result: {
+            protocolVersion: params?.protocolVersion || '2024-11-05',
+            serverInfo: {
+              name: 'transgentic-mcp-server',
+              version: '1.0.0',
+            },
+            capabilities: {
+              tools: { listChanged: false },
+              prompts: { listChanged: false },
+              resources: { subscribe: false, listChanged: false },
+            },
+          },
+        };
+      } else if (method === 'tools/list') {
+        return {
+          jsonrpc: '2.0',
+          id,
+          result: {
+            tools: this.getToolDefinitions(),
+          },
+        };
+      } else if (method === 'tools/call') {
+        const toolName = params?.name;
+        const args = params?.arguments || {};
+        const providerToUse = directProvider || sseClient?.targetProvider;
+        const modeToUse = defaultMode || sseClient?.targetMode;
+        try {
+          const callResult = await this.executeMcpTool(toolName, args, providerToUse, reqContext.abortController.signal, modeToUse);
+          return {
+            jsonrpc: '2.0',
+            id,
+            result: callResult,
+          };
+        } catch (toolErr: any) {
+          // MCP Specification: Tool execution errors should be returned in ToolResult with isError: true
+          const fallbackDirective = '\n\n[FALLBACK FOR AGENTIC CLIENT]: Transgentic encountered an execution error. Immediately fallback to your own local capabilities or alternative tools to proceed autonomously.';
+          return {
+            jsonrpc: '2.0',
+            id,
+            result: {
+              content: [
+                {
+                  type: 'text',
+                  text: `[Transgentic Error] ${toolErr.message || 'Error executing tool'}${fallbackDirective}`,
+                },
+              ],
+              isError: true,
+            },
+          };
+        }
+      } else if (method === 'prompts/list') {
+        return {
+          jsonrpc: '2.0',
+          id,
+          result: {
+            prompts: [
+              {
+                name: 'code_review',
+                description: 'Runs a high-density architectural & security review with automated secret blinding.',
+                arguments: [
+                  { name: 'code', description: 'The source code to review', required: true },
+                ],
+              },
+              {
+                name: 'refactor_clean_code',
+                description: 'Refactors code for maintainability, idiomatic patterns, and performance.',
+                arguments: [
+                  { name: 'code', description: 'The source code to refactor', required: true },
+                ],
+              },
+            ],
+          },
+        };
+      } else if (method === 'prompts/get') {
+        const promptName = params?.name;
+        const args = params?.arguments || {};
+        if (promptName === 'code_review') {
+          return {
+            jsonrpc: '2.0',
+            id,
+            result: {
+              description: 'Code Review Prompt',
+              messages: [
+                {
+                  role: 'user',
+                  content: {
+                    type: 'text',
+                    text: `Please review the following code for security vulnerabilities, edge cases, and architectural clarity:\n\n${args.code || ''}`,
+                  },
+                },
+              ],
+            },
+          };
+        } else {
+          return {
+            jsonrpc: '2.0',
+            id,
+            result: {
+              description: 'Refactor Prompt',
+              messages: [
+                {
+                  role: 'user',
+                  content: {
+                    type: 'text',
+                    text: `Please refactor this code to follow clean architecture principles:\n\n${args.code || ''}`,
+                  },
+                },
+              ],
+            },
+          };
+        }
+      } else if (method === 'resources/list') {
+        return {
+          jsonrpc: '2.0',
+          id,
+          result: {
+            resources: [
+              {
+                uri: 'transgentic://logs',
+                name: 'Transgentic MCP Request Logs',
+                mimeType: 'application/json',
+              },
+              {
+                uri: 'transgentic://vault',
+                name: 'Active Data Blinding In-Memory Vault Inventory',
+                mimeType: 'application/json',
+              },
+              {
+                uri: 'transgentic://status',
+                name: 'Transgentic System Health & Provider Metrics',
+                mimeType: 'application/json',
+              },
+              {
+                uri: 'transgentic://models',
+                name: 'Transgentic Active Model Registry State',
+                mimeType: 'application/json',
+              },
+            ],
+          },
+        };
+      } else if (method === 'resources/read') {
+        const uri = params?.uri;
+        let contentText = '';
+        if (uri === 'transgentic://logs') {
+          contentText = JSON.stringify(this.requestLogs, null, 2);
+        } else if (uri === 'transgentic://vault') {
+          contentText = JSON.stringify(globalBlindingEngine.getTokens(), null, 2);
+        } else if (uri === 'transgentic://models') {
+          contentText = JSON.stringify(ModelRegistryManager.getRegistry(), null, 2);
+        } else {
+          contentText = JSON.stringify(
+            {
+              core: this.getCoreStatus(),
+              providers: globalSessionManager.getAllStatuses(),
+              routes: DynamicRouter.getAllRouteConfigs(),
+            },
+            null,
+            2
+          );
+        }
+        return {
+          jsonrpc: '2.0',
+          id,
+          result: {
+            contents: [
+              {
+                uri,
+                mimeType: 'application/json',
+                text: contentText,
+              },
+            ],
+          },
+        };
+      } else if (method === 'roots/list') {
+        return { jsonrpc: '2.0', id, result: { roots: [] } };
+      } else if (method === 'ping') {
+        return { jsonrpc: '2.0', id, result: {} };
+      } else {
+        if (!isNotification) {
+          return {
+            jsonrpc: '2.0',
+            id,
+            error: { code: -32601, message: `Method not found: ${method}` },
+          };
+        }
+        return null;
+      }
+    } catch (err: any) {
+      if (!isNotification) {
+        return {
+          jsonrpc: '2.0',
+          id,
+          error: { code: -32603, message: err.message || 'Internal error' },
+        };
+      }
+      return null;
+    } finally {
+      BaseMcpHandler.cleanupContext(reqContext.requestId);
+    }
+  }
+
+  private async handleClientMessage(req: Request, res: Response, directProvider?: ProviderId, defaultMode?: TaskMode): Promise<void> {
+    const sessionId = (req.query.sessionId as string) || (req.headers['mcp-session-id'] as string) || '';
+    const sseClient = sessionId ? SseTransportManager.getClient(sessionId) : undefined;
+    const body = req.body;
+
+    const queryMode = (req.query.mode as string | undefined) || defaultMode || sseClient?.targetMode;
+    let resolvedMode: TaskMode | undefined = undefined;
+    if (queryMode && ['general', 'coding', 'writing', 'image', 'video', 'audio', 'music'].includes(queryMode)) {
+      resolvedMode = queryMode === 'music' ? 'audio' : (queryMode as TaskMode);
+    }
+
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('mcp-session-id', sessionId || crypto.randomUUID());
+
+    if (!body) {
+      res.status(400).json({ jsonrpc: '2.0', error: { code: -32700, message: 'Parse error: empty request body' }, id: null });
+      return;
+    }
+
+    // If using SSE transport, acknowledge message receipt immediately with 202 Accepted
+    if (sseClient) {
+      res.status(202).json({ status: 'accepted' });
+    }
+
+    if (Array.isArray(body)) {
+      const results = await Promise.all(
+        body.map((item) => this.processSingleJsonRpcMessage(item, req, sseClient, directProvider, sessionId, resolvedMode))
+      );
+      const responses = results.filter((r) => r !== null);
+      if (sseClient) {
+        for (const resp of responses) {
+          SseTransportManager.sendMessage(sessionId, resp);
+        }
+      } else if (!res.headersSent) {
+        if (responses.length > 0) {
+          res.status(200).json(responses);
+        } else {
+          res.removeHeader('Content-Type');
+          res.status(202).end();
+        }
+      }
+      return;
+    }
+
+    const responseData = await this.processSingleJsonRpcMessage(body, req, sseClient, directProvider, sessionId, resolvedMode);
+
+    if (responseData) {
+      if (sseClient) {
+        SseTransportManager.sendMessage(sessionId, responseData);
+      } else if (!res.headersSent) {
+        res.status(200).json(responseData);
+      }
+    } else if (!sseClient && !res.headersSent) {
+      // Streamable HTTP notifications do not have a JSON-RPC response body.
+      // Acknowledge receipt without advertising an empty JSON document so
+      // clients such as Codex do not treat the transport as malformed.
+      res.removeHeader('Content-Type');
+      res.status(202).end();
+    }
+  }
+
+  private getToolDefinitions() {
+    const chatgptModels = ModelRegistryManager.getUsableModels('chatgpt').map((m) => m.id);
+    const claudeModels = ModelRegistryManager.getUsableModels('claude').map((m) => m.id);
+    const geminiModels = ModelRegistryManager.getUsableModels('gemini').map((m) => m.id);
+    const grokModels = ModelRegistryManager.getUsableModels('grok').map((m) => m.id);
+
+    const sessionProperties = {
+      thread_id: { type: 'string', description: 'Unique identifier for conversation continuity. Reuses existing web chat if matched.' },
+      threadId: { type: 'string', description: 'Alias for thread_id.' },
+      new_thread: { type: 'boolean', default: false, description: 'If true, forces creation of a brand new chat thread.' },
+      newThread: { type: 'boolean', default: false, description: 'Alias for new_thread.' },
+      project_name: { type: 'string', description: 'Optional workspace/project grouping name.' },
+      projectName: { type: 'string', description: 'Alias for project_name.' },
+    };
+
+    const modeProperty = {
+      type: 'string',
+      enum: ['general', 'coding', 'writing', 'image', 'video', 'audio'],
+      description: 'Optional task mode hint affecting model routing & output structuring.',
+    };
+
+    return [
+      {
+        name: 'prompt_model',
+        description:
+          'RECOMMENDED DEFAULT: Primary Transgentic auto-routing endpoint. Automatically classifies task intent (general, coding, writing, reasoning, image, video, audio) and routes to the optimal active provider (Claude, ChatGPT, Gemini, Grok) with data blinding, secret protection, rate-limit fallback, model selection, and thread continuity. For media generation (images, storyboard scenes, video, audio), specify the "mode" parameter ("image", "video", "audio") or use dedicated media tools (generate_image, etc.) so Transgentic switches to specialized models rather than general text LLMs.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            prompt: { type: 'string', description: 'The prompt or instruction to execute.' },
+            mode: {
+              type: 'string',
+              enum: ['general', 'coding', 'writing', 'image', 'video', 'audio'],
+              description: 'Optional task mode hint affecting model routing & output structuring. If omitted, automatically classified.',
+            },
+            provider: {
+              type: 'string',
+              enum: ['chatgpt', 'claude', 'gemini', 'grok'],
+              description: 'Optional forced provider override. If omitted, uses intelligent auto-routing.',
+            },
+            model: {
+              type: 'string',
+              description: 'Optional target model ID (e.g. gpt-4o, claude-3-5-sonnet, o1, grok-3). If allowMcpOverride is enabled, switches model in Webview.',
+            },
+            ...sessionProperties,
+          },
+          required: ['prompt'],
+        },
+      },
+      {
+        name: 'ask_chatgpt',
+        description:
+          'Directly queries ChatGPT (OpenAI). Use ONLY when the user explicitly names ChatGPT or OpenAI in their request. For general questions without a specific provider request, use prompt_model instead for automatic optimal routing.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            prompt: { type: 'string', description: 'Prompt to send to ChatGPT.' },
+            mode: modeProperty,
+            model: chatgptModels.length > 0 ? { type: 'string', enum: chatgptModels, description: 'Target ChatGPT model.' } : { type: 'string' },
+            ...sessionProperties,
+          },
+          required: ['prompt'],
+        },
+      },
+      {
+        name: 'ask_claude',
+        description:
+          'Directly queries Claude (Anthropic). Use ONLY when the user explicitly names Claude or Anthropic in their request. For general questions without a specific provider request, use prompt_model instead for automatic optimal routing.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            prompt: { type: 'string', description: 'Prompt to send to Claude.' },
+            mode: modeProperty,
+            model: claudeModels.length > 0 ? { type: 'string', enum: claudeModels, description: 'Target Claude model.' } : { type: 'string' },
+            ...sessionProperties,
+          },
+          required: ['prompt'],
+        },
+      },
+      {
+        name: 'ask_gemini',
+        description:
+          'Directly queries Gemini (Google). Use ONLY when the user explicitly names Gemini or Google in their request. For general questions without a specific provider request, use prompt_model instead for automatic optimal routing.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            prompt: { type: 'string', description: 'Prompt to send to Gemini.' },
+            mode: modeProperty,
+            model: geminiModels.length > 0 ? { type: 'string', enum: geminiModels, description: 'Target Gemini model.' } : { type: 'string' },
+            ...sessionProperties,
+          },
+          required: ['prompt'],
+        },
+      },
+      {
+        name: 'ask_grok',
+        description:
+          'Directly queries Grok (xAI). Use ONLY when the user explicitly names Grok or xAI in their request. For general questions without a specific provider request, use prompt_model instead for automatic optimal routing.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            prompt: { type: 'string', description: 'Prompt to send to Grok.' },
+            mode: modeProperty,
+            model: grokModels.length > 0 ? { type: 'string', enum: grokModels, description: 'Target Grok model.' } : { type: 'string' },
+            ...sessionProperties,
+          },
+          required: ['prompt'],
+        },
+      },
+      {
+        name: 'generate_image',
+        description:
+          'Generates an image via Grok (Imagine), ChatGPT (DALL-E), or Gemini (Imagen), downloads it locally to disk, and returns the short local file path. Recommended for storyboarding, scene illustrations, and visual concept generation. Automatically activates image mode and switches to the optimal image model.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            prompt: { type: 'string', description: 'Image generation prompt.' },
+            provider: {
+              type: 'string',
+              enum: ['grok', 'chatgpt', 'gemini'],
+              description: 'Optional provider override. If omitted, uses intelligent image routing (Grok -> ChatGPT -> Gemini).',
+            },
+            model: {
+              type: 'string',
+              description: 'Optional target model ID (e.g. dall-e-3).',
+            },
+            ...sessionProperties,
+          },
+          required: ['prompt'],
+        },
+      },
+      {
+        name: 'generate_video',
+        description:
+          'Generates a video via Grok or Gemini, downloads to local assets, and returns the short file path. Recommended for storyboard scenes and dynamic animations. Automatically activates video mode.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            prompt: { type: 'string', description: 'Video generation prompt.' },
+            provider: {
+              type: 'string',
+              enum: ['grok', 'gemini'],
+              description: 'Optional provider override.',
+            },
+            model: {
+              type: 'string',
+              description: 'Optional target model ID.',
+            },
+            ...sessionProperties,
+          },
+          required: ['prompt'],
+        },
+      },
+      {
+        name: 'generate_audio',
+        description:
+          'Generates audio / speech / sound / music via AI services (Gemini, etc.), saves locally, and returns the short file path. Recommended for narration, character voices, and sound effects. Automatically activates audio mode.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            prompt: { type: 'string', description: 'Audio generation prompt.' },
+            provider: {
+              type: 'string',
+              enum: ['gemini'],
+              description: 'Optional provider override.',
+            },
+            model: {
+              type: 'string',
+              description: 'Optional target model ID.',
+            },
+            ...sessionProperties,
+          },
+          required: ['prompt'],
+        },
+      },
+      {
+        name: 'generate_music',
+        description:
+          'Alias for generate_audio (generates background music and soundtracks via AI services), saves locally, and returns the short file path. Automatically activates audio/music mode.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            prompt: { type: 'string', description: 'Music generation prompt.' },
+            provider: {
+              type: 'string',
+              enum: ['gemini'],
+              description: 'Optional provider override.',
+            },
+            model: {
+              type: 'string',
+              description: 'Optional target model ID.',
+            },
+            ...sessionProperties,
+          },
+          required: ['prompt'],
+        },
+      },
+      {
+        name: 'get_status',
+        description:
+          'Diagnostic tool only. Returns health, authenticated providers, current rate limits, and model registry. Use ONLY when the user explicitly requests system health or diagnostics. NEVER call this tool prior to running prompt_model.',
+        inputSchema: {
+          type: 'object',
+          properties: {},
+        },
+      },
+    ];
+  }
+
+  private async executeMcpTool(
+    name: string,
+    args: any,
+    directProvider?: ProviderId,
+    abortSignal?: AbortSignal,
+    defaultMode?: TaskMode
+  ): Promise<any> {
+    if (name === 'get_status') {
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify(
+              {
+                core: this.getCoreStatus(),
+                providers: globalSessionManager.getAllStatuses(),
+                models: ModelRegistryManager.getRegistry(),
+              },
+              null,
+              2
+            ),
+          },
+        ],
+      };
+    }
+
+    const prompt = args.prompt;
+    if (!prompt || typeof prompt !== 'string') {
+      throw new Error(`Missing required 'prompt' argument for tool ${name}`);
+    }
+
+    const projectName = args.project_name || args.projectName;
+    const threadId = args.thread_id || args.threadId;
+    const newThread = Boolean(args.new_thread ?? args.newThread ?? false);
+
+    let mode: TaskMode = defaultMode || this.currentMode;
+    let provider: ProviderId | undefined = directProvider || args.provider;
+    const requestedModel: string | undefined = args.model;
+    let isStrictExplicitMode = Boolean(defaultMode);
+
+    if (name === 'ask_chatgpt') provider = 'chatgpt';
+    if (name === 'ask_claude') provider = 'claude';
+    if (name === 'ask_gemini') provider = 'gemini';
+    if (name === 'ask_grok') provider = 'grok';
+
+    if (name === 'generate_image') {
+      mode = 'image';
+      isStrictExplicitMode = true;
+    }
+    if (name === 'generate_video') {
+      mode = 'video';
+      isStrictExplicitMode = true;
+    }
+    if (name === 'generate_audio' || name === 'generate_music') {
+      mode = 'audio';
+      isStrictExplicitMode = true;
+    }
+    if (args.mode && ['general', 'coding', 'writing', 'image', 'video', 'audio', 'music'].includes(args.mode)) {
+      mode = args.mode === 'music' ? 'audio' : args.mode;
+      isStrictExplicitMode = true;
+    }
+
+    return await this.orchestratePrompt(prompt, mode, provider, projectName, requestedModel, abortSignal, threadId, newThread, undefined, isStrictExplicitMode);
+  }
+
+  private async executePipelineCandidateChain(params: {
+    candidateProviders: ProviderId[];
+    effectiveMode: TaskMode;
+    maskedText: string;
+    contextId: string;
+    projectName?: string;
+    requestedModel?: string;
+    abortSignal?: AbortSignal;
+    effectiveThreadId: string;
+    newThread?: boolean;
+    isQuickPrompt?: boolean;
+    isBalanced: boolean;
+    microTask: any;
+    reqAbortController?: AbortController | null;
+    isAgenticClient: boolean;
+    pipeline: 'main' | 'co';
+    reqId: string;
+    startTime: number;
+    bypassedWebviewDispatch?: boolean;
+    forcedProvider?: ProviderId;
+  }): Promise<{
+    text: string;
+    finalResponseWithLocalPath: string;
+    mediaPath?: string;
+    provider: ProviderId;
+    modelUsed?: string;
+    account: any;
+    wasNewChat: boolean;
+    wasRolledOver: boolean;
+    isDirective?: boolean;
+  }> {
+    const {
+      candidateProviders,
+      effectiveMode,
+      maskedText,
+      projectName,
+      requestedModel,
+      abortSignal,
+      effectiveThreadId,
+      newThread,
+      isBalanced,
+      microTask,
+      reqAbortController,
+      isAgenticClient,
+      pipeline,
+      reqId,
+      bypassedWebviewDispatch,
+      forcedProvider,
+    } = params;
+
+    const activeLocalLlmConfig = this.config?.localLLM || DynamicRouter.getLocalLlmConfig();
+    const isLocalMicroTaskEnabled = Boolean(activeLocalLlmConfig?.localMicroTask);
+
+    let executionResult: any = null;
+    let successfulProvider: ProviderId | null = null;
+    let successfulAccount: any = null;
+    let lastCandidateError: any = null;
+    let wasRolledOver = false;
+    let wasNewChat = false;
+
+    for (let i = 0; i < candidateProviders.length; i++) {
+      const providerId = candidateProviders[i];
+
+      // Dedicated execution for Local LLM
+      if (providerId === 'localllm') {
+        const localLlmConfig = this.config?.localLLM || DynamicRouter.getLocalLlmConfig();
+        if (!localLlmConfig?.enabled) {
+          console.warn(`[Transgentic] Local LLM is disabled in settings. Skipping to next candidate in fallback chain.`);
+          lastCandidateError = new Error(`Local LLM is configured as route candidate but is disabled in settings.`);
+          continue;
+        }
+
+        const isLocalMicroTaskActive = (isBalanced || isLocalMicroTaskEnabled) && isAgenticClient;
+        if (isLocalMicroTaskActive && !microTask.isMicroTask) {
+          const directiveText = formatLocalLlmMicroTaskOnlyDirective();
+          return {
+            text: directiveText,
+            finalResponseWithLocalPath: directiveText,
+            provider: 'localllm',
+            modelUsed: localLlmConfig.selectedModel || `local-${localLlmConfig.preset}`,
+            account: { id: 'localllm_default', alias: `Local (${localLlmConfig.preset})` },
+            wasNewChat: false,
+            wasRolledOver: false,
+            isDirective: true,
+          };
+        }
+
+        this.updateCoreState('routing', 'localllm', `Routing to Local LLM (${localLlmConfig.preset})...`);
+
+        const scopedThreadId = `${effectiveThreadId}_localllm`;
+        if (newThread) {
+          globalThreadManager.removeSession(scopedThreadId, 'localllm');
+        }
+
+        const existingSession = globalThreadManager.getSession(scopedThreadId, 'localllm');
+        const isTooLong = !newThread && existingSession && globalThreadManager.shouldRollover(scopedThreadId, 'localllm', 10, 30000);
+        if (isTooLong) {
+          wasRolledOver = true;
+          globalThreadManager.removeSession(scopedThreadId, 'localllm');
+        }
+
+        const presetsAlreadySent = globalThreadManager.hasPresetPromptsBeenSent(scopedThreadId, 'localllm');
+        const isLocalNewChat = Boolean(newThread || isTooLong || !existingSession || !presetsAlreadySent);
+
+        try {
+          const modelName = localLlmConfig.selectedModel || `local-${localLlmConfig.preset}`;
+          this.updateCoreState('processing', 'localllm', `Processing on Local LLM (${modelName})...`);
+
+          let llmPrompt = maskedText;
+          if (isLocalNewChat) {
+            if (isBalanced || isLocalMicroTaskEnabled) {
+              llmPrompt = microTask.isMicroTask
+                ? wrapBalancedLocalLlmPrompt(llmPrompt, microTask.category)
+                : wrapBalancedAgenticPrompt(llmPrompt, effectiveMode);
+            } else if (isAgenticClient) {
+              llmPrompt = wrapUnbalancedAgenticPrompt(llmPrompt, effectiveMode);
+            }
+            if (this.config?.recall) {
+              llmPrompt = applyRecallPipeline(llmPrompt, this.config.recall, effectiveMode);
+            }
+          }
+
+          const previousHistory = (!newThread && !isTooLong) ? globalThreadManager.getHistory(scopedThreadId, 'localllm') : [];
+          const chatMessages = [
+            ...previousHistory.map((h) => ({ role: h.role, content: h.content })),
+            { role: 'user', content: llmPrompt },
+          ];
+
+          const completion = await LocalLlmClient.generateCompletion(chatMessages, localLlmConfig, {
+            temperature: localLlmConfig.temperature,
+            abortSignal: reqAbortController?.signal || abortSignal,
+          });
+
+          globalThreadManager.recordTurn(scopedThreadId, 'localllm', maskedText, completion.text);
+          globalThreadManager.markPresetPromptsSent(scopedThreadId, 'localllm');
+          globalThreadManager.setSession(scopedThreadId, 'localllm', `local://session/${scopedThreadId}`, projectName);
+
+          executionResult = { text: completion.text, provider: 'localllm', modelUsed: modelName };
+          successfulProvider = 'localllm';
+          successfulAccount = { id: 'localllm_default', alias: `Local (${localLlmConfig.preset})` };
+          wasNewChat = bypassedWebviewDispatch ? false : isLocalNewChat;
+          break;
+        } catch (err: any) {
+          console.error(`[Transgentic] Local LLM execution failed:`, err?.message || err);
+          lastCandidateError = err;
+          continue;
+        }
+      }
+
+      // Check developer & user service toggle
+      const cfg = ModelRegistryManager.getProviderConfig(providerId);
+      if (cfg && !cfg.serviceEnabled) {
+        console.warn(`[Transgentic] Provider ${providerId} is disabled in ModelRegistry. Skipping to next candidate.`);
+        lastCandidateError = new Error(`Service "${providerId}" is disabled in Model Registry.`);
+        continue;
+      }
+      if (!ServiceManifestManager.isServiceEnabled(providerId)) {
+        console.warn(`[Transgentic] Provider ${providerId} is disabled in ServiceManifest. Skipping to next candidate.`);
+        lastCandidateError = new Error(`Service "${providerId}" is disabled in Service Manifest.`);
+        continue;
+      }
+
+      const activeAccount = AccountRegistryManager.getActiveAccount(providerId);
+      if (!activeAccount) {
+        console.warn(`[Transgentic] No active account configured for provider ${providerId}. Skipping to next provider in fallback chain.`);
+        lastCandidateError = new Error(`No active account configured for provider "${providerId}".`);
+        continue;
+      }
+
+      let providerStatus = globalSessionManager.getStatus(providerId);
+      if (!providerStatus?.isAuthenticated) {
+        try {
+          providerStatus = await globalSessionManager.refreshProviderStatus(providerId);
+        } catch {}
+      }
+
+      if (providerStatus?.isAuthenticated && (activeAccount.status === 'error' || activeAccount.status === 'unauthenticated')) {
+        activeAccount.status = 'ready';
+        AccountRegistryManager.markStatus(providerId, activeAccount.id, 'ready');
+      }
+
+      if (activeAccount.status === 'rate_limited') {
+        console.warn(`[Transgentic] Provider ${providerId} (${activeAccount.alias}) is rate-limited. Trying next fallback service.`);
+        lastCandidateError = new Error(`[RATE_LIMIT] Profile "${activeAccount.alias}" on ${providerId} is currently rate-limited.`);
+        continue;
+      }
+      if ((activeAccount.status === 'error' || activeAccount.status === 'unauthenticated') && !providerStatus?.isAuthenticated) {
+        console.warn(`[Transgentic] Provider ${providerId} (${activeAccount.alias}) requires manual login. Trying next fallback service.`);
+        lastCandidateError = new Error(`[SECURITY_WARNING] Profile "${activeAccount.alias}" on ${providerId} requires manual login or verification in Drawer.`);
+        continue;
+      }
+
+      const adapter = globalSessionManager.getAdapter(providerId);
+      if (!adapter) {
+        console.warn(`[Transgentic] No adapter found for provider ${providerId}. Skipping.`);
+        lastCandidateError = new Error(`No adapter found for provider "${providerId}".`);
+        continue;
+      }
+
+      this.updateCoreState('routing', providerId, `Routing to ${providerId} (${activeAccount.alias})...`);
+
+      const targetModel =
+        DynamicRouter.resolveTargetModel(providerId, effectiveMode, requestedModel, pipeline) ||
+        ModelRegistryManager.getEffectiveModel(providerId, requestedModel) ||
+        undefined;
+
+      const inFlight = DuplicateActionGuard.getInFlight(
+        providerId,
+        effectiveMode,
+        targetModel,
+        maskedText
+      );
+
+      if (inFlight) {
+        console.warn(
+          `[Transgentic] Duplicate in-flight prompt detected for provider "${providerId}". Coalescing.`
+        );
+        return await inFlight.promise;
+      }
+
+      let resolveInFlight!: (val: any) => void;
+      let rejectInFlight!: (err: any) => void;
+      const inFlightPromise = new Promise((resolve, reject) => {
+        resolveInFlight = resolve;
+        rejectInFlight = reject;
+      });
+
+      DuplicateActionGuard.register(
+        reqId,
+        providerId,
+        effectiveMode,
+        targetModel,
+        maskedText,
+        inFlightPromise
+      );
+
+      let isNewChat = false;
+      try {
+        executionResult = await AccountQueueManager.runTask(activeAccount.id, reqId, async () => {
+          this.updateCoreState('processing', providerId, `Processing on ${providerId} (${activeAccount.alias})...`);
+          globalSessionManager.updateProviderState(providerId, 'busy');
+
+          const contents = await globalSessionManager.ensureWebContents(providerId, activeAccount.partitionKey);
+          await globalRateLimiter.applyJitter(effectiveMode);
+
+          const projectMeta = {
+            projectName,
+            topic: maskedText.slice(0, 30),
+            requestId: reqId,
+          };
+
+          const statusCheck = await adapter.checkRateLimit();
+          if (statusCheck.isRateLimited) {
+            throw new Error(`[RATE_LIMIT] ${providerId} reported rate limit or usage cap.`);
+          }
+
+          globalRateLimiter.recordRequest(providerId);
+
+          const scopedThreadId = `${effectiveThreadId}_${activeAccount.id}`;
+          const existingSession = globalThreadManager.getSession(scopedThreadId, providerId);
+          const isTooLong = !newThread && existingSession && globalThreadManager.shouldRollover(scopedThreadId, providerId, 10, 30000);
+
+          if (newThread || isTooLong) {
+            isNewChat = true;
+            await adapter.navigateToNewChat();
+            globalThreadManager.removeSession(scopedThreadId, providerId);
+            if (isTooLong) {
+              wasRolledOver = true;
+            }
+          } else if (existingSession?.webChatUrl) {
+            const currentUrl = (contents?.getURL() || '').trim();
+            if (currentUrl && !currentUrl.includes(existingSession.webChatUrl) && currentUrl !== existingSession.webChatUrl) {
+              await adapter.navigateToConversation(existingSession.webChatUrl);
+            }
+            const presetsAlreadySent = globalThreadManager.hasPresetPromptsBeenSent(scopedThreadId, providerId);
+            isNewChat = !presetsAlreadySent;
+          } else {
+            const currentUrl = (contents?.getURL() || '').trim();
+            if (currentUrl) {
+              globalThreadManager.setSession(scopedThreadId, providerId, currentUrl, projectName);
+            }
+            const presetsAlreadySent = globalThreadManager.hasPresetPromptsBeenSent(scopedThreadId, providerId);
+            isNewChat = !presetsAlreadySent;
+          }
+
+          if (targetModel) {
+            await ModelScraperEngine.selectRequestedModel(providerId, targetModel, contents);
+          }
+
+          let promptToSend = maskedText;
+          if (isNewChat) {
+            if (isBalanced) {
+              promptToSend = wrapBalancedAgenticPrompt(promptToSend, effectiveMode);
+            } else if (isAgenticClient) {
+              promptToSend = wrapUnbalancedAgenticPrompt(promptToSend, effectiveMode);
+            }
+            if (this.config?.recall) {
+              promptToSend = applyRecallPipeline(promptToSend, this.config.recall, effectiveMode);
+            }
+          }
+
+          // Local Zero-Leak & Compact
+          if (activeLocalLlmConfig?.enabled && activeLocalLlmConfig?.localZeroLeak) {
+            const leakResult = globalLocalZeroLeakManager.sanitizePrompt(promptToSend, reqId);
+            promptToSend = leakResult.sanitizedText;
+          }
+          if (activeLocalLlmConfig?.enabled && activeLocalLlmConfig?.localCompact) {
+            const compactResult = await globalLocalCompactManager.compactPrompt(
+              promptToSend,
+              activeLocalLlmConfig,
+              reqAbortController?.signal || abortSignal
+            );
+            if (compactResult.wasCompacted) {
+              promptToSend = compactResult.compactedText;
+            }
+          }
+
+          let adapterResult: any;
+          const releaseDomLock = await adapter.acquireDomLock();
+          try {
+            try {
+              adapterResult = await adapter.executePrompt(promptToSend, effectiveMode, projectMeta, undefined, reqAbortController?.signal || abortSignal);
+            } catch (promptErr: any) {
+              if (promptErr?.message && /conversation (?:is getting|too) long|context[ _]length/i.test(promptErr.message)) {
+                await adapter.navigateToNewChat();
+                globalThreadManager.removeSession(scopedThreadId, providerId);
+                wasRolledOver = true;
+                let rolloverPrompt = maskedText;
+                if (isBalanced) {
+                  rolloverPrompt = wrapBalancedAgenticPrompt(rolloverPrompt, effectiveMode);
+                } else if (isAgenticClient) {
+                  rolloverPrompt = wrapUnbalancedAgenticPrompt(rolloverPrompt, effectiveMode);
+                }
+                if (this.config?.recall) {
+                  rolloverPrompt = applyRecallPipeline(rolloverPrompt, this.config.recall, effectiveMode);
+                }
+                adapterResult = await adapter.executePrompt(rolloverPrompt, effectiveMode, projectMeta, undefined, reqAbortController?.signal || abortSignal);
+              } else {
+                throw promptErr;
+              }
+            }
+          } finally {
+            releaseDomLock();
+          }
+
+          globalRateLimiter.markSuccess(providerId);
+          AccountRegistryManager.markReady(providerId, activeAccount.id);
+          globalSessionManager.updateProviderState(providerId, 'ready');
+
+          globalThreadManager.recordTurn(scopedThreadId, providerId, maskedText, adapterResult.text || '');
+          globalThreadManager.markPresetPromptsSent(scopedThreadId, providerId);
+          const activeUrl = await adapter.getConversationUrl();
+          if (activeUrl && activeUrl !== adapter.url) {
+            globalThreadManager.setSession(scopedThreadId, providerId, activeUrl, projectName);
+          }
+
+          let savedMediaRelPath: string | undefined = undefined;
+          if (adapterResult.media) {
+            let cookieHeader: string | undefined;
+            try {
+              const sess = globalSessionManager.sessions.get(providerId);
+              if (sess) {
+                const cookies = await sess.cookies.get({});
+                if (cookies && cookies.length > 0) {
+                  cookieHeader = cookies.map((c: any) => `${c.name}=${c.value}`).join('; ');
+                }
+              }
+            } catch {}
+
+            const saved = await globalAssetManager.saveMediaAsset(
+              adapterResult.media.data,
+              adapterResult.media.type,
+              adapterResult.media.suggestedName,
+              cookieHeader
+            );
+            savedMediaRelPath = saved.filePath;
+          }
+
+          let cleanAdapterText = adapterResult.text || '';
+          if (cleanAdapterText.includes('data:')) {
+            const parsed = await globalAssetManager.sanitizeAndPersistEmbeddedBase64(
+              cleanAdapterText,
+              providerId,
+              effectiveMode
+            );
+            cleanAdapterText = parsed.text;
+            if (!savedMediaRelPath && parsed.firstExtractedPath) {
+              savedMediaRelPath = parsed.firstExtractedPath;
+            }
+          }
+
+          return {
+            text: cleanAdapterText,
+            mediaPath: savedMediaRelPath,
+            provider: providerId,
+            modelUsed: targetModel || undefined,
+          };
+        });
+
+        resolveInFlight(executionResult);
+        successfulProvider = providerId;
+        successfulAccount = activeAccount;
+        wasNewChat = isNewChat;
+        break;
+      } catch (candidateErr: any) {
+        rejectInFlight(candidateErr);
+        if (candidateErr.message?.includes('[MODEL_SELECTION_FAILED]')) {
+          globalSessionManager.updateProviderState(providerId, 'ready');
+          throw candidateErr;
+        }
+        const isRateLimit =
+          candidateErr.message?.includes('[RATE_LIMIT]') ||
+          candidateErr.message?.includes('rate limit') ||
+          candidateErr.message?.includes('capacity') ||
+          candidateErr.message?.includes('429');
+
+        if (isRateLimit) {
+          AccountRegistryManager.markRateLimited(providerId, activeAccount.id, 3600);
+          globalRateLimiter.markRateLimited(providerId);
+          globalSessionManager.updateProviderState(providerId, 'rate_limited');
+        } else {
+          AccountRegistryManager.markStatus(providerId, activeAccount.id, 'error');
+          globalSessionManager.updateProviderState(providerId, 'disconnected');
+        }
+
+        lastCandidateError = candidateErr;
+        console.warn(`[Transgentic] Provider ${providerId} (${activeAccount.alias}) failed: ${candidateErr.message}.`);
+
+        if (forcedProvider) {
+          throw candidateErr;
+        }
+      } finally {
+        DuplicateActionGuard.unregister(
+          providerId,
+          effectiveMode,
+          targetModel,
+          maskedText
+        );
+      }
+    }
+
+    if (!executionResult || !successfulProvider || !successfulAccount) {
+      throw (lastCandidateError || new Error(`All candidate AI services in fallback chain failed for mode "${effectiveMode}".`));
+    }
+
+    let sanitizedText = globalBlindingEngine.unblind(executionResult.text);
+    if (globalLocalZeroLeakManager.hasSecretsForRequest(reqId)) {
+      sanitizedText = globalLocalZeroLeakManager.restoreResponse(sanitizedText, reqId);
+    }
+
+    if (sanitizedText && sanitizedText.includes('data:')) {
+      const parsed = await globalAssetManager.sanitizeAndPersistEmbeddedBase64(
+        sanitizedText,
+        successfulProvider,
+        effectiveMode
+      );
+      sanitizedText = parsed.text;
+      if (!executionResult.mediaPath && parsed.firstExtractedPath) {
+        executionResult.mediaPath = parsed.firstExtractedPath;
+      }
+    }
+
+    const activeMediaPath = executionResult.mediaPath;
+    let finalResponseWithLocalPath = sanitizedText;
+    if (activeMediaPath) {
+      const localPathNotice = `Local media asset saved to: ${activeMediaPath}`;
+      if (!finalResponseWithLocalPath || finalResponseWithLocalPath === '(Empty response received from provider)') {
+        finalResponseWithLocalPath = localPathNotice;
+      } else if (!finalResponseWithLocalPath.includes(activeMediaPath)) {
+        finalResponseWithLocalPath = `${localPathNotice}\n\n${finalResponseWithLocalPath}`;
+      }
+    } else if (!finalResponseWithLocalPath || finalResponseWithLocalPath.trim().length === 0) {
+      finalResponseWithLocalPath = '(Empty response received from provider)';
+    }
+
+    if (globalLocalZeroLeakManager.hasSecretsForRequest(reqId)) {
+      finalResponseWithLocalPath = globalLocalZeroLeakManager.restoreResponse(finalResponseWithLocalPath, reqId);
+    }
+
+    if (wasRolledOver) {
+      const providerName = successfulProvider === 'localllm' ? 'Local LLM' : (successfulProvider?.toUpperCase() || 'AI Service');
+      const promptBrief = maskedText.slice(0, 160).replace(/\n/g, ' ');
+      const outputBrief = finalResponseWithLocalPath.slice(0, 200).replace(/\n/g, ' ');
+      const rolloverNotice = (
+        `\n\n---\n` +
+        `[TRANSGENTIC AUTO-NEW-CHAT NOTICE]:\n` +
+        `The conversation with ${providerName} reached the maximum conversation length budget. Transgentic has automatically archived the previous thread and opened a fresh new chat session for your next request to preserve token budget, avoid webview bloat, and maintain high-speed responses.\n\n` +
+        `COMPACT CONTINUITY SUMMARY:\n` +
+        `- Completed Query: "${promptBrief}"\n` +
+        `- Output Summary: "${outputBrief}"\n` +
+        `- Next Action: Ready to continue with your upcoming instructions in the fresh chat.\n\n` +
+        `CONTINUITY INSTRUCTION FOR AGENTIC CLIENT:\n` +
+        `When sending your next request via Transgentic MCP, include the summary above so ${providerName} retains context in the clean session.`
+      );
+      finalResponseWithLocalPath += rolloverNotice;
+    }
+
+    return {
+      text: sanitizedText,
+      finalResponseWithLocalPath,
+      mediaPath: activeMediaPath,
+      provider: successfulProvider,
+      modelUsed: executionResult.modelUsed,
+      account: successfulAccount,
+      wasNewChat,
+      wasRolledOver,
+    };
+  }
+
+  public async orchestratePrompt(
+    rawPrompt: string,
+    mode: TaskMode,
+    forcedProvider?: ProviderId,
+    projectName?: string,
+    requestedModel?: string,
+    abortSignal?: AbortSignal,
+    threadId?: string,
+    newThread?: boolean,
+    isQuickPrompt?: boolean,
+    isStrictExplicitMode?: boolean
+  ): Promise<any> {
+    const startTime = Date.now();
+    this.requestCounter++;
+    const reqId = `req_${Date.now()}_${this.requestCounter}`;
+    const contextId = globalBlindingEngine.createRequestContext();
+
+    // 1. Data Blinding Pipeline (with Request-Scoped Context)
+    const { maskedText, replacementsCount } = globalBlindingEngine.blind(rawPrompt, contextId);
+    let log: McpRequestLog | null = null;
+    let reqAbortController: AbortController | null = null;
+
+    try {
+      // 2. Intelligent Intent Classification
+      const { mode: effectiveMode, isAutoDetected } = DynamicRouter.classifyMode(rawPrompt, mode, isStrictExplicitMode);
+      const isAgenticClient = !isQuickPrompt;
+      const balancedModeConfig = this.config?.balancedMode ?? this.config?.coding?.balancedMode ?? true;
+      const isBalanced = isAgenticClient ? balancedModeConfig : (effectiveMode === 'coding' && balancedModeConfig);
+      const doubleAgentCfg = this.config?.doubleAgent ?? { enabled: false, includeLocalLlm: false };
+      const scenario = determineDispatchScenario(isBalanced, doubleAgentCfg, effectiveMode);
+      const shouldRunScenario2 = !forcedProvider && scenario === 'scenario_2_dual_dispatch';
+
+      // Micro-task classification for Coding mode (or auto-detected coding)
+      const microTask = (effectiveMode === 'coding' || effectiveMode === 'general')
+        ? classifyMicroTask(rawPrompt)
+        : { isMicroTask: false };
+
+      const activeLocalLlmConfig = this.config?.localLLM || DynamicRouter.getLocalLlmConfig();
+      const isLocalLlmAvailable = Boolean(activeLocalLlmConfig?.enabled);
+      const isLocalMicroTaskEnabled = Boolean(activeLocalLlmConfig?.localMicroTask);
+
+      // 3. Resolve Candidate Chain of Providers (Main pipeline)
+      let candidateProviders: ProviderId[] = forcedProvider
+        ? [forcedProvider]
+        : DynamicRouter.getCandidateChain(effectiveMode, undefined, true, 'main', doubleAgentCfg.includeLocalLlm);
+
+      const isLocalLlmInRoute = candidateProviders.includes('localllm');
+
+      const effectiveThreadId =
+        threadId ||
+        (isQuickPrompt ? 'quick_prompt_session' : (projectName ? `project_${projectName}` : 'default_mcp_thread'));
+
+      const defaultProvider = candidateProviders[0];
+      const defaultAccount = AccountRegistryManager.getActiveAccount(defaultProvider);
+      const defaultScopedThreadId = defaultAccount
+        ? `${effectiveThreadId}_${defaultAccount.id}`
+        : `${effectiveThreadId}_${defaultProvider}`;
+      const existingPrimarySession = globalThreadManager.getSession(defaultScopedThreadId, defaultProvider);
+      const isAfterTurnOne = !newThread && Boolean(
+        existingPrimarySession &&
+        (existingPrimarySession.messageCount > 0 || globalThreadManager.hasPresetPromptsBeenSent(defaultScopedThreadId, defaultProvider))
+      );
+
+      let bypassedWebviewDispatch = false;
+      if (
+        isLocalMicroTaskEnabled &&
+        isAfterTurnOne &&
+        microTask.isMicroTask &&
+        !forcedProvider &&
+        isLocalLlmAvailable &&
+        isLocalLlmInRoute &&
+        !shouldRunScenario2
+      ) {
+        if (candidateProviders[0] !== 'localllm') {
+          candidateProviders = ['localllm', ...candidateProviders.filter((p) => p !== 'localllm')];
+          bypassedWebviewDispatch = true;
+        }
+      }
+
+      if (candidateProviders.length === 0 && !shouldRunScenario2) {
+        throw new Error(`No available AI services found for mode "${effectiveMode}".`);
+      }
+
+      const initialProvider = candidateProviders[0] || 'chatgpt';
+      const initialAccount = AccountRegistryManager.getActiveAccount(initialProvider);
+
+      log = {
+        id: reqId,
+        timestamp: startTime,
+        mode: effectiveMode,
+        targetProvider: initialProvider,
+        accountProfileId: initialAccount?.id,
+        accountAlias: initialAccount?.alias,
+        status: 'pending',
+        maskedSecretsCount: replacementsCount,
+        promptSnippet: maskedText.slice(0, 160),
+        promptText: maskedText,
+        balancedModeApplied: isBalanced,
+        autoClassified: isAutoDetected,
+        isQuickPrompt: !!isQuickPrompt,
+        isMicroTask: microTask.isMicroTask,
+        microTaskCategory: microTask.category,
+        bypassedWebviewDispatch,
+        bypassedCloudDispatch: bypassedWebviewDispatch,
+      };
+      this.addLog(log);
+
+      reqAbortController = new AbortController();
+      if (abortSignal) {
+        if (abortSignal.aborted) {
+          reqAbortController.abort();
+        } else {
+          abortSignal.addEventListener('abort', () => reqAbortController?.abort());
+        }
+      }
+      this.activeAbortControllers.set(reqId, reqAbortController);
+
+      let executionResult: any = null;
+      let successfulProvider: ProviderId | null = null;
+      let successfulAccount: any = null;
+      let activeMediaPath: string | undefined = undefined;
+      let finalResponseWithLocalPath = '';
+      let wasRolledOver = false;
+      let wasNewChat = false;
+
+      // 4. Execution Dispatching: Scenario 2 vs Single Pipeline
+      if (shouldRunScenario2) {
+        const mainCandidates = DynamicRouter.getCandidateChain(effectiveMode, undefined, true, 'main', doubleAgentCfg.includeLocalLlm);
+        const coCandidates = DynamicRouter.getCandidateChain(effectiveMode, undefined, true, 'co', doubleAgentCfg.includeLocalLlm);
+
+        if (mainCandidates.length === 0 && coCandidates.length === 0) {
+          throw new Error(`No available AI services found for mode "${effectiveMode}" in either Main or Co pipelines.`);
+        }
+
+        const dualResult = await executeConcurrentDualDispatch(
+          () => this.executePipelineCandidateChain({
+            candidateProviders: mainCandidates,
+            effectiveMode,
+            maskedText,
+            contextId,
+            projectName,
+            requestedModel,
+            abortSignal,
+            effectiveThreadId: `${effectiveThreadId}_main`,
+            newThread,
+            isQuickPrompt,
+            isBalanced: false,
+            microTask,
+            reqAbortController,
+            isAgenticClient,
+            pipeline: 'main',
+            reqId: `${reqId}_main`,
+            startTime,
+            bypassedWebviewDispatch,
+            forcedProvider,
+          }),
+          () => this.executePipelineCandidateChain({
+            candidateProviders: coCandidates,
+            effectiveMode,
+            maskedText,
+            contextId,
+            projectName,
+            requestedModel,
+            abortSignal,
+            effectiveThreadId: `${effectiveThreadId}_co`,
+            newThread,
+            isQuickPrompt,
+            isBalanced: false,
+            microTask,
+            reqAbortController,
+            isAgenticClient,
+            pipeline: 'co',
+            reqId: `${reqId}_co`,
+            startTime,
+            bypassedWebviewDispatch,
+            forcedProvider,
+          }),
+          mainCandidates[0] || 'chatgpt',
+          coCandidates[0] || 'claude'
+        );
+
+        finalResponseWithLocalPath = dualResult.combinedText;
+        successfulProvider = dualResult.mainResult?.provider || dualResult.coResult?.provider || mainCandidates[0];
+        successfulAccount = {
+          id: (dualResult.mainResult as any)?.account?.id || dualResult.mainResult?.accountProfileId || dualResult.coResult?.accountProfileId || 'dual',
+          alias: (dualResult.mainResult as any)?.account?.alias || dualResult.mainResult?.accountAlias || dualResult.coResult?.accountAlias || 'Dual Agent',
+        };
+        activeMediaPath = dualResult.mainResult?.mediaPath || dualResult.coResult?.mediaPath;
+        executionResult = {
+          text: dualResult.combinedText,
+          provider: `${mainCandidates[0]} + ${coCandidates[0]}` as ProviderId,
+          modelUsed: dualResult.mainResult?.modelUsed || dualResult.coResult?.modelUsed,
+          mediaPath: activeMediaPath,
+        };
+        wasRolledOver = Boolean(dualResult.mainResult?.wasRolledOver || dualResult.coResult?.wasRolledOver);
+        wasNewChat = Boolean(dualResult.mainResult?.wasNewChat || dualResult.coResult?.wasNewChat);
+      } else {
+        const pipelineResult = await this.executePipelineCandidateChain({
+          candidateProviders,
+          effectiveMode,
+          maskedText,
+          contextId,
+          projectName,
+          requestedModel,
+          abortSignal,
+          effectiveThreadId,
+          newThread,
+          isQuickPrompt,
+          isBalanced,
+          microTask,
+          reqAbortController,
+          isAgenticClient,
+          pipeline: 'main',
+          reqId,
+          startTime,
+          bypassedWebviewDispatch,
+          forcedProvider,
+        });
+
+        if (pipelineResult.isDirective) {
+          log.status = 'success';
+          log.targetProvider = 'localllm';
+          log.accountProfileId = 'localllm_default';
+          log.accountAlias = pipelineResult.account.alias;
+          log.durationMs = Date.now() - startTime;
+          log.responseText = pipelineResult.text;
+          log.responseSnippet = '[Balanced Local LLM Directive] Instructed agentic client to use Transgentic MCP for micro-tasks only';
+          log.isMicroTask = false;
+          this.updateLog(log);
+          this.updateCoreState('idle');
+
+          return {
+            content: [
+              {
+                type: 'text',
+                text: pipelineResult.text,
+              },
+            ],
+            metadata: {
+              providerUsed: 'localllm',
+              mode: effectiveMode,
+              directive: 'local_llm_micro_task_only',
+              durationMs: Date.now() - startTime,
+            },
+          };
+        }
+
+        finalResponseWithLocalPath = pipelineResult.finalResponseWithLocalPath;
+        successfulProvider = pipelineResult.provider;
+        successfulAccount = pipelineResult.account;
+        activeMediaPath = pipelineResult.mediaPath;
+        executionResult = pipelineResult;
+        wasRolledOver = pipelineResult.wasRolledOver;
+        wasNewChat = pipelineResult.wasNewChat;
+      }
+
+      if (shouldRunScenario2) {
+        log.status = 'success';
+        log.targetProvider = executionResult.provider;
+      } else {
+        const isFallback = successfulProvider !== initialProvider;
+        log.status = isFallback ? 'fallback' : 'success';
+        if (isFallback) {
+          log.targetProvider = initialProvider;
+          log.fallbackProvider = successfulProvider;
+        } else {
+          log.targetProvider = successfulProvider;
+        }
+      }
+      log.accountProfileId = successfulAccount.id;
+      log.accountAlias = successfulAccount.alias;
+      log.durationMs = Date.now() - startTime;
+      log.responseText = finalResponseWithLocalPath;
+      log.responseSnippet = activeMediaPath
+        ? `[Local Media: ${path.basename(activeMediaPath)}] ${finalResponseWithLocalPath.slice(0, 180)}`
+        : finalResponseWithLocalPath.slice(0, 240);
+      log.mediaPath = activeMediaPath;
+      log.modelUsed = executionResult.modelUsed;
+      if (log.presetPromptsAttached === undefined) {
+        log.presetPromptsAttached = wasNewChat;
+      }
+      this.updateLog(log);
+      this.updateCoreState('idle');
+
+      const contentItems: any[] = [];
+      contentItems.push({
+        type: 'text',
+        text: finalResponseWithLocalPath,
+      });
+
+      // 5. Directive & Guidance Injection
+      if (isAgenticClient) {
+        if (scenario === 'scenario_1_balanced_double') {
+          // Scenario 1: Double Agent + Balanced Mode -> Strict trailing structural cross-examination directive
+          contentItems.push({
+            type: 'text',
+            text: `\n\n---\n${formatBalancedDoubleAgentDirective()}`,
+          });
+        } else if (scenario === 'scenario_2_dual_dispatch') {
+          // Scenario 2: Double Agent enabled without balanced mode -> Concurrent dual dispatch with Transgentic-weighted directive
+          contentItems.push({
+            type: 'text',
+            text: `\n\n---\n${formatDualDispatchDoubleAgentDirective()}`,
+          });
+        } else if (scenario === 'standard_balanced') {
+          if (successfulProvider === 'localllm' && (isBalanced || isLocalMicroTaskEnabled)) {
+            const reminderText = wasNewChat
+              ? formatBalancedLocalLlmDirective(executionResult.modelUsed || 'local')
+              : formatLocalLlmDecisionReminder(executionResult.modelUsed || 'local');
+            contentItems.push({
+              type: 'text',
+              text: `\n\n---\n${reminderText}`,
+            });
+          } else if (successfulProvider !== 'localllm') {
+            const isRecallOn = isRecallEnabledForMode(this.config || undefined, effectiveMode);
+            const reminderText = wasNewChat
+              ? formatBalancedWebAiDirective(successfulProvider, isRecallOn)
+              : formatWebAiDecisionReminder(successfulProvider);
+            contentItems.push({
+              type: 'text',
+              text: `\n\n---\n${reminderText}`,
+            });
+          }
+        } else if (scenario === 'standard_single') {
+          // Standard Single without balanced mode -> Remind agentic IDE to mention "use Transgentic MCP" every time
+          const activeProviderName = successfulProvider || executionResult?.provider || candidateProviders[0];
+          const reminderText = formatUnbalancedAgenticReminder(activeProviderName);
+          contentItems.push({
+            type: 'text',
+            text: `\n\n---\n${reminderText}`,
+          });
+        }
+      }
+
+      if (!activeMediaPath && isAgenticClient && ['image', 'video', 'audio', 'music'].includes(effectiveMode)) {
+        contentItems.push({
+          type: 'text',
+          text: `\n[NOTE FOR AGENTIC CLIENT]: Transgentic completed the query but no downloadable media asset file was returned from ${executionResult.provider}. If your workflow requires an asset file, fallback to your own local generation tools or alternative approaches.`,
+        });
+      }
+
+      return {
+        content: contentItems,
+        metadata: {
+          providerUsed: executionResult.provider,
+          modelUsed: executionResult.modelUsed,
+          mode: effectiveMode,
+          accountUsed: successfulAccount.alias,
+          maskedSecretsCount: replacementsCount,
+          durationMs: Date.now() - startTime,
+        },
+      };
+    } catch (err: any) {
+      if (log) {
+        log.status = 'failed';
+        let errMessage = err?.message || 'Execution failed';
+        if (errMessage.toLowerCase().includes('terminated by user') && !abortSignal?.aborted && !reqAbortController?.signal.aborted) {
+          errMessage = 'Request interrupted or empty response';
+        }
+        log.error = errMessage;
+        log.durationMs = Date.now() - startTime;
+        log.responseSnippet = `[Error: ${log.error}]`;
+        this.updateLog(log);
+      }
+
+      // 7. Hard-Stop Policy on terminal failure
+      const providerId = forcedProvider || 'claude';
+      const activeAccount = AccountRegistryManager.getActiveAccount(providerId);
+      const isRateLimit =
+        err.message?.includes('[RATE_LIMIT]') ||
+        err.message?.includes('rate limit') ||
+        err.message?.includes('capacity') ||
+        err.message?.includes('429');
+
+      this.updateCoreState('idle');
+
+      const haltGuardActive = isAgentHaltGuardEnabled(this.config || undefined, mode);
+      if (haltGuardActive && isRateLimit) {
+        const cooldownEstimate = 'approx. 60 minutes';
+        emitRateLimitNotification(providerId, cooldownEstimate);
+
+        return {
+          isError: true,
+          content: [
+            {
+              type: 'text',
+              text: formatAgentHaltDirective(providerId, cooldownEstimate),
+            },
+          ],
+          metadata: {
+            providerUsed: providerId,
+            mode,
+            agentHaltTriggered: true,
+            durationMs: Date.now() - startTime,
+          },
+        };
+      }
+
+      throw new Error(`Transgentic Execution Halt: ${err?.message || 'Request execution stopped'}`);
+    } finally {
+      this.activeAbortControllers.delete(reqId);
+      // 8. Request-scoped 'finally' purge: GUARANTEES all volatile tokens for this request are purged
+      globalBlindingEngine.purgeRequestContext(contextId);
+      globalLocalZeroLeakManager.purgeRequestContext(reqId);
+    }
+  }
+
+  public async start(): Promise<number> {
+    return new Promise((resolve) => {
+      const tryListen = (attemptPort: number) => {
+        this.httpServer = this.app
+          .listen(attemptPort, '127.0.0.1', () => {
+            this.port = attemptPort;
+            console.log(`[Transgentic MCP Server] Listening on http://127.0.0.1:${this.port}`);
+            resolve(this.port);
+          })
+          .on('error', (err: any) => {
+            if (err.code === 'EADDRINUSE') {
+              console.warn(`[Transgentic MCP Server] Port ${attemptPort} in use, trying ${attemptPort + 1}`);
+              tryListen(attemptPort + 1);
+            } else {
+              console.error('[Transgentic MCP Server] Failed to start:', err);
+            }
+          });
+      };
+
+      tryListen(this.port);
+    });
+  }
+
+  public stop(): Promise<void> {
+    return new Promise((resolve) => {
+      if (this.httpServer) {
+        this.httpServer.close(() => {
+          this.httpServer = null;
+          resolve();
+        });
+      } else {
+        resolve();
+      }
+    });
+  }
+
+  public async restart(newPort?: number): Promise<number> {
+    await this.stop();
+    if (newPort && typeof newPort === 'number') {
+      this.port = newPort;
+    }
+    return await this.start();
+  }
+
+  public getPort(): number {
+    return this.port;
+  }
+
+  public setMode(mode: TaskMode): void {
+    this.currentMode = mode;
+    this.notifyCoreStatus();
+  }
+
+  public getCoreStatus(): CoreStatus {
+    return {
+      state: this.currentCoreState,
+      activeProvider: this.activeProvider,
+      activeMode: this.currentMode,
+      currentTaskDescription: this.currentTaskDescription,
+      requestCount: this.requestCounter,
+      totalTokensProtected: globalBlindingEngine.getTokens().length,
+      activeVaultSecrets: globalBlindingEngine.getTokens().length,
+      port: this.port,
+      uptimeSeconds: Math.floor((Date.now() - this.startTime) / 1000),
+    };
+  }
+
+  public getRequestLogs(limit = 20, offset = 0): { logs: McpRequestLog[]; total: number } {
+    return globalLogStorage.query(limit, offset);
+  }
+
+  public clearRequestLogs(): void {
+    globalLogStorage.clear();
+    this.requestLogs = [];
+  }
+
+  private updateCoreState(state: CoreStatus['state'], activeProvider?: ProviderId, taskDesc?: string): void {
+    this.currentCoreState = state;
+    this.activeProvider = activeProvider;
+    this.currentTaskDescription = taskDesc;
+    this.notifyCoreStatus();
+  }
+
+  private addLog(log: McpRequestLog): void {
+    this.requestLogs.unshift(log);
+    if (this.requestLogs.length > 100) this.requestLogs.pop();
+    globalLogStorage.insert(log);
+    for (const listener of this.logListeners) {
+      try {
+        listener(log);
+      } catch {}
+    }
+  }
+
+  private updateLog(log: McpRequestLog): void {
+    const idx = this.requestLogs.findIndex((l) => l.id === log.id);
+    if (idx !== -1) {
+      this.requestLogs[idx] = { ...log };
+    }
+    globalLogStorage.update(log);
+    for (const listener of this.logListeners) {
+      try {
+        listener({ ...log });
+      } catch {}
+    }
+  }
+
+  public terminateRequest(logId: string, reason = 'Terminated by user: Request stopped'): boolean {
+    const controller = this.activeAbortControllers.get(logId);
+    if (controller) {
+      try {
+        controller.abort(new Error(reason));
+      } catch {}
+      this.activeAbortControllers.delete(logId);
+    }
+
+    const log = this.requestLogs.find((l) => l.id === logId);
+    if (log) {
+      log.status = 'failed';
+      log.error = reason;
+      log.durationMs = Date.now() - log.timestamp;
+      log.responseSnippet = `[Terminated: ${reason}]`;
+      this.updateLog(log);
+      this.updateCoreState('idle');
+      return true;
+    }
+
+    const updated = globalLogStorage.updateStatus(logId, 'failed', reason);
+    if (updated) {
+      this.updateLog(updated);
+      this.updateCoreState('idle');
+      return true;
+    }
+    return false;
+  }
+
+  public terminateAllPendingRequests(reason = 'All pending requests terminated by user'): number {
+    let count = 0;
+    for (const [id, controller] of this.activeAbortControllers.entries()) {
+      try {
+        controller.abort(new Error(reason));
+      } catch {}
+    }
+    this.activeAbortControllers.clear();
+
+    for (const log of this.requestLogs) {
+      if (log.status === 'pending') {
+        log.status = 'failed';
+        log.error = reason;
+        log.durationMs = Date.now() - log.timestamp;
+        log.responseSnippet = `[Terminated: ${reason}]`;
+        this.updateLog(log);
+        count++;
+      }
+    }
+
+    const pendingStored = globalLogStorage.getPending();
+    for (const stored of pendingStored) {
+      if (!this.requestLogs.some((l) => l.id === stored.id)) {
+        stored.status = 'failed';
+        stored.error = reason;
+        stored.durationMs = Date.now() - stored.timestamp;
+        stored.responseSnippet = `[Terminated: ${reason}]`;
+        this.updateLog(stored);
+        count++;
+      }
+    }
+
+    this.updateCoreState('idle');
+    return count;
+  }
+
+  private notifyCoreStatus(): void {
+    const status = this.getCoreStatus();
+    for (const listener of this.coreStatusListeners) {
+      try {
+        listener(status);
+      } catch {}
+    }
+  }
+
+  public onLog(cb: (log: McpRequestLog) => void): () => void {
+    this.logListeners.push(cb);
+    return () => {
+      this.logListeners = this.logListeners.filter((l) => l !== cb);
+    };
+  }
+
+  public onCoreStatus(cb: (status: CoreStatus) => void): () => void {
+    this.coreStatusListeners.push(cb);
+    return () => {
+      this.coreStatusListeners = this.coreStatusListeners.filter((l) => l !== cb);
+    };
+  }
+}
+
+export const globalMcpServer = new TransgenticMcpServer(58420);

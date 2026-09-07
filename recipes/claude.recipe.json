@@ -1,0 +1,64 @@
+{
+  "version": "1.0",
+  "id": "claude",
+  "title": "Claude",
+  "domainMatch": "claude.ai",
+  "url": "https://claude.ai",
+  "newChatUrl": "https://claude.ai/new",
+  "resetUrlPatterns": [
+    {
+      "pattern": "/project",
+      "redirectTo": "/new"
+    },
+    {
+      "pattern": "/settings",
+      "redirectTo": "/new"
+    }
+  ],
+  "authStrategy": "cookie_sync",
+  "auth": {
+    "authCookies": [
+      "sessionKey"
+    ],
+    "minCookieLength": 20,
+    "loggedInSelector": "div.ProseMirror[contenteditable=\"true\"], div[contenteditable=\"true\"], textarea[placeholder*=\"Claude\" i], [data-testid=\"user-menu\"], button[aria-label*=\"Account\" i], button[aria-label*=\"Profile\" i]",
+    "loggedOutSelector": "input[type=\"email\"], input[name=\"email\"], input[placeholder*=\"email\" i], a[href*=\"/login\"], a[href*=\"/signup\"], button[data-testid=\"login-button\"]",
+    "loggedOutTextPatterns": [
+      "Question what's next",
+      "Continue with Google",
+      "Continue with email"
+    ],
+    "loginUrls": [
+      "/login",
+      "/signup"
+    ]
+  },
+  "rateLimit": {
+    "textPatterns": [
+      "You have reached your Claude message limit",
+      "You're out of free messages",
+      "Claude is at capacity right now",
+      "Rate limit exceeded"
+    ]
+  },
+  "createdAt": "2026-01-01T00:00:00.000Z",
+  "selectors": {
+    "inputPrompt": "div.ProseMirror, fieldset div[contenteditable=\"true\"], div[contenteditable=\"true\"], textarea[placeholder*=\"Claude\" i], textarea",
+    "submitButton": "button[aria-label*=\"Send\" i], button[type=\"submit\"], button:has(svg)",
+    "stopButton": "button[aria-label*=\"Stop\" i], [data-is-streaming=\"true\"]",
+    "modelDropdownTrigger": "button[aria-label*=\"model\" i], [data-testid=\"model-selector\"]"
+  },
+  "response": {
+    "container": "[data-test-render-count] .font-claude-message, .font-claude-message, div.grid-cols-1 .prose, div[data-is-streaming], div.prose",
+    "textSelector": ".font-claude-message, .prose",
+    "actionButtons": "button[aria-label*=\"Copy\" i], button[aria-label*=\"Copy text\" i], button[aria-label*=\"Retry\" i], button[aria-label*=\"Thumbs up\" i]",
+    "generatingIndicator": "[data-is-streaming=\"true\"], div[data-is-streaming]",
+    "modes": {
+      "text": {
+        "enabled": true,
+        "contentSelector": ".font-claude-message, .prose",
+        "mediaKind": "text"
+      }
+    }
+  }
+}

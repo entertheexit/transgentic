@@ -1,0 +1,80 @@
+{
+  "version": "1.0",
+  "id": "chatgpt",
+  "title": "ChatGPT",
+  "domainMatch": "chatgpt.com",
+  "url": "https://chatgpt.com",
+  "newChatUrl": "https://chatgpt.com",
+  "resetUrlPatterns": [
+    {
+      "pattern": "/projects",
+      "redirectTo": "/"
+    }
+  ],
+  "authStrategy": "cookie_sync",
+  "auth": {
+    "authCookies": [
+      "__Secure-next-auth.session-token",
+      "__Host-next-auth.session-token"
+    ],
+    "minCookieLength": 25,
+    "loggedInSelector": "button[data-testid=\"profile-button\"], button[data-testid=\"user-menu\"], #projects-page-search, [data-testid=\"project-directory-scroll-root\"], a[href=\"/projects\"], button[aria-label*=\"Profile\" i], button[aria-label*=\"Account\" i]",
+    "loggedOutSelector": "button[data-testid=\"login-button\"], button[data-testid=\"signup-button\"], a[href*=\"/auth/login\"], a[href*=\"/auth/signup\"]",
+    "loginUrls": [
+      "/auth/login",
+      "/auth/signup"
+    ],
+    "clientBootstrapSelector": "#client-bootstrap"
+  },
+  "rateLimit": {
+    "textPatterns": [
+      "You've reached your limit",
+      "Too many requests in 1 hour",
+      "Please try again later",
+      "Rate limit reached"
+    ],
+    "selector": "[data-testid=\"request-error-banner\"], .text-red-500"
+  },
+  "createdAt": "2026-01-01T00:00:00.000Z",
+  "selectors": {
+    "inputPrompt": "#prompt-textarea, div.ProseMirror[contenteditable=\"true\"], textarea, div[contenteditable=\"true\"]",
+    "submitButton": "button[data-testid=\"send-button\"], button[aria-label*=\"Send prompt\" i], button[aria-label*=\"Send\" i], button.composer-submit-button-color, button[data-testid=\"composer-speech-button\"] + button",
+    "stopButton": "button[data-testid=\"stop-button\"], button[aria-label*=\"Stop\" i]",
+    "modelDropdownTrigger": "[data-testid=\"model-selector-button\"], button[aria-haspopup=\"menu\"]"
+  },
+  "response": {
+    "container": "[data-message-author-role=\"assistant\"], div[data-testid^=\"conversation-turn-\"]:not([data-message-author-role=\"user\"]), div.agent-turn",
+    "textSelector": ".response-content-markdown, .markdown, .prose",
+    "actionButtons": "button[data-testid*=\"copy\" i], button[aria-label*=\"Copy\" i], button[aria-label*=\"Good response\" i], button[aria-label*=\"Bad response\" i]",
+    "generatingIndicator": "[class*=\"imagegen-loading\"], [class*=\"placeholder-shimmer\"], .animate-pulse",
+    "excludeSelectors": [
+      "details",
+      "[data-testid*=\"thought\" i]",
+      "[data-testid*=\"reasoning\" i]",
+      ".thinking-accordion"
+    ],
+    "modes": {
+      "text": {
+        "enabled": true,
+        "contentSelector": ".response-content-markdown, .markdown, .prose",
+        "mediaKind": "text"
+      },
+      "image": {
+        "enabled": true,
+        "contentSelector": "img[src*=\"backend-api/estuary/content\"], img[src*=\"estuary/content\"], img[alt*=\"Generated image\" i], div[class*=\"imagegen\"] img, div[id^=\"image-\"] img, img[src*=\"dall-e\"], img[src*=\"oaiusercontent\"], img.dall-e-image",
+        "mediaKind": "image"
+      },
+      "video": {
+        "enabled": true,
+        "contentSelector": "video source, video[src], [data-testid*=\"video\"] video, video, a[download][href*=\"video\"]",
+        "downloadSelector": "a[download][href*=\"video\"]",
+        "mediaKind": "video"
+      },
+      "audio": {
+        "enabled": true,
+        "contentSelector": "audio source, audio[src], [data-testid*=\"audio\"] audio, audio, [data-testid=\"audio-player\"] audio",
+        "mediaKind": "audio"
+      }
+    }
+  }
+}

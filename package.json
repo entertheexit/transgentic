@@ -1,0 +1,102 @@
+{
+  "name": "transgentic",
+  "private": true,
+  "files": [
+    "dist/",
+    "dist-electron/",
+    "bin/",
+    "extensions/transgentic-sync/",
+    "LICENSE",
+    "README.md"
+  ],
+  "version": "1.0.1",
+  "description": "Tactile Electron MCP bridge and orchestration engine for web AI sessions",
+  "desktopName": "transgentic.desktop",
+  "main": "dist-electron/main/index.js",
+  "bin": {
+    "transgentic-cli": "./bin/transgentic-cli.js"
+  },
+  "type": "module",
+  "scripts": {
+    "prebuild:electron": "node scripts/clean-electron.mjs",
+    "check:publication": "node scripts/check-publication.mjs",
+    "dev": "concurrently -k \"vite\" \"npm run build:electron:watch\" \"wait-on tcp:5173 && cross-env VITE_DEV_SERVER_URL=http://localhost:5173 electron .\"",
+    "build": "tsc && vite build && npm run build:electron",
+    "build:electron": "tsc -p tsconfig.electron.json && node scripts/copy-electron-resources.mjs",
+    "build:electron:watch": "tsc -p tsconfig.electron.json -w",
+    "test": "vitest run",
+    "start": "npm run build && electron .",
+    "dist": "npm run build && electron-builder",
+    "build:mac": "npm run build && electron-builder --mac",
+    "build:mac:arm64": "npm run build && electron-builder --mac --arm64",
+    "build:mac:x64": "npm run build && electron-builder --mac --x64",
+    "build:win": "npm run build && electron-builder --win",
+    "build:win:x64": "npm run build && electron-builder --win --x64",
+    "build:linux": "npm run build && electron-builder --linux",
+    "build:linux:x64": "npm run build && electron-builder --linux --x64",
+    "build:all": "npm run build && electron-builder -mwl"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "electron",
+    "ai-orchestration",
+    "claude",
+    "chatgpt",
+    "gemini",
+    "grok"
+  ],
+  "author": {
+    "name": "Exit",
+    "email": "exit.technology@outlook.com"
+  },
+  "homepage": "https://github.com/entertheexit/transgentic#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/entertheexit/transgentic.git"
+  },
+  "bugs": {
+    "url": "https://github.com/entertheexit/transgentic/issues"
+  },
+  "funding": [
+    {
+      "type": "patreon",
+      "url": "https://www.patreon.com/patiparnne"
+    },
+    {
+      "type": "buy-me-a-coffee",
+      "url": "https://buymeacoffee.com/patiparnne"
+    }
+  ],
+  "license": "SEE LICENSE IN LICENSE",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.6.1",
+    "clsx": "^2.1.1",
+    "cors": "^2.8.5",
+    "express": "^4.21.2",
+    "framer-motion": "^12.4.7",
+    "lucide-react": "^0.475.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "tailwind-merge": "^3.0.1"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.17",
+    "@types/express": "^5.0.0",
+    "@types/node": "^22.13.4",
+    "@types/react": "^19.0.10",
+    "@types/react-dom": "^19.0.4",
+    "@vitejs/plugin-react": "^4.3.4",
+    "autoprefixer": "^10.4.20",
+    "concurrently": "^9.1.2",
+    "cross-env": "^7.0.3",
+    "electron": "^34.2.0",
+    "electron-builder": "^26.15.3",
+    "postcss": "^8.5.2",
+    "tailwindcss": "^3.4.17",
+    "typescript": "^5.7.3",
+    "vite": "^6.1.0",
+    "vitest": "^3.0.5",
+    "wait-on": "^8.0.2"
+  }
+}

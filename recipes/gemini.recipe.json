@@ -1,0 +1,73 @@
+{
+  "version": "1.0",
+  "id": "gemini",
+  "title": "Gemini",
+  "domainMatch": "gemini.google.com",
+  "url": "https://gemini.google.com/app",
+  "newChatUrl": "https://gemini.google.com/app",
+  "authStrategy": "cookie_sync",
+  "auth": {
+    "authCookies": [
+      "__Secure-1PSIDTS",
+      "__Secure-3PSIDTS",
+      "__Secure-1PSID",
+      "__Secure-3PSID"
+    ],
+    "cookieDomains": [
+      "google.com"
+    ],
+    "requireAllCookies": false,
+    "minCookieLength": 20,
+    "loggedInSelector": "button[aria-label*=\"Google Account\" i], img[alt*=\"profile\" i], img[alt*=\"Google Account\" i], a[aria-label*=\"Google Account\" i], [data-id=\"avatar-button\"]",
+    "loggedOutSelector": "a[href*=\"accounts.google.com/ServiceLogin\"], a[href*=\"accounts.google.com/signin\"], a[aria-label*=\"Sign in\" i], button[aria-label*=\"Sign in\" i], a[data-g-label=\"sign-in\"]",
+    "loginUrls": [
+      "accounts.google.com/ServiceLogin",
+      "accounts.google.com/signin"
+    ]
+  },
+  "rateLimit": {
+    "textPatterns": [
+      "You've reached your limit",
+      "Gemini is currently unavailable",
+      "Please wait before sending more requests"
+    ]
+  },
+  "createdAt": "2026-01-01T00:00:00.000Z",
+  "selectors": {
+    "inputPrompt": "div.ql-editor, rich-textarea textarea, rich-textarea div[contenteditable=\"true\"], div[contenteditable=\"true\"]",
+    "submitButton": "button[aria-label*=\"Send message\" i], button[aria-label*=\"Send prompt\" i], button[aria-label*=\"Send\" i], button[aria-label*=\"ส่ง\" i], button.send-button, button[mattooltip*=\"Send\" i]",
+    "stopButton": "button[aria-label*=\"Stop\" i], .streaming-indicator",
+    "modelDropdownTrigger": "button[aria-label*=\"model\" i], div.model-switcher"
+  },
+  "response": {
+    "container": "model-response, response-container, structured-content-container, message-content",
+    "textSelector": ".response-content-markdown, .markdown, .prose",
+    "actionButtons": "button[aria-label*=\"Copy\" i], button[aria-label*=\"Download\" i], copy-button, share-button",
+    "generatingIndicator": "[data-test-id=\"image-loading-overlay\"]:not(.done-generating), .shimmer-overlay:not(.done-generating)",
+    "modes": {
+      "text": {
+        "enabled": true,
+        "contentSelector": ".response-content-markdown, .markdown, .prose",
+        "mediaKind": "text"
+      },
+      "image": {
+        "enabled": true,
+        "contentSelector": "single-image img.loaded, single-image img[src], generated-image img.loaded, generated-image img[src], .generated-images img",
+        "downloadSelector": "[data-test-id=\"download-generated-image-button\"]",
+        "mediaKind": "image"
+      },
+      "video": {
+        "enabled": true,
+        "contentSelector": "generated-video video, video-player video, video",
+        "downloadSelector": "button[aria-label*=\"Download video\" i]",
+        "mediaKind": "video"
+      },
+      "audio": {
+        "enabled": true,
+        "contentSelector": "generated-music video, generated-music audio, video-player video, audio",
+        "downloadSelector": "button[aria-label*=\"Download track\" i]",
+        "mediaKind": "audio"
+      }
+    }
+  }
+}

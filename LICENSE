@@ -1,0 +1,85 @@
+Transgentic Source-Available License 1.0
+
+Copyright (c) 2026 Transgentic Contributors
+
+1. Scope and acceptance
+
+This license covers Transgentic's original source code, application binaries,
+and associated documentation supplied under this license (the "Software"),
+including modifications and derivative works of that Software. By exercising
+the permissions below, you agree to these conditions. Each copyright holder
+grants permissions only for rights they hold or are authorized to license.
+
+2. Permitted use
+
+Subject to this license, you may inspect, clone, copy, build, run, and modify
+the Software without a license fee for personal purposes and for the internal
+business operations of yourself or your organization. This includes use by
+employees and contractors acting on the organization's behalf.
+
+You may use the Software as a tool to perform paid employment, freelance work,
+consulting, or client projects, and may sell independently created outputs,
+such as documents, images, or code that do not contain the Software. Such use
+does not require a separate commercial license. This license does not grant
+rights in third-party content, generated outputs, or provider services.
+
+3. Sharing and forks
+
+You may distribute unmodified or modified copies in source or binary form,
+including public forks, without charge and not as part of a paid product,
+subscription, or other commercial distribution arrangement. Include this
+license and all applicable copyright and third-party notices with every copy.
+Identify modified versions as modified, and do not represent them as official
+Transgentic releases. Recipients receive the same permissions and restrictions
+under this license; you may not relicense the Software under other terms.
+
+Copies shared with employees and contractors solely for the permitted internal
+use in section 2 are allowed, even where those people are compensated for work.
+
+4. Activities requiring separate permission
+
+Without a separate written license from the applicable copyright holders,
+you may not:
+
+- Sell, sublicense for a fee, rent, or lease the Software, whether unmodified,
+  modified, rebranded, or incorporated into another product.
+- Commercially distribute the Software, including bundling it with a paid
+  product or subscription or charging for access to downloads or copies.
+- Offer the Software's functionality to third parties as a hosted or managed
+  service, whether directly charged for, included in another paid offering,
+  or offered free of charge.
+
+The service restriction does not prohibit hosting for your own organization's
+internal use, or using the Software yourself to create and deliver client
+work as allowed in section 2. Delivering work results is different from giving
+clients access to the Software's functionality. A separately licensed provider
+service or independently created output is not the Software merely because
+you access or produce it using Transgentic.
+
+5. Reserved rights and other licenses
+
+Rights not expressly granted are reserved. No trademark license or permission
+to imply endorsement is granted. Third-party components remain under their
+own licenses; this license does not replace their terms or notices. Rights
+granted under licenses accompanying previously distributed versions remain
+unaffected. Rights that applicable law does not permit limiting are unaffected.
+
+Copyright holders may offer their own work under separate commercial terms.
+This license does not give any contributor's rights to another person or
+authorize relicensing contributions without the necessary permission.
+
+6. Termination
+
+Your permissions under this license terminate if you violate its conditions.
+Upon termination, you must cease exercising permissions granted by this
+license unless the applicable copyright holders restore them in writing.
+
+7. Disclaimer
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
