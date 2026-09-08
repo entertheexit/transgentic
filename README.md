@@ -45,7 +45,7 @@ The planned public repository will contain reviewed application source, document
 > [!NOTE]
 > **Authentication & Extension Setup**: Initial session authentication is imported via our lightweight companion Chrome extension, available through the in-app setup flow. Once synchronized, Transgentic operates standalone in isolated background partitions — Google Chrome does not need to remain open.
 >
-> Download the companion extension from the [Transgentic v1.0.0 release](https://github.com/entertheexit/transgentic/releases/download/v1.0.0/transgentic-sync.zip). Extract the ZIP, open `chrome://extensions`, enable **Developer mode**, choose **Load unpacked**, and select the extracted folder containing `manifest.json`.
+> Download the companion extension from the [Transgentic v1.0.1 release](https://github.com/entertheexit/transgentic/releases/download/v1.0.1/transgentic-sync.zip). Extract the ZIP, open `chrome://extensions`, enable **Developer mode**, choose **Load unpacked**, and select the extracted folder containing `manifest.json`.
 
 ### ✨ Key Capabilities
 

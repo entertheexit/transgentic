@@ -1306,7 +1306,7 @@ http_headers = { "Authorization" = "Bearer ${clientToken || 'YOUR_TOKEN'}" }`;
             <div className="p-2.5 rounded-xl bg-orange-950/20 border border-orange-500/30 flex items-start gap-2 text-[10.5px] leading-relaxed text-orange-200">
               <ShieldAlert className="w-4 h-4 text-orange-400 shrink-0 mt-0.5" />
               <div>
-                <strong className="text-orange-300">Local LLM Exclusive Engine (Manual Only):</strong> Background auto-healing has been removed to safeguard your AI accounts. Furthermore, cloud AI services (Claude, ChatGPT) strictly prohibit reverse-engineering competing web interfaces due to safety policies. DOM selector repair operates <strong>exclusively via your Local LLM (Ollama / LM Studio)</strong> on-demand.
+                <strong className="text-orange-300">Local LLM Exclusive Engine (On-Demand):</strong> DOM selector repair operates <strong>exclusively via your Local LLM (Ollama / LM Studio)</strong> on-demand. Cloud AI services (Claude, ChatGPT) strictly prohibit reverse-engineering competing web interfaces due to safety policies, ensuring all DOM inspection and repair remains private and compliant.
               </div>
             </div>
 
