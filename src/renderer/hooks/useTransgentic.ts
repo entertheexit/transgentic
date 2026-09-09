@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { isQuickPromptConversation } from '../../shared/conversationScope.js';
 import {
   BlindedTokenMap,
   CoreStatus,
@@ -795,7 +796,7 @@ export function useTransgentic() {
 
   const clearThreadSessions = useCallback(async (providerId?: ProviderId) => {
     if (api?.clearThreadSessions) {
-      const res = await api.clearThreadSessions({ providerId });
+      const res = await api.clearThreadSessions({ providerId, scope: 'quick_prompt' });
       if (res?.sessions) {
         setActiveSessions(res.sessions);
       } else {
@@ -1001,7 +1002,7 @@ export function useTransgentic() {
     routeMatrix,
     activeDrawerProvider,
     activeSessions,
-    hasActiveSession: activeSessions.length > 0,
+    hasActiveSession: activeSessions.some((session) => isQuickPromptConversation(session.threadId)),
     clearThreadSessions,
     servicesManifest,
     toggleExperimentalService,

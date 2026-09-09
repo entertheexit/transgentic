@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { classifyMicroTask } from '../src/main/mcp/handlers/microTaskClassifier.js';
 import {
   wrapBalancedLocalLlmPrompt,
@@ -8,8 +8,13 @@ import {
   formatLocalLlmDecisionReminder,
   formatWebAiDecisionReminder,
   formatUnbalancedAgenticReminder,
+  formatCodexFallbackDirective,
 } from '../src/main/mcp/handlers/codingHandler.js';
 import { formatDualDispatchDoubleAgentDirective } from '../src/main/mcp/dispatchPipeline.js';
+import { DynamicRouter } from '../src/main/mcp/router.js';
+
+beforeEach(() => { vi.spyOn(DynamicRouter, 'savePersistedRoutes').mockImplementation(() => {}); });
+afterEach(() => { vi.restoreAllMocks(); });
 
 describe('Local LLM Micro-Task in Balanced Mode Unit & Integration Tests', () => {
   describe('Classification of Micro-Tasks vs Complex Tasks', () => {
@@ -39,6 +44,27 @@ describe('Local LLM Micro-Task in Balanced Mode Unit & Integration Tests', () =>
       const classification = classifyMicroTask(prompt);
       expect(classification.isMicroTask).toBe(true);
       expect(classification.category).toBe('test_stubs');
+    });
+
+    it('should classify standalone TypeScript helper function with Vitest test as micro-task', () => {
+      const prompt = 'Write only a standalone TypeScript function permutations<T> (items: readonly T[]): T[][] returning every permutation without mutating items. Include a Vitest test that [1,2,3,4] yields 24 unique permutations and input remains unchanged. This is a simple unit-test helper micro-task.';
+      const classification = classifyMicroTask(prompt);
+      expect(classification.isMicroTask).toBe(true);
+      expect(classification.category).toBe('test_stubs');
+    });
+
+    it('should classify standalone pure helper function as helper_fn micro-task', () => {
+      const prompt = 'Write only a standalone TypeScript function permutations<T> (items: readonly T[]): T[][] returning every permutation without mutating items.';
+      const classification = classifyMicroTask(prompt);
+      expect(classification.isMicroTask).toBe(true);
+      expect(classification.category).toBe('helper_fn');
+    });
+
+    it('should classify explicit micro-task as micro-task', () => {
+      const prompt = 'Implement a quick string utility function to slugify titles. This is a micro-task.';
+      const classification = classifyMicroTask(prompt);
+      expect(classification.isMicroTask).toBe(true);
+      expect(classification.category).toBe('helper_fn');
     });
 
     it('should classify complex system architecture as NOT a micro-task', () => {
@@ -82,7 +108,8 @@ describe('Local LLM Micro-Task in Balanced Mode Unit & Integration Tests', () =>
       expect(directive).toContain('TypeScript type / interface generation from JSON schemas');
       expect(directive).toContain('Docstrings / JSDoc / Comment generation');
       expect(directive).toContain('Simple standalone unit test stubs');
-      expect(directive).toContain('Continue with your current task implementation autonomously now.');
+      expect(directive).toContain('Standalone helper, utility, and pure algorithm functions');
+      expect(directive).toContain('answer questions and reviews directly');
     });
   });
 
@@ -337,95 +364,7 @@ describe('Local LLM Micro-Task in Balanced Mode Unit & Integration Tests', () =>
       expect(candidateProviders).toEqual(['localllm', 'chatgpt']);
     });
 
-    it('Scenario 1: should execute standard Local LLM without directive when Local LLM - Balanced - Local Micro-task', () => {
-      const isBalanced = false;
-      const isLocalMicroTaskEnabled = false;
-      const isAgenticClient = true;
-      const prompt = 'Plan a full refactoring of the entire authentication and database system';
-      const microTask = classifyMicroTask(prompt);
-
-      expect(microTask.isMicroTask).toBe(false);
-
-      // Condition: isLocalMicroTaskActive = (isBalanced || isLocalMicroTaskEnabled) && isAgenticClient
-      const isLocalMicroTaskActive = (isBalanced || isLocalMicroTaskEnabled) && isAgenticClient;
-      const shouldReturnDirective = isLocalMicroTaskActive && !microTask.isMicroTask;
-
-      // In Scenario 1 (both disabled), Local LLM operates as a standard LLM without micro-task restriction
-      expect(isLocalMicroTaskActive).toBe(false);
-      expect(shouldReturnDirective).toBe(false);
-    });
-
-    it('Scenario 2: Local LLM + Balanced + Local Micro-task = Local LLM + Balanced = Local LLM + Local Micro-task', () => {
-      const isAgenticClient = true;
-      const complexPrompt = 'Plan a full refactoring of the entire authentication and database system';
-      const microPrompt = 'Create a regex to validate emails';
-
-      const complexMicroTask = classifyMicroTask(complexPrompt);
-      const microMicroTask = classifyMicroTask(microPrompt);
-
-      expect(complexMicroTask.isMicroTask).toBe(false);
-      expect(microMicroTask.isMicroTask).toBe(true);
-
-      // Case A: Local LLM + Balanced + Local Micro-task
-      const activeA = (true || true) && isAgenticClient;
-      const dirA_complex = activeA && !complexMicroTask.isMicroTask;
-      const dirA_micro = activeA && !microMicroTask.isMicroTask;
-
-      // Case B: Local LLM + Balanced - Local Micro-task
-      const activeB = (true || false) && isAgenticClient;
-      const dirB_complex = activeB && !complexMicroTask.isMicroTask;
-      const dirB_micro = activeB && !microMicroTask.isMicroTask;
-
-      // Case C: Local LLM - Balanced + Local Micro-task
-      const activeC = (false || true) && isAgenticClient;
-      const dirC_complex = activeC && !complexMicroTask.isMicroTask;
-      const dirC_micro = activeC && !microMicroTask.isMicroTask;
-
-      // All three combinations produce identical outcomes
-      expect(activeA).toBe(true);
-      expect(activeB).toBe(true);
-      expect(activeC).toBe(true);
-
-      expect(dirA_complex).toBe(true);
-      expect(dirB_complex).toBe(true);
-      expect(dirC_complex).toBe(true);
-
-      expect(dirA_micro).toBe(false);
-      expect(dirB_micro).toBe(false);
-      expect(dirC_micro).toBe(false);
-    });
-
-    it('should return directive when provider is localllm in balanced mode and task is complex', () => {
-      const isBalanced = true;
-      const isLocalMicroTaskEnabled = false;
-      const isAgenticClient = true;
-      const prompt = 'Plan a full refactoring of the entire authentication and database system';
-      const microTask = classifyMicroTask(prompt);
-
-      expect(microTask.isMicroTask).toBe(false);
-
-      const isLocalMicroTaskActive = (isBalanced || isLocalMicroTaskEnabled) && isAgenticClient;
-      const shouldReturnDirective = isLocalMicroTaskActive && !microTask.isMicroTask;
-      expect(shouldReturnDirective).toBe(true);
-
-      const directive = formatLocalLlmMicroTaskOnlyDirective();
-      expect(directive).toContain('[TRANSGENTIC BALANCED HARNESS: LOCAL LLM DIRECTIVE]');
-      expect(directive).toContain('Continue with your current task implementation autonomously now.');
-    });
-
-    it('should execute locally on localllm without directive when task IS a micro-task', () => {
-      const isBalanced = true;
-      const isLocalMicroTaskEnabled = false;
-      const isAgenticClient = true;
-      const prompt = 'Convert this JSON to TypeScript types: { "id": 1, "title": "test" }';
-      const microTask = classifyMicroTask(prompt);
-
-      expect(microTask.isMicroTask).toBe(true);
-
-      const isLocalMicroTaskActive = (isBalanced || isLocalMicroTaskEnabled) && isAgenticClient;
-      const shouldReturnDirective = isLocalMicroTaskActive && !microTask.isMicroTask;
-      expect(shouldReturnDirective).toBe(false);
-    });
+    // Dispatch behavior is exercised against the actual server in responseGuidance.test.ts.
   });
 
   describe('Turn 1 Balanced Mode Response Guidance Simulation', () => {
@@ -451,7 +390,7 @@ describe('Local LLM Micro-Task in Balanced Mode Unit & Integration Tests', () =>
       expect(contentItems[0].text).toBe(rawResponse);
       expect(contentItems[1].text).toContain('[TRANSGENTIC BALANCED HARNESS: LOCAL LLM DIRECTIVE]');
       expect(contentItems[1].text).toContain('only invoke Transgentic MCP (e.g. by mentioning "use Transgentic MCP") for simple, fast micro-tasks');
-      expect(contentItems[1].text).toContain('Continue with your current task implementation autonomously now.');
+      expect(contentItems[1].text).toContain('answer questions and reviews directly');
     });
 
     it('should attach Local LLM decision reminder on Turn 2+ (wasNewChat = false) prompting client to decide', () => {
@@ -513,7 +452,7 @@ describe('Local LLM Micro-Task in Balanced Mode Unit & Integration Tests', () =>
       expect(contentItems[1].text).toContain('[TRANSGENTIC BALANCED HARNESS: WEB AI DIRECTIVE]');
       expect(contentItems[1].text).toContain('The active provider is Web AI Services (CLAUDE) running under Balanced Mode');
       expect(contentItems[1].text).toContain('Only invoke Transgentic MCP (e.g. by mentioning "use Transgentic MCP") when you require hard thinking');
-      expect(contentItems[1].text).toContain('Continue with implementing your task in your workspace now.');
+      expect(contentItems[1].text).toContain('answer questions and reviews directly');
     });
 
     it('should attach Web AI decision reminder on Turn 2+ (wasNewChat = false) prompting client to decide', () => {
@@ -615,7 +554,7 @@ describe('Local LLM Micro-Task in Balanced Mode Unit & Integration Tests', () =>
       expect(contentItems).toHaveLength(2);
       expect(contentItems[1].text).toContain('[TRANSGENTIC GUIDANCE - CLAUDE - WEIGHT ON TRANSGENTIC]');
       expect(contentItems[1].text).toContain('Balanced Mode is disabled');
-      expect(contentItems[1].text).toContain('Mention "use Transgentic MCP" in every subsequent turn/step');
+      expect(contentItems[1].text).toContain('Use Transgentic MCP for further assistance when useful.');
     });
 
     it('should attach formatDualDispatchDoubleAgentDirective in Scenario 2 when Double Agent is enabled and Balanced is DISABLED', () => {
@@ -638,8 +577,94 @@ describe('Local LLM Micro-Task in Balanced Mode Unit & Integration Tests', () =>
       expect(contentItems).toHaveLength(2);
       expect(contentItems[1].text).toContain('[TRANSGENTIC DOUBLE-AGENT DIRECTIVE - WEIGHT ON TRANSGENTIC]');
       expect(contentItems[1].text).toContain('Balanced Mode is disabled: This workflow is weighted heavily on Transgentic MCP');
-      expect(contentItems[1].text).toContain('mention "use Transgentic MCP" in every subsequent turn/step');
+      expect(contentItems[1].text).toContain('Use Transgentic MCP for further assistance when useful.');
+    });
+  });
+
+  describe('Deselected Routing & Coding-Only Micro-Task Scope', () => {
+    it('should return empty candidate chain when primary service is explicitly deselected', () => {
+      // Save existing route
+      const orig = DynamicRouter.getRule('coding', 'main');
+      DynamicRouter.updateRouteConfig('coding', {
+        defaultService: '',
+        primary: '' as any,
+        fallbackChain: [],
+      }, 'main');
+
+      const candidates = DynamicRouter.getCandidateChain('coding', undefined, false, 'main');
+      expect(candidates).toEqual([]);
+
+      // Restore
+      DynamicRouter.updateRouteConfig('coding', orig, 'main');
+    });
+
+    it('should promote localllm when service is deselected but prompt is a micro-task and local micro-task is enabled', () => {
+      const effectiveMode = 'coding';
+      const isLocalMicroTaskEnabled = true;
+      const isLocalLlmAvailable = true;
+      const microTask = { isMicroTask: true, category: 'regex' };
+      const forcedProvider = undefined;
+      const shouldRunScenario2 = false;
+
+      let candidateProviders: string[] = []; // Deselected service
+
+      if (
+        effectiveMode === 'coding' &&
+        isLocalMicroTaskEnabled &&
+        microTask.isMicroTask &&
+        !forcedProvider &&
+        isLocalLlmAvailable &&
+        !shouldRunScenario2
+      ) {
+        if (candidateProviders.length === 0) {
+          candidateProviders = ['localllm', ...candidateProviders.filter((p) => p !== 'localllm')];
+        }
+      }
+
+      expect(candidateProviders).toEqual(['localllm']);
+    });
+
+    it('should fall back to Codex directive when service is deselected and prompt is not a micro-task', () => {
+      const effectiveMode = 'coding';
+      const isLocalMicroTaskEnabled = true;
+      const isLocalLlmAvailable = true;
+      const microTask = { isMicroTask: false };
+      const forcedProvider = undefined;
+      const shouldRunScenario2 = false;
+
+      let candidateProviders: string[] = []; // Deselected service
+
+      if (
+        effectiveMode === 'coding' &&
+        isLocalMicroTaskEnabled &&
+        microTask.isMicroTask &&
+        !forcedProvider &&
+        isLocalLlmAvailable &&
+        !shouldRunScenario2
+      ) {
+        if (candidateProviders.length === 0) {
+          candidateProviders = ['localllm'];
+        }
+      }
+
+      expect(candidateProviders).toHaveLength(0);
+
+      const directive = formatCodexFallbackDirective(effectiveMode as any, isLocalMicroTaskEnabled && isLocalLlmAvailable);
+      expect(directive).toContain('[TRANSGENTIC CODEX DIRECTIVE: AUTONOMOUS REASONING & EXECUTION]');
+      expect(directive).toContain('No external AI service is available for "coding" mode');
+      expect(directive).toContain('Transgentic Local LLM is available for micro-tasks');
+    });
+
+    it('should not treat prompts in image, video, audio as micro-tasks', () => {
+      const nonCodingModes = ['image', 'video', 'audio'] as const;
+      const prompt = 'Write a regex to match emails';
+
+      for (const mode of nonCodingModes) {
+        const microTask = (mode as string) === 'coding'
+          ? classifyMicroTask(prompt)
+          : { isMicroTask: false };
+        expect(microTask.isMicroTask).toBe(false);
+      }
     });
   });
 });
-

@@ -19,9 +19,9 @@ export function formatAgentHaltDirective(provider: string, cooldownEstimate?: st
 Provider '${provider}' is currently rate-limited (Estimated reset: ${estimate}).
 
 MANDATORY AGENT BEHAVIOR:
-- Stop execution immediately.
-- Do not retry or call alternative tools autonomously.
-- Summarize current progress and prompt the human user for their preferred next step, or fallback to local agentic execution.`;
+- Pause requests to this provider until it becomes available.
+- Report the rate limit and any completed work honestly.
+- Continue independent work only within the user's requested scope; this notice does not authorize new actions.`;
 }
 
 export function emitRateLimitNotification(provider: string, cooldownEstimate?: string): void {

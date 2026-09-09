@@ -185,10 +185,14 @@ export class DynamicRouter {
   }
 
   public static enforceMutualExclusion(mode: TaskMode): void {
-    const mainPrimary = this.currentRoutes.main[mode].defaultService || this.currentRoutes.main[mode].primary;
-    const coPrimary = this.currentRoutes.co[mode].defaultService || this.currentRoutes.co[mode].primary;
+    const mainPrimary = this.currentRoutes.main[mode].defaultService !== undefined
+      ? this.currentRoutes.main[mode].defaultService
+      : this.currentRoutes.main[mode].primary;
+    const coPrimary = this.currentRoutes.co[mode].defaultService !== undefined
+      ? this.currentRoutes.co[mode].defaultService
+      : this.currentRoutes.co[mode].primary;
 
-    if (mainPrimary === coPrimary) {
+    if (mainPrimary && mainPrimary === coPrimary) {
       // Find alternative for Co
       const coFallbacks = this.currentRoutes.co[mode].fallbackChain || this.currentRoutes.co[mode].fallbacks || [];
       const alternative = coFallbacks.find((p) => p !== mainPrimary) ||
@@ -207,7 +211,7 @@ export class DynamicRouter {
     for (const mode of modes) {
       // Normalize Main
       const m = this.currentRoutes.main[mode];
-      const mPrimary = (m.defaultService || m.primary || 'chatgpt') as ProviderId;
+      const mPrimary = (m.defaultService !== undefined ? m.defaultService : (m.primary !== undefined ? m.primary : 'chatgpt')) as ProviderId;
       const mFallbacks = (m.fallbackChain || m.fallbacks || []).map((p) => p as ProviderId);
       m.mode = mode;
       m.defaultService = mPrimary;
@@ -219,7 +223,7 @@ export class DynamicRouter {
 
       // Normalize Co
       const c = this.currentRoutes.co[mode];
-      const cPrimary = (c.defaultService || c.primary || 'claude') as ProviderId;
+      const cPrimary = (c.defaultService !== undefined ? c.defaultService : (c.primary !== undefined ? c.primary : 'claude')) as ProviderId;
       const cFallbacks = (c.fallbackChain || c.fallbacks || []).map((p) => p as ProviderId);
       c.mode = mode;
       c.defaultService = cPrimary;
@@ -263,11 +267,19 @@ export class DynamicRouter {
     pipeline: 'main' | 'co' = 'main'
   ): ModePipelineConfig {
     const existing = this.getRule(mode, pipeline);
-    let primary = (config.defaultService || config.primary || existing.defaultService || existing.primary) as ProviderId;
+    let primary = (config.defaultService !== undefined
+      ? config.defaultService
+      : config.primary !== undefined
+      ? config.primary
+      : (existing.defaultService !== undefined ? existing.defaultService : existing.primary)) as ProviderId;
     if (primary === 'localllm' && (mode === 'image' || mode === 'video' || mode === 'audio')) {
       primary = (existing.defaultService !== 'localllm' ? existing.defaultService : (mode === 'audio' ? 'gemini' : 'grok')) as ProviderId;
     }
-    let fallbacks = (config.fallbackChain || config.fallbacks || existing.fallbackChain || existing.fallbacks || []).map((p) => p as ProviderId);
+    let fallbacks = (config.fallbackChain !== undefined
+      ? config.fallbackChain
+      : config.fallbacks !== undefined
+      ? config.fallbacks
+      : existing.fallbackChain || existing.fallbacks || []).map((p) => p as ProviderId);
     if (mode === 'image' || mode === 'video' || mode === 'audio') {
       fallbacks = fallbacks.filter((p) => p !== 'localllm');
     }
@@ -291,12 +303,14 @@ export class DynamicRouter {
 
     this.currentRoutes[pipeline][mode] = updated;
 
-    if (pipeline === 'main') {
-      this.enforceMutualExclusion(mode);
-    } else {
-      const mainPrimary = this.currentRoutes.main[mode].defaultService || this.currentRoutes.main[mode].primary;
-      if (updated.defaultService === mainPrimary) {
+    if (primary) {
+      if (pipeline === 'main') {
         this.enforceMutualExclusion(mode);
+      } else {
+        const mainPrimary = this.currentRoutes.main[mode].defaultService || this.currentRoutes.main[mode].primary;
+        if (updated.defaultService === mainPrimary) {
+          this.enforceMutualExclusion(mode);
+        }
       }
     }
 
@@ -462,9 +476,16 @@ export class DynamicRouter {
     }
 
     const rule = this.getRule(mode, pipeline);
-    const primary = (rule.defaultService || rule.primary) as ProviderId;
+    const primary = (rule.defaultService !== undefined ? rule.defaultService : rule.primary) as ProviderId;
     const fallbacks = (rule.fallbackChain || rule.fallbacks || []).map((p) => p as ProviderId);
-    const rawCandidates: ProviderId[] = [primary];
+
+    // If primary is explicitly deselected (''), candidate list should not arbitrarily fallback to random services!
+    const isExplicitlyDeselected = primary === '' || primary === 'none';
+    if (isExplicitlyDeselected) {
+      return [];
+    }
+
+    const rawCandidates: ProviderId[] = primary ? [primary] : [];
 
     if (Array.isArray(fallbacks)) {
       for (const fallback of fallbacks) {

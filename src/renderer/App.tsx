@@ -623,6 +623,8 @@ export function App() {
                     providers={providers}
                     logs={logs}
                     servicesManifest={servicesManifest}
+                    routeMatrix={routeMatrix}
+                    modeRoutes={modeRoutes}
                     onProviderClick={handleSatelliteClick}
                     onModeChange={setMode}
                     onToggleBalancedMode={toggleBalancedMode}

@@ -13,7 +13,7 @@
  * or prompting agentic IDEs (Codex) to reason locally.
  */
 
-export type MicroTaskCategory = 'regex' | 'types' | 'docstring' | 'test_stubs';
+export type MicroTaskCategory = 'regex' | 'types' | 'docstring' | 'test_stubs' | 'helper_fn';
 
 export interface MicroTaskClassification {
   isMicroTask: boolean;
@@ -62,13 +62,27 @@ const DOCSTRING_PATTERNS: RegExp[] = [
   /\b(write\s+documentation\s+for\s+this\s+(function|method|class))\b/i,
 ];
 
-// Test Stubs Category: Simple standalone unit test stubs
+// Test Stubs Category: Simple standalone unit test stubs & test cases
 const TEST_STUB_PATTERNS: RegExp[] = [
-  /\b(generate|write|create|scaffold|stub|provide)\s+(a\s+)?(simple\s+|standalone\s+)?(vitest|jest|pytest|mocha|chai\s+)?(unit\s+)?(tests?|test\s+stubs?|stubs?|specs?|test\s+cases?)\b/i,
-  /\b(unit\s+tests?\s+(stubs?|scaffold|cases?)\s+for\s+this)\b/i,
-  /\b(vitest|jest|pytest|mocha|chai)\s+((unit\s+)?tests?|test\s+stubs?|stubs?|specs?|test\s+cases?)\s+(for|of)\b/i,
-  /\b(write\s+tests?\s+for\s+this\s+(function|method|helper|utility))\b/i,
-  /\b(unit\s+test\s+stubs?)\b/i,
+  /\b(generate|write|create|scaffold|stub|provide|include|add|with)\s+(a\s+)?(simple\s+|standalone\s+)?(vitest|jest|pytest|mocha|chai\s+)?(unit\s+)?(tests?|test\s+stubs?|stubs?|specs?|test\s+cases?)\b/i,
+  /\b(unit\s+tests?\s+(stubs?|scaffold|cases?|helpers?)\s+for\s+this)\b/i,
+  /\b(vitest|jest|pytest|mocha|chai)\s+((unit\s+)?tests?|test\s+stubs?|stubs?|specs?|test\s+cases?)\b/i,
+  /\b(write|include|add)\s+tests?\s+for\s+this\s+(function|method|helper|utility)\b/i,
+  /\b(unit[- ]tests?(\s+stubs?|\s+helpers?|\s+cases?|\s+specs?)?)\b/i,
+];
+
+// Helper Functions Category: Standalone helper, utility, or pure algorithm functions
+const HELPER_FUNCTION_PATTERNS: RegExp[] = [
+  /\b(write|create|generate|implement|give\s+me)\s+(only\s+)?(a\s+)?(standalone|helper|utility|pure|simple)\s+([a-z0-9_#+<>-]+\s+)?(function|method|algorithm|routine|util|helper)\b/i,
+  /\b(standalone|helper|utility|pure)\s+([a-z0-9_#+<>-]+\s+)?(function|helper|utility|algorithm)\b/i,
+  /\b(single|isolated|standalone)\s+function\b/i,
+  /\b(string|array|math|date|object|collection)\s+(utility|helper)\s+(function|method)\b/i,
+];
+
+// Explicit Micro-Task Category: Direct mention of micro-task / unit-test helper
+const EXPLICIT_MICROTASK_PATTERNS: RegExp[] = [
+  /\b(micro[- ]?tasks?)\b/i,
+  /\b(unit[- ]test\s+helper)\b/i,
 ];
 
 /**
@@ -139,13 +153,38 @@ export function classifyMicroTask(prompt: string): MicroTaskClassification {
     }
   }
 
-  // 3d. Simple standalone unit test stubs
+  // 3d. Simple standalone unit test stubs & test cases
   for (const pattern of TEST_STUB_PATTERNS) {
     if (pattern.test(trimmed)) {
       return {
         isMicroTask: true,
         category: 'test_stubs',
         reason: 'Matched deterministic unit test stub pattern',
+      };
+    }
+  }
+
+  // 3e. Standalone helper, utility, or pure algorithm functions
+  for (const pattern of HELPER_FUNCTION_PATTERNS) {
+    if (pattern.test(trimmed)) {
+      return {
+        isMicroTask: true,
+        category: 'helper_fn',
+        reason: 'Matched deterministic standalone helper/utility function pattern',
+      };
+    }
+  }
+
+  // 3f. Explicit micro-task declaration
+  for (const pattern of EXPLICIT_MICROTASK_PATTERNS) {
+    if (pattern.test(trimmed)) {
+      const category: MicroTaskCategory = /\b(test|spec|vitest|jest|pytest)\b/i.test(trimmed)
+        ? 'test_stubs'
+        : 'helper_fn';
+      return {
+        isMicroTask: true,
+        category,
+        reason: 'Prompt explicitly requests a micro-task / unit-test helper',
       };
     }
   }

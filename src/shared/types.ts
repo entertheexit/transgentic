@@ -42,6 +42,7 @@ export interface McpRequestLog {
   fallbackProvider?: ProviderId;
   modelUsed?: string;
   status: 'pending' | 'success' | 'fallback' | 'failed';
+  outcome?: 'completed' | 'partial' | 'failed' | 'cancelled' | 'handoff';
   maskedSecretsCount: number;
   promptSnippet: string;
   promptText?: string;
@@ -58,7 +59,7 @@ export interface McpRequestLog {
   accountProfileId?: string;
   accountAlias?: string;
   isMicroTask?: boolean;
-  microTaskCategory?: 'regex' | 'types' | 'docstring' | 'test_stubs';
+  microTaskCategory?: 'regex' | 'types' | 'docstring' | 'test_stubs' | 'helper_fn';
   bypassedWebviewDispatch?: boolean;
   bypassedCloudDispatch?: boolean;
   localZeroLeakApplied?: boolean;
@@ -417,7 +418,7 @@ export interface IpcApi {
   openSystemBrowser: (providerId: ProviderId) => Promise<void>;
   executePrompt: (prompt: string, mode?: TaskMode, preferredProvider?: ProviderId, model?: string) => Promise<any>;
   getThreadSessions: () => Promise<any[]>;
-  clearThreadSessions: (params?: { providerId?: ProviderId; threadId?: string }) => Promise<{ success: boolean; sessions: any[] }>;
+  clearThreadSessions: (params?: { providerId?: ProviderId; threadId?: string; scope?: 'quick_prompt' | 'all' }) => Promise<{ success: boolean; sessions: any[] }>;
   getServicesManifest: () => Promise<ServicesManifest>;
   toggleExperimentalService?: (serviceId: ProviderId, enabled: boolean) => Promise<ServicesManifest>;
   updateServiceManifest?: (serviceId: ProviderId, updates: Partial<ServiceManifestEntry>) => Promise<ServicesManifest>;

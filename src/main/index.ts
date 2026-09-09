@@ -1,4 +1,5 @@
 import fs from 'fs';
+import { isQuickPromptConversation } from '../shared/conversationScope.js';
 import { createUpdateChecker } from './updates.js';
 import path from 'path';
 import { pathToFileURL, fileURLToPath } from 'url';
@@ -1289,8 +1290,8 @@ function setupIpcHandlers() {
     }
   });
 
-  ipcMain.handle('execute-prompt', async (_, { prompt, mode, provider, model }) => {
-    return await (globalMcpServer as any).orchestratePrompt(
+  ipcMain.handle('execute-prompt', async (event, { prompt, mode, provider, model }) => {
+    const result = await globalMcpServer.orchestratePrompt(
       prompt,
       mode || 'general',
       provider,
@@ -1299,8 +1300,12 @@ function setupIpcHandlers() {
       undefined,
       'quick_prompt_session',
       false,
-      true
+      true,
+      undefined,
+      { profile: 'plain', sessionId: `desktop_${event.sender.id}` }
     );
+    if (result.isError) throw new Error(result.content?.[0]?.text || 'Request failed');
+    return result;
   });
 
   // Active Thread & Session Clear Handlers
@@ -1308,7 +1313,19 @@ function setupIpcHandlers() {
     return globalThreadManager.getAllSessions();
   });
 
-  ipcMain.handle('threads:clear-sessions', async (_, { providerId, threadId }: { providerId?: ProviderId; threadId?: string } = {}) => {
+  ipcMain.handle('threads:clear-sessions', async (event, { providerId, threadId, scope }: { providerId?: ProviderId; threadId?: string; scope?: 'quick_prompt' | 'all' } = {}) => {
+    if (scope === 'quick_prompt') {
+      for (const session of globalThreadManager.getAllSessions()) {
+        if (isQuickPromptConversation(session.threadId, `desktop_${event.sender.id}`)
+          && (!providerId || session.provider === providerId)
+          && (!threadId || session.threadId === threadId)) {
+          globalThreadManager.removeSession(session.threadId, session.provider);
+        }
+      }
+      // Navigate on the next Quick Prompt inside the account queue, not while an
+      // unrelated MCP request may be using the same provider's browser view.
+      return { success: true, sessions: globalThreadManager.getAllSessions() };
+    }
     if (providerId && threadId) {
       globalThreadManager.removeSession(threadId, providerId);
     } else if (providerId) {

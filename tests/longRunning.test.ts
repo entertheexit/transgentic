@@ -99,12 +99,12 @@ describe('Long-Running Operations & SSE Transports', () => {
       const mockReq: any = { on: vi.fn() };
       const ctx = BaseMcpHandler.createContext(mockReq, sessionId, 'req_999');
       expect(ctx.abortController.signal.aborted).toBe(false);
-      expect(BaseMcpHandler.getContext('req_999')).toBeDefined();
+      expect(BaseMcpHandler.getContext('req_999', sessionId)).toBeDefined();
 
       // Simulate SSE client disconnect
       SseTransportManager.removeClient(sessionId);
       expect(ctx.abortController.signal.aborted).toBe(true);
-      expect(BaseMcpHandler.getContext('req_999')).toBeUndefined();
+      expect(BaseMcpHandler.getContext('req_999', sessionId)).toBeUndefined();
     });
   });
 });

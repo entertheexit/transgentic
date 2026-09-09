@@ -10,6 +10,7 @@ import {
   formatWebAiDecisionReminder,
   wrapUnbalancedAgenticPrompt,
   formatUnbalancedAgenticReminder,
+  formatCodexFallbackDirective,
 } from '../src/main/mcp/handlers/codingHandler.js';
 
 describe('Balanced Agentic Mode Handler', () => {
@@ -69,7 +70,7 @@ describe('Balanced Agentic Mode Handler', () => {
     expect(directive).toContain('Transgentic MCP Micro-Task Role');
     expect(directive).toContain('only invoke Transgentic MCP (e.g. by mentioning "use Transgentic MCP") for simple, fast micro-tasks');
     expect(directive).toContain('bypasses Webview DOM manipulation');
-    expect(directive).toContain('Continue with your current task implementation autonomously now');
+    expect(directive).toContain('answer questions and reviews directly');
   });
 
   it('should format directive informing agentic client to only use Transgentic MCP for hard thinking/research/planning when running Web AI Services', () => {
@@ -81,7 +82,7 @@ describe('Balanced Agentic Mode Handler', () => {
     expect(directive).toContain('bypass Web AI webview sessions and preserve hourly quotas');
     expect(directive).toContain('Transgentic MCP Role');
     expect(directive).toContain('Only invoke Transgentic MCP (e.g. by mentioning "use Transgentic MCP") when you require hard thinking, in-depth research, memory recall across past chats, extra information, or strategic architectural blueprints and complex planning');
-    expect(directive).toContain('Continue with implementing your task in your workspace now');
+    expect(directive).toContain('answer questions and reviews directly');
   });
 
   it('should format decision reminder for Local LLM prompting agentic client to make decision on every response', () => {
@@ -89,7 +90,7 @@ describe('Balanced Agentic Mode Handler', () => {
 
     expect(reminder).toContain('[TRANSGENTIC DECISION GUIDANCE - LOCAL LLM (QWEN2.5-CODER:7B)]');
     expect(reminder).toContain('Evaluate your next step before proceeding');
-    expect(reminder).toContain('Use Transgentic MCP: ONLY for lightweight micro-tasks (regex, TypeScript types from JSON, docstrings/JSDoc, unit test stubs)');
+    expect(reminder).toContain('Use Transgentic MCP: ONLY for lightweight micro-tasks (regex, TypeScript types from JSON, docstrings/JSDoc, unit test stubs, helper functions)');
     expect(reminder).toContain('Do it on your own: For complex planning, reasoning, codebase edits, multi-file refactoring, builds, and running commands');
   });
 
@@ -119,8 +120,23 @@ describe('Balanced Agentic Mode Handler', () => {
     expect(reminder).toContain('[TRANSGENTIC GUIDANCE - CLAUDE - WEIGHT ON TRANSGENTIC]');
     expect(reminder).toContain('Balanced Mode is disabled');
     expect(reminder).toContain('This workflow is weighted heavily on Transgentic MCP');
-    expect(reminder).toContain('Mention "use Transgentic MCP" in every subsequent turn/step');
+    expect(reminder).toContain('Use Transgentic MCP for further assistance when useful.');
+  });
+
+  it('should format codex fallback directive when mode has no service selected', () => {
+    const directive = formatCodexFallbackDirective('coding', false);
+    expect(directive).toContain('[TRANSGENTIC CODEX DIRECTIVE: AUTONOMOUS REASONING & EXECUTION]');
+    expect(directive).toContain('No external AI service is available for "coding" mode in the current route.');
+    expect(directive).toContain('INSTRUCTIONS FOR AGENTIC CLIENT (CODEX / ANTIGRAVITY / CURSOR):');
+    expect(directive).toContain('Autonomous Workspace Execution:');
+    expect(directive).toContain('Report this handoff honestly; no external model answered this request.');
+    expect(directive).not.toContain('Transgentic Local LLM is available for micro-tasks');
+  });
+
+  it('should format codex fallback directive with micro-task note when local micro-task is active', () => {
+    const directive = formatCodexFallbackDirective('coding', true);
+    expect(directive).toContain('[TRANSGENTIC CODEX DIRECTIVE: AUTONOMOUS REASONING & EXECUTION]');
+    expect(directive).toContain('Transgentic Local LLM is available for micro-tasks (regex, TypeScript types, docstrings, unit test stubs)');
   });
 });
-
 

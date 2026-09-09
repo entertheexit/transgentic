@@ -8,6 +8,7 @@ You are operating in Balanced Double-Agent mode.
 2. Identify discrepancies, potential bugs, edge cases, blind spots, or alternative perspectives.
 3. Synthesize the best possible solution, or explain why you favor one approach over the other.
 4. Proceed with confidence, or evaluate and determine whether to invoke Transgentic again (e.g. by mentioning "use Transgentic MCP") if critical ambiguities remain or further high-level planning is needed.
+5. Stay within the user's request; a review or question does not authorize workspace edits.
 `.trim();
 
 export function formatBalancedDoubleAgentDirective(): string {
@@ -19,7 +20,7 @@ export const DUAL_DISPATCH_DOUBLE_AGENT_DIRECTIVE = `
 You are operating in Double-Agent Dual Dispatch mode.
 1. Synthesize the dual perspectives provided above (Main Provider and Co-Reviewer) to evaluate the optimal approach.
 2. Balanced Mode is disabled: This workflow is weighted heavily on Transgentic MCP.
-3. Action: Always mention "use Transgentic MCP" in every subsequent turn/step so Transgentic continues executing, guiding implementation, and coordinating multi-agent reviews.
+3. Use Transgentic MCP for further assistance when useful. Stay within the user's requested scope; questions and reviews do not authorize workspace edits.
 `.trim();
 
 export function formatDualDispatchDoubleAgentDirective(): string {
@@ -161,6 +162,7 @@ export function determineDispatchScenario(
 
 export interface PipelineExecutionResult {
   text: string;
+  finalResponseWithLocalPath?: string;
   provider: ProviderId;
   modelUsed?: string;
   mediaPath?: string;
@@ -237,8 +239,8 @@ export async function executeConcurrentDualDispatch(
   }
 
   const combinedText = formatDualPerspectiveResponse(
-    mainResult || null,
-    coResult || null,
+    mainResult ? { ...mainResult, text: mainResult.finalResponseWithLocalPath ?? mainResult.text } : null,
+    coResult ? { ...coResult, text: coResult.finalResponseWithLocalPath ?? coResult.text } : null,
     mainError ? (mainError.message || String(mainError)) : undefined,
     coError ? (coError.message || String(coError)) : undefined
   );

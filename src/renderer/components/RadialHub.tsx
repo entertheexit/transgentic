@@ -8,6 +8,8 @@ import {
   McpRequestLog,
   ServicesManifest,
   isAgentHaltGuardEnabled,
+  RouteMatrix,
+  ModeRouteConfig,
 } from '../../shared/types.js';
 import {
   Bot,
@@ -64,6 +66,8 @@ interface RadialHubProps {
   onClearSession?: () => Promise<void>;
   servicesManifest?: ServicesManifest | null;
   onOpenAuthModal?: () => void;
+  routeMatrix?: RouteMatrix | null;
+  modeRoutes?: Record<TaskMode, ModeRouteConfig>;
 }
 
 const PROVIDERS_CONFIG: Array<{
@@ -164,6 +168,8 @@ export const RadialHub: React.FC<RadialHubProps> = ({
   onClearSession,
   servicesManifest,
   onOpenAuthModal,
+  routeMatrix,
+  modeRoutes,
 }) => {
   const [showInfoModal, setShowInfoModal] = useState(false);
   const [showAgentGuardModal, setShowAgentGuardModal] = useState(false);
@@ -178,6 +184,18 @@ export const RadialHub: React.FC<RadialHubProps> = ({
       return null;
     }
   });
+
+  const isModeServiceSelected = (() => {
+    const mainRoute = routeMatrix?.main?.[coreStatus.activeMode];
+    if (mainRoute && mainRoute.defaultService !== undefined) {
+      return Boolean(mainRoute.defaultService);
+    }
+    const legacyRoute = modeRoutes?.[coreStatus.activeMode];
+    if (legacyRoute && legacyRoute.primary !== undefined) {
+      return Boolean(legacyRoute.primary);
+    }
+    return true;
+  })();
 
   const handleCopySamplePrompt = (text: string, idx: number) => {
     soundFx.playClick();
@@ -531,6 +549,8 @@ export const RadialHub: React.FC<RadialHubProps> = ({
             onClearSession={handleClear}
             hasAnswer={!!currentAnswer}
             onViewAnswer={() => setShowAnswerModal(true)}
+            isServiceDeselected={!isModeServiceSelected}
+            activeMode={coreStatus.activeMode}
           />
         </div>
 

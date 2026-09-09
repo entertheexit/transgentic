@@ -63,9 +63,9 @@ describe('Agent Halt Guard', () => {
     expect(directive).toContain('[CRITICAL DIRECTIVE: RATE LIMIT HALT (TRANSGENTIC MCP)]');
     expect(directive).toContain("Provider 'ChatGPT' is currently rate-limited (Estimated reset: in ~2m).");
     expect(directive).toContain('MANDATORY AGENT BEHAVIOR:');
-    expect(directive).toContain('- Stop execution immediately.');
-    expect(directive).toContain('- Do not retry or call alternative tools autonomously.');
-    expect(directive).toContain('- Summarize current progress and prompt the human user for their preferred next step, or fallback to local agentic execution.');
+    expect(directive).toContain('- Pause requests to this provider until it becomes available.');
+    expect(directive).toContain('- Report the rate limit and any completed work honestly.');
+    expect(directive).toContain('this notice does not authorize new actions.');
   });
 
   it('should generate MCP error response with isError: true and directive', () => {

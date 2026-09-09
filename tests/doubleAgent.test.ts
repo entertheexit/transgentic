@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
   determineDispatchScenario,
   formatBalancedDoubleAgentDirective,
@@ -9,6 +9,10 @@ import {
 } from '../src/main/mcp/dispatchPipeline.js';
 import { DynamicRouter } from '../src/main/mcp/router.js';
 import { TransgenticConfig, RouteMatrix, ProviderId } from '../src/shared/types.js';
+
+// Routing assertions must not rewrite the developer's persisted route file.
+beforeEach(() => { vi.spyOn(DynamicRouter, 'savePersistedRoutes').mockImplementation(() => {}); });
+afterEach(() => { vi.restoreAllMocks(); });
 
 describe('Double Agent Dispatch & Dual Pipeline Routing', () => {
   describe('Dispatch Scenario Determination', () => {
@@ -192,7 +196,7 @@ describe('Double Agent Dispatch & Dual Pipeline Routing', () => {
       const directive = formatDualDispatchDoubleAgentDirective();
       expect(directive).toContain('[TRANSGENTIC DOUBLE-AGENT DIRECTIVE - WEIGHT ON TRANSGENTIC]');
       expect(directive).toContain('Balanced Mode is disabled: This workflow is weighted heavily on Transgentic MCP');
-      expect(directive).toContain('mention "use Transgentic MCP" in every subsequent turn/step');
+      expect(directive).toContain('Use Transgentic MCP for further assistance when useful.');
     });
 
     it('should format both successful perspectives side-by-side in Markdown', () => {

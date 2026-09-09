@@ -20,11 +20,11 @@ export class DuplicateActionGuard {
     providerId: ProviderId,
     mode: TaskMode,
     model: string | undefined,
-    prompt: string
+    prompt: string,
+    scope: string = ''
   ): string {
-    const normPrompt = (prompt || '').trim().replace(/\s+/g, ' ').toLowerCase();
-    const normModel = (model || 'default').trim().toLowerCase();
-    return `${providerId}::${mode}::${normModel}::${normPrompt}`;
+    // Case, whitespace, account, and conversation can all change a coding answer.
+    return JSON.stringify([scope, providerId, mode, model || 'default', prompt]);
   }
 
   /**
@@ -34,9 +34,10 @@ export class DuplicateActionGuard {
     providerId: ProviderId,
     mode: TaskMode,
     model: string | undefined,
-    prompt: string
+    prompt: string,
+    scope: string = ''
   ): InFlightEntry<T> | undefined {
-    const key = this.generateKey(providerId, mode, model, prompt);
+    const key = this.generateKey(providerId, mode, model, prompt, scope);
     const entry = this.inFlightMap.get(key);
     if (entry) {
       // Safety watchdog: if an in-flight entry has been stuck for > 450s, invalidate it
@@ -58,15 +59,16 @@ export class DuplicateActionGuard {
     mode: TaskMode,
     model: string | undefined,
     prompt: string,
-    promise: Promise<T>
+    promise: Promise<T>,
+    scope: string = ''
   ): void {
-    const key = this.generateKey(providerId, mode, model, prompt);
+    const key = this.generateKey(providerId, mode, model, prompt, scope);
     this.inFlightMap.set(key, {
       reqId,
       providerId,
       mode,
       model: model || 'default',
-      normalizedPrompt: (prompt || '').trim().replace(/\s+/g, ' ').toLowerCase(),
+      normalizedPrompt: prompt,
       createdAt: Date.now(),
       promise,
     });
@@ -79,9 +81,10 @@ export class DuplicateActionGuard {
     providerId: ProviderId,
     mode: TaskMode,
     model: string | undefined,
-    prompt: string
+    prompt: string,
+    scope: string = ''
   ): void {
-    const key = this.generateKey(providerId, mode, model, prompt);
+    const key = this.generateKey(providerId, mode, model, prompt, scope);
     this.inFlightMap.delete(key);
   }
 

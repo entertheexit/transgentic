@@ -398,11 +398,16 @@ export const LocalLLMModal: React.FC<LocalLLMModalProps> = ({
           {/* Master Enable/Disable Toggle Card */}
           <div className="p-3 rounded-xl bg-black/40 border border-white/10 flex items-center justify-between">
             <div>
-              <span className="text-xs font-bold text-slate-200 uppercase font-mono">
-                Enable Local LLM Routing
-              </span>
-              <p className="text-[10px] text-slate-400">
-                Disabling preserves all endpoint URLs and model configurations without wiping state.
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs font-bold text-slate-200 uppercase font-mono">
+                  Enable Local LLM (Master)
+                </span>
+                <span className="text-[9px] px-1.5 py-0.2 rounded font-mono font-bold bg-blue-500/20 text-blue-300 border border-blue-500/30">
+                  MASTER
+                </span>
+              </div>
+              <p className="text-[10px] text-slate-400 mt-0.5">
+                Master toggle for Local LLM across the entire app. Enables offline runtime, routing, fallbacks, and local coding features without wiping configuration.
               </p>
             </div>
 
@@ -430,11 +435,11 @@ export const LocalLLMModal: React.FC<LocalLLMModalProps> = ({
                   Local Micro-task
                 </span>
                 <span className="text-[9px] px-1.5 py-0.2 rounded font-mono font-bold bg-teal-500/20 text-teal-300 border border-teal-500/30">
-                  MICRO-TASK
+                  CODING ONLY
                 </span>
               </div>
               <p className="text-[10px] text-slate-400 mt-0.5">
-                When enabled, automatically offloads micro-tasks (regex, TS types, docstrings, test stubs) to Local LLM after Turn 1 if Local LLM is in the fallback chain (even with Balanced mode off). When Local LLM is active as default/fallback, dedicates it to micro-tasks.
+                Available in Coding Mode only. When enabled, automatically offloads micro-tasks (regex, TS types, docstrings, test stubs) to Local LLM after Turn 1 if Local LLM is in the fallback chain, or when requested by agentic clients (Codex). Dedicates Local LLM strictly to micro-tasks.
               </p>
             </div>
 
@@ -462,11 +467,11 @@ export const LocalLLMModal: React.FC<LocalLLMModalProps> = ({
                   Local Zero-Leak
                 </span>
                 <span className="text-[9px] px-1.5 py-0.2 rounded font-mono font-bold bg-purple-500/20 text-purple-300 border border-purple-500/30">
-                  SECURITY
+                  CODING ONLY
                 </span>
               </div>
               <p className="text-[10px] text-slate-400 mt-0.5">
-                When active AI service is Cloud AI Webview (not Local LLM), automatically masks sensitive credentials (API tokens, database connection URIs, environment variables, private IPs/domains) with indexed placeholders and restores them on response. Zero retention in memory.
+                Available in Coding Mode only. When active AI service is Cloud AI Webview (not Local LLM), automatically masks sensitive credentials (API tokens, database connection URIs, environment variables, private IPs/domains) with indexed placeholders and restores them on response.
               </p>
             </div>
 
@@ -495,11 +500,11 @@ export const LocalLLMModal: React.FC<LocalLLMModalProps> = ({
                     Local Compact
                   </span>
                   <span className="text-[9px] px-1.5 py-0.2 rounded font-mono font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
-                    OPTIMIZER
+                    CODING ONLY
                   </span>
                 </div>
                 <p className="text-[10px] text-slate-400 mt-0.5">
-                  When active AI service is Cloud AI Webview (not Local LLM), automatically distills bloated code blocks and multi-file diffs using Local LLM before webview dispatch to conserve token limits and accelerate response times.
+                  Available in Coding Mode only. When active AI service is Cloud AI Webview (not Local LLM), automatically distills bloated code blocks and multi-file diffs using Local LLM before webview dispatch to conserve token limits and accelerate response times.
                 </p>
               </div>
 

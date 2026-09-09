@@ -2,10 +2,11 @@ import { Request, Response } from 'express';
 import { SseTransportManager } from '../sseTransport.js';
 
 export interface McpRequestContext {
-  requestId: string;
+  requestId: string | number;
   sessionId: string;
   abortController: AbortController;
   startTime: number;
+  dispose?: () => void;
 }
 
 export class BaseMcpHandler {
@@ -14,7 +15,12 @@ export class BaseMcpHandler {
   /**
    * Creates an execution context with an AbortController wired to the HTTP request lifecycle.
    */
-  public static createContext(req: Request, sessionId: string, requestId: string): McpRequestContext {
+  private static key(requestId: string | number, sessionId: string): string {
+    return JSON.stringify([sessionId, requestId]);
+  }
+
+  public static createContext(req: Request, sessionId: string, requestId: string | number): McpRequestContext {
+    if (this.getContext(requestId, sessionId)) throw new Error('Request ID is already active in this session.');
     const abortController = new AbortController();
 
     const context: McpRequestContext = {
@@ -29,32 +35,46 @@ export class BaseMcpHandler {
     // or when client explicit disconnect occurs.
     const sseClient = SseTransportManager.getClient(sessionId);
     if (sseClient) {
-      const prevAbort = sseClient.onAbort;
-      sseClient.onAbort = () => {
-        if (prevAbort) prevAbort();
+      const onAbort = () => {
         if (!abortController.signal.aborted) {
           abortController.abort();
         }
-        BaseMcpHandler.cleanupContext(requestId);
+        BaseMcpHandler.cleanupContext(requestId, sessionId);
+      };
+      sseClient.abortListeners.add(onAbort);
+      context.dispose = () => sseClient.abortListeners.delete(onAbort);
+    } else {
+      // Request-body completion is not cancellation. Only an aborted upload or an
+      // unfinished response connection closing should stop Streamable HTTP work.
+      const onAborted = () => abortController.abort();
+      const response = req.res;
+      const onClose = () => { if (!response?.writableEnded) onAborted(); };
+      req.once?.('aborted', onAborted);
+      response?.once('close', onClose);
+      context.dispose = () => {
+        req.off?.('aborted', onAborted);
+        response?.off('close', onClose);
       };
     }
 
-    this.activeContexts.set(requestId, context);
+    this.activeContexts.set(this.key(requestId, sessionId), context);
     return context;
   }
 
   /**
    * Retrieves active context by requestId.
    */
-  public static getContext(requestId: string): McpRequestContext | undefined {
-    return this.activeContexts.get(requestId);
+  public static getContext(requestId: string | number, sessionId: string = ''): McpRequestContext | undefined {
+    return this.activeContexts.get(this.key(requestId, sessionId));
   }
 
   /**
    * Cleans up the request context.
    */
-  public static cleanupContext(requestId: string): void {
-    this.activeContexts.delete(requestId);
+  public static cleanupContext(requestId: string | number, sessionId: string = ''): void {
+    const key = this.key(requestId, sessionId);
+    this.activeContexts.get(key)?.dispose?.();
+    this.activeContexts.delete(key);
   }
 
   /**

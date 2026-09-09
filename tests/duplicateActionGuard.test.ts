@@ -7,10 +7,12 @@ describe('DuplicateActionGuard & DOM Concurrency Lock', () => {
     DuplicateActionGuard.clear();
   });
 
-  it('should generate consistent deduplication keys regardless of whitespace or casing', () => {
+  it('preserves case and whitespace because they can change code or data', () => {
     const key1 = DuplicateActionGuard.generateKey('gemini', 'image', 'imagen-3', 'A cute fluffy cat');
     const key2 = DuplicateActionGuard.generateKey('gemini', 'image', 'imagen-3', '  a cute   fluffy cat  ');
-    expect(key1).toBe(key2);
+    expect(key1).not.toBe(key2);
+    expect(key1).toBe(DuplicateActionGuard.generateKey('gemini', 'image', 'imagen-3', 'A cute fluffy cat'));
+    expect(key1).not.toBe(DuplicateActionGuard.generateKey('gemini', 'image', 'imagen-3', 'A cute fluffy cat', 'another-conversation'));
   });
 
   it('should differentiate different providers, modes, models, or prompts', () => {
@@ -46,7 +48,7 @@ describe('DuplicateActionGuard & DOM Concurrency Lock', () => {
       'gemini',
       'image',
       'imagen-3',
-      'generate a mountain landscape'
+      'Generate a mountain landscape'
     );
     expect(inFlight).toBeDefined();
     expect(inFlight?.reqId).toBe('req_1');

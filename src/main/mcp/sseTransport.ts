@@ -10,6 +10,7 @@ export interface SseClientConnection {
   lastActivityAt: number;
   heartbeatTimer: NodeJS.Timeout | null;
   onAbort?: () => void;
+  abortListeners: Set<() => void>;
 }
 
 export class SseTransportManager {
@@ -45,6 +46,7 @@ export class SseTransportManager {
       lastActivityAt: Date.now(),
       heartbeatTimer: null,
       onAbort,
+      abortListeners: new Set(),
     };
 
     // 1. Send initial MCP endpoint discovery event (preserving auth token, mode & provider for MCP client transport)
@@ -139,6 +141,8 @@ export class SseTransportManager {
           client.onAbort();
         } catch {}
       }
+      for (const listener of client.abortListeners) listener();
+      client.abortListeners.clear();
       this.clients.delete(sessionId);
     }
   }

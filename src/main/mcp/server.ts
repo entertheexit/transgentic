@@ -19,12 +19,12 @@ import {
   wrapBalancedAgenticPrompt,
   wrapBalancedLocalLlmPrompt,
   wrapUnbalancedAgenticPrompt,
-  formatLocalLlmMicroTaskOnlyDirective,
   formatBalancedLocalLlmDirective,
   formatBalancedWebAiDirective,
   formatLocalLlmDecisionReminder,
   formatWebAiDecisionReminder,
   formatUnbalancedAgenticReminder,
+  formatCodexFallbackDirective,
 } from './handlers/codingHandler.js';
 import {
   formatBalancedDoubleAgentDirective,
@@ -51,6 +51,8 @@ import { DuplicateActionGuard } from '../security/duplicateActionGuard.js';
 import { CookieSyncManager } from '../auth/cookieSyncServer.js';
 import { createRecipeRouter } from '../auth/recipeSyncServer.js';
 import { LocalLlmClient } from '../localllm/localLlmClient.js';
+import { CallerContext, ResponseProfile, inferResponseProfile, parseResponseProfile, throwIfCancelled } from './clientContext.js';
+import { ProviderOutcome, withResponseDetails } from './responseEnvelope.js';
 import { globalLocalZeroLeakManager } from '../localllm/localZeroLeak.js';
 import { globalLocalCompactManager } from '../localllm/localCompact.js';
 import {
@@ -85,6 +87,7 @@ export class TransgenticMcpServer {
   private currentTaskDescription?: string;
   private config: TransgenticConfig | null = null;
   private activeAbortControllers: Map<string, AbortController> = new Map();
+  private clientProfiles = new Map<string, { profile: ResponseProfile; lastUsed: number }>();
 
   private logListeners: Array<(log: McpRequestLog) => void> = [];
   private coreStatusListeners: Array<(status: CoreStatus) => void> = [];
@@ -310,6 +313,8 @@ export class TransgenticMcpServer {
     defaultMode?: TaskMode
   ): void {
     const sessionId = crypto.randomUUID();
+    const requestedProfile = parseResponseProfile(req.query?.response_profile);
+    if (requestedProfile) this.clientProfiles.set(sessionId, { profile: requestedProfile, lastUsed: Date.now() });
     let token: string | undefined;
     const authHeader = req.headers['authorization'];
     if (authHeader && typeof authHeader === 'string' && authHeader.startsWith('Bearer ')) {
@@ -340,7 +345,8 @@ export class TransgenticMcpServer {
     sseClient: any,
     directProvider?: ProviderId,
     sessionId: string = '',
-    defaultMode?: TaskMode
+    defaultMode?: TaskMode,
+    progressSink?: (message: any) => void
   ): Promise<any> {
     if (!body || typeof body !== 'object') {
       return { jsonrpc: '2.0', error: { code: -32700, message: 'Parse error' }, id: null };
@@ -348,15 +354,37 @@ export class TransgenticMcpServer {
 
     const { jsonrpc, method, params, id } = body;
     const isNotification = id === undefined || id === null;
-    const reqContext = BaseMcpHandler.createContext(req, sessionId, (id || crypto.randomUUID()).toString());
+    let reqContext;
+    try {
+      reqContext = BaseMcpHandler.createContext(req, sessionId, id ?? crypto.randomUUID());
+    } catch {
+      return { jsonrpc: '2.0', id, error: { code: -32600, message: 'Request ID is already active in this session.' } };
+    }
+    const storedProfile = this.clientProfiles.get(sessionId);
+    if (storedProfile) storedProfile.lastUsed = Date.now();
+    const profile = parseResponseProfile(params?.arguments?.response_profile)
+      || parseResponseProfile(req.query?.response_profile)
+      || storedProfile?.profile
+      || 'agentic'; // Preserve clients that predate initialization/profile support.
+    let progress = 0;
+    let lastProgress = '';
+    const progressToken = params?._meta?.progressToken;
+    const caller: CallerContext = { profile, sessionId };
+    if (progressSink && (typeof progressToken === 'string' || typeof progressToken === 'number')) {
+      caller.reportProgress = (message) => {
+        if (message === lastProgress || reqContext.abortController.signal.aborted || !BaseMcpHandler.getContext(reqContext.requestId, sessionId)) return;
+        lastProgress = message;
+        try { progressSink({ jsonrpc: '2.0', method: 'notifications/progress', params: { progressToken, progress: ++progress, message } }); } catch {}
+      };
+    }
 
     try {
       // Handle MCP Notifications
       if (method === 'notifications/initialized' || method === 'initialized' || method === 'notifications/cancelled' || method === 'cancelled') {
         if (method === 'notifications/cancelled' || method === 'cancelled') {
           const targetReqId = params?.requestId;
-          if (targetReqId) {
-            const ctx = BaseMcpHandler.getContext(String(targetReqId));
+          if (typeof targetReqId === 'string' || typeof targetReqId === 'number') {
+            const ctx = BaseMcpHandler.getContext(targetReqId, sessionId);
             if (ctx && !ctx.abortController.signal.aborted) {
               ctx.abortController.abort();
             }
@@ -371,6 +399,12 @@ export class TransgenticMcpServer {
 
       // Handle MCP methods
       if (method === 'initialize') {
+        this.clientProfiles.set(sessionId, {
+          profile: parseResponseProfile(params?._meta?.['transgentic/responseProfile'])
+            || parseResponseProfile(req.query?.response_profile)
+            || inferResponseProfile(params?.clientInfo?.name),
+          lastUsed: Date.now(),
+        });
         return {
           jsonrpc: '2.0',
           id,
@@ -401,15 +435,20 @@ export class TransgenticMcpServer {
         const providerToUse = directProvider || sseClient?.targetProvider;
         const modeToUse = defaultMode || sseClient?.targetMode;
         try {
-          const callResult = await this.executeMcpTool(toolName, args, providerToUse, reqContext.abortController.signal, modeToUse);
+          caller.reportProgress?.('Request accepted');
+          const callResult = await this.executeMcpTool(toolName, args, providerToUse, reqContext.abortController.signal, modeToUse, caller);
+          if (reqContext.abortController.signal.aborted) return null;
+          caller.reportProgress?.(callResult.isError ? 'Request failed' : 'Request completed');
           return {
             jsonrpc: '2.0',
             id,
             result: callResult,
           };
         } catch (toolErr: any) {
+          if (reqContext.abortController.signal.aborted) return null;
           // MCP Specification: Tool execution errors should be returned in ToolResult with isError: true
-          const fallbackDirective = '\n\n[FALLBACK FOR AGENTIC CLIENT]: Transgentic encountered an execution error. Immediately fallback to your own local capabilities or alternative tools to proceed autonomously.';
+          const fallbackDirective = profile === 'agentic'
+            ? '\n\n[FALLBACK FOR AGENTIC CLIENT]: This provider request failed. Continue only within the user\'s requested scope; use another approach when appropriate.' : '';
           return {
             jsonrpc: '2.0',
             id,
@@ -421,6 +460,7 @@ export class TransgenticMcpServer {
                 },
               ],
               isError: true,
+              structuredContent: { status: 'failed', answer: toolErr.message || 'Error executing tool', responseProfile: profile },
             },
           };
         }
@@ -571,12 +611,15 @@ export class TransgenticMcpServer {
       }
       return null;
     } finally {
-      BaseMcpHandler.cleanupContext(reqContext.requestId);
+      BaseMcpHandler.cleanupContext(reqContext.requestId, sessionId);
     }
   }
 
   private async handleClientMessage(req: Request, res: Response, directProvider?: ProviderId, defaultMode?: TaskMode): Promise<void> {
-    const sessionId = (req.query.sessionId as string) || (req.headers['mcp-session-id'] as string) || '';
+    const sessionId = (req.query.sessionId as string) || (req.headers['mcp-session-id'] as string) || crypto.randomUUID();
+    for (const [key, value] of this.clientProfiles) {
+      if (Date.now() - value.lastUsed > 24 * 60 * 60 * 1000 && !SseTransportManager.getClient(key)) this.clientProfiles.delete(key);
+    }
     const sseClient = sessionId ? SseTransportManager.getClient(sessionId) : undefined;
     const body = req.body;
 
@@ -587,7 +630,7 @@ export class TransgenticMcpServer {
     }
 
     res.setHeader('Content-Type', 'application/json');
-    res.setHeader('mcp-session-id', sessionId || crypto.randomUUID());
+    res.setHeader('mcp-session-id', sessionId);
 
     if (!body) {
       res.status(400).json({ jsonrpc: '2.0', error: { code: -32700, message: 'Parse error: empty request body' }, id: null });
@@ -598,10 +641,21 @@ export class TransgenticMcpServer {
     if (sseClient) {
       res.status(202).json({ status: 'accepted' });
     }
+    const wantsProgress = !sseClient && !Array.isArray(body) && body.method === 'tools/call'
+      && (typeof body.params?._meta?.progressToken === 'string' || typeof body.params?._meta?.progressToken === 'number')
+      && req.accepts('text/event-stream') && String(req.headers.accept || '').includes('text/event-stream');
+    if (wantsProgress) {
+      res.setHeader('Content-Type', 'text/event-stream');
+      res.setHeader('Cache-Control', 'no-cache');
+      res.flushHeaders();
+    }
+    const progressSink = sseClient
+      ? (message: any) => { SseTransportManager.sendMessage(sessionId, message); }
+      : wantsProgress ? (message: any) => { if (!res.writableEnded) res.write(`event: message\ndata: ${JSON.stringify(message)}\n\n`); } : undefined;
 
     if (Array.isArray(body)) {
       const results = await Promise.all(
-        body.map((item) => this.processSingleJsonRpcMessage(item, req, sseClient, directProvider, sessionId, resolvedMode))
+        body.map((item) => this.processSingleJsonRpcMessage(item, req, sseClient, directProvider, sessionId, resolvedMode, progressSink))
       );
       const responses = results.filter((r) => r !== null);
       if (sseClient) {
@@ -619,7 +673,12 @@ export class TransgenticMcpServer {
       return;
     }
 
-    const responseData = await this.processSingleJsonRpcMessage(body, req, sseClient, directProvider, sessionId, resolvedMode);
+    const responseData = await this.processSingleJsonRpcMessage(body, req, sseClient, directProvider, sessionId, resolvedMode, progressSink);
+    if (wantsProgress) {
+      if (responseData) progressSink?.(responseData);
+      res.end();
+      return;
+    }
 
     if (responseData) {
       if (sseClient) {
@@ -643,6 +702,7 @@ export class TransgenticMcpServer {
     const grokModels = ModelRegistryManager.getUsableModels('grok').map((m) => m.id);
 
     const sessionProperties = {
+      response_profile: { type: 'string', enum: ['agentic', 'plain'], description: 'Response style override: agentic adds workflow guidance; plain returns neutral answers. Defaults to the connection profile.' },
       thread_id: { type: 'string', description: 'Unique identifier for conversation continuity. Reuses existing web chat if matched.' },
       threadId: { type: 'string', description: 'Alias for thread_id.' },
       new_thread: { type: 'boolean', default: false, description: 'If true, forces creation of a brand new chat thread.' },
@@ -850,7 +910,8 @@ export class TransgenticMcpServer {
     args: any,
     directProvider?: ProviderId,
     abortSignal?: AbortSignal,
-    defaultMode?: TaskMode
+    defaultMode?: TaskMode,
+    caller?: CallerContext
   ): Promise<any> {
     if (name === 'get_status') {
       return {
@@ -880,7 +941,7 @@ export class TransgenticMcpServer {
     const threadId = args.thread_id || args.threadId;
     const newThread = Boolean(args.new_thread ?? args.newThread ?? false);
 
-    let mode: TaskMode = defaultMode || this.currentMode;
+    let mode: TaskMode = defaultMode || 'general';
     let provider: ProviderId | undefined = directProvider || args.provider;
     const requestedModel: string | undefined = args.model;
     let isStrictExplicitMode = Boolean(defaultMode);
@@ -907,7 +968,7 @@ export class TransgenticMcpServer {
       isStrictExplicitMode = true;
     }
 
-    return await this.orchestratePrompt(prompt, mode, provider, projectName, requestedModel, abortSignal, threadId, newThread, undefined, isStrictExplicitMode);
+    return await this.orchestratePrompt(prompt, mode, provider, projectName, requestedModel, abortSignal, threadId, newThread, undefined, isStrictExplicitMode, caller);
   }
 
   private async executePipelineCandidateChain(params: {
@@ -930,6 +991,8 @@ export class TransgenticMcpServer {
     startTime: number;
     bypassedWebviewDispatch?: boolean;
     forcedProvider?: ProviderId;
+    reportProgress?: (message: string) => void;
+    isolateConversation?: boolean;
   }): Promise<{
     text: string;
     finalResponseWithLocalPath: string;
@@ -939,7 +1002,6 @@ export class TransgenticMcpServer {
     account: any;
     wasNewChat: boolean;
     wasRolledOver: boolean;
-    isDirective?: boolean;
   }> {
     const {
       candidateProviders,
@@ -958,6 +1020,8 @@ export class TransgenticMcpServer {
       reqId,
       bypassedWebviewDispatch,
       forcedProvider,
+      reportProgress,
+      isolateConversation,
     } = params;
 
     const activeLocalLlmConfig = this.config?.localLLM || DynamicRouter.getLocalLlmConfig();
@@ -972,6 +1036,8 @@ export class TransgenticMcpServer {
 
     for (let i = 0; i < candidateProviders.length; i++) {
       const providerId = candidateProviders[i];
+      throwIfCancelled(reqAbortController?.signal || abortSignal);
+      reportProgress?.(`Routing to ${getProviderDisplayName(providerId)}`);
 
       // Dedicated execution for Local LLM
       if (providerId === 'localllm') {
@@ -982,20 +1048,8 @@ export class TransgenticMcpServer {
           continue;
         }
 
-        const isLocalMicroTaskActive = (isBalanced || isLocalMicroTaskEnabled) && isAgenticClient;
-        if (isLocalMicroTaskActive && !microTask.isMicroTask) {
-          const directiveText = formatLocalLlmMicroTaskOnlyDirective();
-          return {
-            text: directiveText,
-            finalResponseWithLocalPath: directiveText,
-            provider: 'localllm',
-            modelUsed: localLlmConfig.selectedModel || `local-${localLlmConfig.preset}`,
-            account: { id: 'localllm_default', alias: `Local (${localLlmConfig.preset})` },
-            wasNewChat: false,
-            wasRolledOver: false,
-            isDirective: true,
-          };
-        }
+        // Classification guides routing and prompt specialization, never replaces an
+        // explicitly routed request with client instructions. Append guidance after completion.
 
         this.updateCoreState('routing', 'localllm', `Routing to Local LLM (${localLlmConfig.preset})...`);
 
@@ -1020,7 +1074,7 @@ export class TransgenticMcpServer {
 
           let llmPrompt = maskedText;
           if (isLocalNewChat) {
-            if (isBalanced || isLocalMicroTaskEnabled) {
+            if (isAgenticClient && (isBalanced || (effectiveMode === 'coding' && isLocalMicroTaskEnabled && microTask.isMicroTask))) {
               llmPrompt = microTask.isMicroTask
                 ? wrapBalancedLocalLlmPrompt(llmPrompt, microTask.category)
                 : wrapBalancedAgenticPrompt(llmPrompt, effectiveMode);
@@ -1038,10 +1092,15 @@ export class TransgenticMcpServer {
             { role: 'user', content: llmPrompt },
           ];
 
+          reportProgress?.('Generating response with Local LLM');
           const completion = await LocalLlmClient.generateCompletion(chatMessages, localLlmConfig, {
             temperature: localLlmConfig.temperature,
             abortSignal: reqAbortController?.signal || abortSignal,
           });
+          throwIfCancelled(reqAbortController?.signal || abortSignal);
+          if (!completion.text?.trim() || completion.text.trim() === '(Empty response returned by local model)') {
+            throw new Error('Local LLM returned an empty response.');
+          }
 
           globalThreadManager.recordTurn(scopedThreadId, 'localllm', maskedText, completion.text);
           globalThreadManager.markPresetPromptsSent(scopedThreadId, 'localllm');
@@ -1050,9 +1109,11 @@ export class TransgenticMcpServer {
           executionResult = { text: completion.text, provider: 'localllm', modelUsed: modelName };
           successfulProvider = 'localllm';
           successfulAccount = { id: 'localllm_default', alias: `Local (${localLlmConfig.preset})` };
-          wasNewChat = bypassedWebviewDispatch ? false : isLocalNewChat;
+          wasNewChat = isLocalNewChat;
           break;
         } catch (err: any) {
+          throwIfCancelled(reqAbortController?.signal || abortSignal);
+          err.providerUsed = providerId;
           console.error(`[Transgentic] Local LLM execution failed:`, err?.message || err);
           lastCandidateError = err;
           continue;
@@ -1116,18 +1177,35 @@ export class TransgenticMcpServer {
         ModelRegistryManager.getEffectiveModel(providerId, requestedModel) ||
         undefined;
 
+      // Different conversations/accounts and independently cancellable requests must
+      // never share a provider result. Preserve byte-exact prompts in the key.
+      const dedupScope = JSON.stringify([effectiveThreadId, activeAccount.id, isAgenticClient,
+        isBalanced, Boolean(newThread), abortSignal ? reqId : 'shared']);
+
       const inFlight = DuplicateActionGuard.getInFlight(
         providerId,
         effectiveMode,
         targetModel,
-        maskedText
+        maskedText,
+        dedupScope
       );
 
       if (inFlight) {
         console.warn(
           `[Transgentic] Duplicate in-flight prompt detected for provider "${providerId}". Coalescing.`
         );
-        return await inFlight.promise;
+        try {
+          executionResult = await inFlight.promise;
+          throwIfCancelled(reqAbortController?.signal || abortSignal);
+          successfulProvider = providerId;
+          successfulAccount = activeAccount;
+          break; // Shared adapter output still needs normal response finalization below.
+        } catch (err) {
+          throwIfCancelled(reqAbortController?.signal || abortSignal);
+          lastCandidateError = err;
+          if (forcedProvider) throw err;
+          continue;
+        }
       }
 
       let resolveInFlight!: (val: any) => void;
@@ -1136,6 +1214,8 @@ export class TransgenticMcpServer {
         resolveInFlight = resolve;
         rejectInFlight = reject;
       });
+      // The owner handles candidate failures even when no duplicate caller is waiting.
+      void inFlightPromise.catch(() => {});
 
       DuplicateActionGuard.register(
         reqId,
@@ -1143,12 +1223,15 @@ export class TransgenticMcpServer {
         effectiveMode,
         targetModel,
         maskedText,
-        inFlightPromise
+        inFlightPromise,
+        dedupScope
       );
 
       let isNewChat = false;
       try {
+        reportProgress?.(`Queued for ${getProviderDisplayName(providerId)}`);
         executionResult = await AccountQueueManager.runTask(activeAccount.id, reqId, async () => {
+          throwIfCancelled(reqAbortController?.signal || abortSignal);
           this.updateCoreState('processing', providerId, `Processing on ${providerId} (${activeAccount.alias})...`);
           globalSessionManager.updateProviderState(providerId, 'busy');
 
@@ -1172,7 +1255,7 @@ export class TransgenticMcpServer {
           const existingSession = globalThreadManager.getSession(scopedThreadId, providerId);
           const isTooLong = !newThread && existingSession && globalThreadManager.shouldRollover(scopedThreadId, providerId, 10, 30000);
 
-          if (newThread || isTooLong) {
+          if (newThread || isTooLong || (isolateConversation && !existingSession)) {
             isNewChat = true;
             await adapter.navigateToNewChat();
             globalThreadManager.removeSession(scopedThreadId, providerId);
@@ -1201,7 +1284,7 @@ export class TransgenticMcpServer {
 
           let promptToSend = maskedText;
           if (isNewChat) {
-            if (isBalanced) {
+            if (isAgenticClient && isBalanced) {
               promptToSend = wrapBalancedAgenticPrompt(promptToSend, effectiveMode);
             } else if (isAgenticClient) {
               promptToSend = wrapUnbalancedAgenticPrompt(promptToSend, effectiveMode);
@@ -1211,12 +1294,12 @@ export class TransgenticMcpServer {
             }
           }
 
-          // Local Zero-Leak & Compact
-          if (activeLocalLlmConfig?.enabled && activeLocalLlmConfig?.localZeroLeak) {
+          // Local Zero-Leak & Compact (Coding mode only)
+          if (effectiveMode === 'coding' && activeLocalLlmConfig?.enabled && activeLocalLlmConfig?.localZeroLeak) {
             const leakResult = globalLocalZeroLeakManager.sanitizePrompt(promptToSend, reqId);
             promptToSend = leakResult.sanitizedText;
           }
-          if (activeLocalLlmConfig?.enabled && activeLocalLlmConfig?.localCompact) {
+          if (effectiveMode === 'coding' && activeLocalLlmConfig?.enabled && activeLocalLlmConfig?.localCompact) {
             const compactResult = await globalLocalCompactManager.compactPrompt(
               promptToSend,
               activeLocalLlmConfig,
@@ -1230,6 +1313,8 @@ export class TransgenticMcpServer {
           let adapterResult: any;
           const releaseDomLock = await adapter.acquireDomLock();
           try {
+            throwIfCancelled(reqAbortController?.signal || abortSignal);
+            reportProgress?.(`Generating response with ${getProviderDisplayName(providerId)}`);
             try {
               adapterResult = await adapter.executePrompt(promptToSend, effectiveMode, projectMeta, undefined, reqAbortController?.signal || abortSignal);
             } catch (promptErr: any) {
@@ -1238,7 +1323,7 @@ export class TransgenticMcpServer {
                 globalThreadManager.removeSession(scopedThreadId, providerId);
                 wasRolledOver = true;
                 let rolloverPrompt = maskedText;
-                if (isBalanced) {
+                if (isAgenticClient && isBalanced) {
                   rolloverPrompt = wrapBalancedAgenticPrompt(rolloverPrompt, effectiveMode);
                 } else if (isAgenticClient) {
                   rolloverPrompt = wrapUnbalancedAgenticPrompt(rolloverPrompt, effectiveMode);
@@ -1254,6 +1339,11 @@ export class TransgenticMcpServer {
           } finally {
             releaseDomLock();
           }
+          throwIfCancelled(reqAbortController?.signal || abortSignal);
+
+          if (!adapterResult?.text?.trim() && !adapterResult?.media) {
+            throw new Error(`${providerId} returned an empty response.`);
+          }
 
           globalRateLimiter.markSuccess(providerId);
           AccountRegistryManager.markReady(providerId, activeAccount.id);
@@ -1268,6 +1358,7 @@ export class TransgenticMcpServer {
 
           let savedMediaRelPath: string | undefined = undefined;
           if (adapterResult.media) {
+            reportProgress?.('Saving generated asset');
             let cookieHeader: string | undefined;
             try {
               const sess = globalSessionManager.sessions.get(providerId);
@@ -1316,6 +1407,8 @@ export class TransgenticMcpServer {
         break;
       } catch (candidateErr: any) {
         rejectInFlight(candidateErr);
+        throwIfCancelled(reqAbortController?.signal || abortSignal);
+        candidateErr.providerUsed = providerId;
         if (candidateErr.message?.includes('[MODEL_SELECTION_FAILED]')) {
           globalSessionManager.updateProviderState(providerId, 'ready');
           throw candidateErr;
@@ -1346,13 +1439,16 @@ export class TransgenticMcpServer {
           providerId,
           effectiveMode,
           targetModel,
-          maskedText
+          maskedText,
+          dedupScope
         );
       }
     }
 
     if (!executionResult || !successfulProvider || !successfulAccount) {
-      throw (lastCandidateError || new Error(`All candidate AI services in fallback chain failed for mode "${effectiveMode}".`));
+      const failure = lastCandidateError || new Error(`All candidate AI services in fallback chain failed for mode "${effectiveMode}".`);
+      failure.providerUsed ||= candidateProviders.at(-1);
+      throw failure;
     }
 
     let sanitizedText = globalBlindingEngine.unblind(executionResult.text);
@@ -1389,7 +1485,7 @@ export class TransgenticMcpServer {
       finalResponseWithLocalPath = globalLocalZeroLeakManager.restoreResponse(finalResponseWithLocalPath, reqId);
     }
 
-    if (wasRolledOver) {
+    if (wasRolledOver && isAgenticClient) {
       const providerName = successfulProvider === 'localllm' ? 'Local LLM' : (successfulProvider?.toUpperCase() || 'AI Service');
       const promptBrief = maskedText.slice(0, 160).replace(/\n/g, ' ');
       const outputBrief = finalResponseWithLocalPath.slice(0, 200).replace(/\n/g, ' ');
@@ -1429,7 +1525,8 @@ export class TransgenticMcpServer {
     threadId?: string,
     newThread?: boolean,
     isQuickPrompt?: boolean,
-    isStrictExplicitMode?: boolean
+    isStrictExplicitMode?: boolean,
+    caller?: CallerContext
   ): Promise<any> {
     const startTime = Date.now();
     this.requestCounter++;
@@ -1440,19 +1537,24 @@ export class TransgenticMcpServer {
     const { maskedText, replacementsCount } = globalBlindingEngine.blind(rawPrompt, contextId);
     let log: McpRequestLog | null = null;
     let reqAbortController: AbortController | null = null;
+    const responseProfile: ResponseProfile = isQuickPrompt ? 'plain' : (caller?.profile || 'agentic');
+    const isAgenticClient = responseProfile === 'agentic';
+    let effectiveResponseMode = mode;
+    let detachAbort: (() => void) | undefined;
 
     try {
       // 2. Intelligent Intent Classification
       const { mode: effectiveMode, isAutoDetected } = DynamicRouter.classifyMode(rawPrompt, mode, isStrictExplicitMode);
-      const isAgenticClient = !isQuickPrompt;
+      effectiveResponseMode = effectiveMode;
+      throwIfCancelled(abortSignal);
       const balancedModeConfig = this.config?.balancedMode ?? this.config?.coding?.balancedMode ?? true;
-      const isBalanced = isAgenticClient ? balancedModeConfig : (effectiveMode === 'coding' && balancedModeConfig);
+      const isBalanced = isQuickPrompt ? (effectiveMode === 'coding' && balancedModeConfig) : balancedModeConfig;
       const doubleAgentCfg = this.config?.doubleAgent ?? { enabled: false, includeLocalLlm: false };
       const scenario = determineDispatchScenario(isBalanced, doubleAgentCfg, effectiveMode);
       const shouldRunScenario2 = !forcedProvider && scenario === 'scenario_2_dual_dispatch';
 
-      // Micro-task classification for Coding mode (or auto-detected coding)
-      const microTask = (effectiveMode === 'coding' || effectiveMode === 'general')
+      // Micro-task classification for Coding mode ONLY
+      const microTask = effectiveMode === 'coding'
         ? classifyMicroTask(rawPrompt)
         : { isMicroTask: false };
 
@@ -1467,9 +1569,12 @@ export class TransgenticMcpServer {
 
       const isLocalLlmInRoute = candidateProviders.includes('localllm');
 
-      const effectiveThreadId =
+      const conversationId =
         threadId ||
         (isQuickPrompt ? 'quick_prompt_session' : (projectName ? `project_${projectName}` : 'default_mcp_thread'));
+      const effectiveThreadId = caller
+        ? JSON.stringify([isQuickPrompt ? 'quick_prompt' : 'mcp', caller.sessionId, responseProfile, effectiveMode, conversationId])
+        : conversationId;
 
       const defaultProvider = candidateProviders[0];
       const defaultAccount = AccountRegistryManager.getActiveAccount(defaultProvider);
@@ -1484,22 +1589,52 @@ export class TransgenticMcpServer {
 
       let bypassedWebviewDispatch = false;
       if (
+        effectiveMode === 'coding' &&
         isLocalMicroTaskEnabled &&
-        isAfterTurnOne &&
         microTask.isMicroTask &&
         !forcedProvider &&
         isLocalLlmAvailable &&
-        isLocalLlmInRoute &&
         !shouldRunScenario2
       ) {
-        if (candidateProviders[0] !== 'localllm') {
+        if (candidateProviders.length === 0 || isLocalLlmInRoute || isAfterTurnOne) {
           candidateProviders = ['localllm', ...candidateProviders.filter((p) => p !== 'localllm')];
           bypassedWebviewDispatch = true;
         }
       }
 
       if (candidateProviders.length === 0 && !shouldRunScenario2) {
-        throw new Error(`No available AI services found for mode "${effectiveMode}".`);
+        const directiveText = isAgenticClient
+          ? formatCodexFallbackDirective(effectiveMode, isLocalMicroTaskEnabled && isLocalLlmAvailable)
+          : `No AI service is available for ${effectiveMode} mode. Select an available service in Routing.`;
+        const fallbackLog: McpRequestLog = {
+          id: reqId,
+          timestamp: startTime,
+          mode: effectiveMode,
+          targetProvider: 'none',
+          status: isAgenticClient ? 'success' : 'failed',
+          outcome: isAgenticClient ? 'handoff' : 'failed',
+          maskedSecretsCount: replacementsCount,
+          promptSnippet: maskedText.slice(0, 160),
+          promptText: maskedText,
+          responseText: directiveText,
+          responseSnippet: directiveText.slice(0, 160),
+          durationMs: Date.now() - startTime,
+          balancedModeApplied: isBalanced,
+          autoClassified: isAutoDetected,
+          isQuickPrompt: !!isQuickPrompt,
+          isMicroTask: microTask.isMicroTask,
+        };
+        this.addLog(fallbackLog);
+        this.updateCoreState('idle');
+        return withResponseDetails({
+          content: [{ type: 'text', text: directiveText }],
+          isError: !isAgenticClient,
+          metadata: {
+            mode: effectiveMode,
+            directive: 'no_routed_service',
+            durationMs: Date.now() - startTime,
+          },
+        }, { status: isAgenticClient ? 'handoff' : 'failed', mode: effectiveMode, responseProfile });
       }
 
       const initialProvider = candidateProviders[0] || 'chatgpt';
@@ -1531,7 +1666,9 @@ export class TransgenticMcpServer {
         if (abortSignal.aborted) {
           reqAbortController.abort();
         } else {
-          abortSignal.addEventListener('abort', () => reqAbortController?.abort());
+          const onAbort = () => reqAbortController?.abort();
+          abortSignal.addEventListener('abort', onAbort, { once: true });
+          detachAbort = () => abortSignal.removeEventListener('abort', onAbort);
         }
       }
       this.activeAbortControllers.set(reqId, reqAbortController);
@@ -1543,6 +1680,9 @@ export class TransgenticMcpServer {
       let finalResponseWithLocalPath = '';
       let wasRolledOver = false;
       let wasNewChat = false;
+      let providers: ProviderOutcome[] = [];
+      let artifacts: string[] = [];
+      let partial = false;
 
       // 4. Execution Dispatching: Scenario 2 vs Single Pipeline
       if (shouldRunScenario2) {
@@ -1570,6 +1710,8 @@ export class TransgenticMcpServer {
             reqAbortController,
             isAgenticClient,
             pipeline: 'main',
+            reportProgress: caller?.reportProgress,
+            isolateConversation: Boolean(caller),
             reqId: `${reqId}_main`,
             startTime,
             bypassedWebviewDispatch,
@@ -1591,6 +1733,8 @@ export class TransgenticMcpServer {
             reqAbortController,
             isAgenticClient,
             pipeline: 'co',
+            reportProgress: caller?.reportProgress,
+            isolateConversation: Boolean(caller),
             reqId: `${reqId}_co`,
             startTime,
             bypassedWebviewDispatch,
@@ -1601,15 +1745,25 @@ export class TransgenticMcpServer {
         );
 
         finalResponseWithLocalPath = dualResult.combinedText;
+        partial = Boolean(dualResult.mainError || dualResult.coError);
+        providers = [
+          { role: 'main', status: dualResult.mainResult ? 'completed' : 'failed',
+            provider: dualResult.mainResult?.provider || (dualResult.mainError as any)?.providerUsed || mainCandidates[0],
+            model: dualResult.mainResult?.modelUsed, error: dualResult.mainError?.message },
+          { role: 'co', status: dualResult.coResult ? 'completed' : 'failed',
+            provider: dualResult.coResult?.provider || (dualResult.coError as any)?.providerUsed || coCandidates[0],
+            model: dualResult.coResult?.modelUsed, error: dualResult.coError?.message },
+        ];
+        artifacts = [...new Set([dualResult.mainResult?.mediaPath, dualResult.coResult?.mediaPath].filter((p): p is string => Boolean(p)))];
         successfulProvider = dualResult.mainResult?.provider || dualResult.coResult?.provider || mainCandidates[0];
         successfulAccount = {
-          id: (dualResult.mainResult as any)?.account?.id || dualResult.mainResult?.accountProfileId || dualResult.coResult?.accountProfileId || 'dual',
-          alias: (dualResult.mainResult as any)?.account?.alias || dualResult.mainResult?.accountAlias || dualResult.coResult?.accountAlias || 'Dual Agent',
+          id: (dualResult.mainResult as any)?.account?.id || dualResult.mainResult?.accountProfileId || (dualResult.coResult as any)?.account?.id || dualResult.coResult?.accountProfileId || 'dual',
+          alias: (dualResult.mainResult as any)?.account?.alias || dualResult.mainResult?.accountAlias || (dualResult.coResult as any)?.account?.alias || dualResult.coResult?.accountAlias || 'Dual Agent',
         };
         activeMediaPath = dualResult.mainResult?.mediaPath || dualResult.coResult?.mediaPath;
         executionResult = {
           text: dualResult.combinedText,
-          provider: `${mainCandidates[0]} + ${coCandidates[0]}` as ProviderId,
+          provider: providers.filter((p) => p.status === 'completed').map((p) => p.provider).join(' + ') as ProviderId,
           modelUsed: dualResult.mainResult?.modelUsed || dualResult.coResult?.modelUsed,
           mediaPath: activeMediaPath,
         };
@@ -1632,39 +1786,13 @@ export class TransgenticMcpServer {
           reqAbortController,
           isAgenticClient,
           pipeline: 'main',
+          reportProgress: caller?.reportProgress,
+          isolateConversation: Boolean(caller),
           reqId,
           startTime,
           bypassedWebviewDispatch,
           forcedProvider,
         });
-
-        if (pipelineResult.isDirective) {
-          log.status = 'success';
-          log.targetProvider = 'localllm';
-          log.accountProfileId = 'localllm_default';
-          log.accountAlias = pipelineResult.account.alias;
-          log.durationMs = Date.now() - startTime;
-          log.responseText = pipelineResult.text;
-          log.responseSnippet = '[Balanced Local LLM Directive] Instructed agentic client to use Transgentic MCP for micro-tasks only';
-          log.isMicroTask = false;
-          this.updateLog(log);
-          this.updateCoreState('idle');
-
-          return {
-            content: [
-              {
-                type: 'text',
-                text: pipelineResult.text,
-              },
-            ],
-            metadata: {
-              providerUsed: 'localllm',
-              mode: effectiveMode,
-              directive: 'local_llm_micro_task_only',
-              durationMs: Date.now() - startTime,
-            },
-          };
-        }
 
         finalResponseWithLocalPath = pipelineResult.finalResponseWithLocalPath;
         successfulProvider = pipelineResult.provider;
@@ -1673,8 +1801,13 @@ export class TransgenticMcpServer {
         executionResult = pipelineResult;
         wasRolledOver = pipelineResult.wasRolledOver;
         wasNewChat = pipelineResult.wasNewChat;
+        providers = [{ role: 'main', status: 'completed', provider: successfulProvider!, model: executionResult.modelUsed }];
+        artifacts = activeMediaPath ? [activeMediaPath] : [];
       }
 
+      throwIfCancelled(reqAbortController.signal);
+      if (['image', 'video', 'audio'].includes(effectiveMode) && artifacts.length === 0) partial = true;
+      log.outcome = partial ? 'partial' : 'completed';
       if (shouldRunScenario2) {
         log.status = 'success';
         log.targetProvider = executionResult.provider;
@@ -1717,7 +1850,7 @@ export class TransgenticMcpServer {
             type: 'text',
             text: `\n\n---\n${formatBalancedDoubleAgentDirective()}`,
           });
-        } else if (scenario === 'scenario_2_dual_dispatch') {
+        } else if (shouldRunScenario2) {
           // Scenario 2: Double Agent enabled without balanced mode -> Concurrent dual dispatch with Transgentic-weighted directive
           contentItems.push({
             type: 'text',
@@ -1726,8 +1859,8 @@ export class TransgenticMcpServer {
         } else if (scenario === 'standard_balanced') {
           if (successfulProvider === 'localllm' && (isBalanced || isLocalMicroTaskEnabled)) {
             const reminderText = wasNewChat
-              ? formatBalancedLocalLlmDirective(executionResult.modelUsed || 'local')
-              : formatLocalLlmDecisionReminder(executionResult.modelUsed || 'local');
+              ? formatBalancedLocalLlmDirective(executionResult.modelUsed || 'local', effectiveMode)
+              : formatLocalLlmDecisionReminder(executionResult.modelUsed || 'local', effectiveMode);
             contentItems.push({
               type: 'text',
               text: `\n\n---\n${reminderText}`,
@@ -1735,14 +1868,14 @@ export class TransgenticMcpServer {
           } else if (successfulProvider !== 'localllm') {
             const isRecallOn = isRecallEnabledForMode(this.config || undefined, effectiveMode);
             const reminderText = wasNewChat
-              ? formatBalancedWebAiDirective(successfulProvider, isRecallOn)
-              : formatWebAiDecisionReminder(successfulProvider);
+              ? formatBalancedWebAiDirective(successfulProvider, isRecallOn, effectiveMode)
+              : formatWebAiDecisionReminder(successfulProvider, effectiveMode);
             contentItems.push({
               type: 'text',
               text: `\n\n---\n${reminderText}`,
             });
           }
-        } else if (scenario === 'standard_single') {
+        } else if (!isBalanced) {
           // Standard Single without balanced mode -> Remind agentic IDE to mention "use Transgentic MCP" every time
           const activeProviderName = successfulProvider || executionResult?.provider || candidateProviders[0];
           const reminderText = formatUnbalancedAgenticReminder(activeProviderName);
@@ -1760,7 +1893,7 @@ export class TransgenticMcpServer {
         });
       }
 
-      return {
+      return withResponseDetails({
         content: contentItems,
         metadata: {
           providerUsed: executionResult.provider,
@@ -1770,10 +1903,12 @@ export class TransgenticMcpServer {
           maskedSecretsCount: replacementsCount,
           durationMs: Date.now() - startTime,
         },
-      };
+      }, { status: partial ? 'partial' : 'completed', mode: effectiveMode, responseProfile, providers, artifacts });
     } catch (err: any) {
+      const cancelled = Boolean(abortSignal?.aborted || reqAbortController?.signal.aborted || err?.name === 'AbortError');
       if (log) {
         log.status = 'failed';
+        log.outcome = cancelled ? 'cancelled' : 'failed';
         let errMessage = err?.message || 'Execution failed';
         if (errMessage.toLowerCase().includes('terminated by user') && !abortSignal?.aborted && !reqAbortController?.signal.aborted) {
           errMessage = 'Request interrupted or empty response';
@@ -1785,8 +1920,7 @@ export class TransgenticMcpServer {
       }
 
       // 7. Hard-Stop Policy on terminal failure
-      const providerId = forcedProvider || 'claude';
-      const activeAccount = AccountRegistryManager.getActiveAccount(providerId);
+      const providerId: ProviderId | undefined = err?.providerUsed || forcedProvider;
       const isRateLimit =
         err.message?.includes('[RATE_LIMIT]') ||
         err.message?.includes('rate limit') ||
@@ -1795,17 +1929,17 @@ export class TransgenticMcpServer {
 
       this.updateCoreState('idle');
 
-      const haltGuardActive = isAgentHaltGuardEnabled(this.config || undefined, mode);
-      if (haltGuardActive && isRateLimit) {
-        const cooldownEstimate = 'approx. 60 minutes';
-        emitRateLimitNotification(providerId, cooldownEstimate);
+      const haltGuardActive = isAgenticClient && isAgentHaltGuardEnabled(this.config || undefined, effectiveResponseMode);
+      if (!cancelled && haltGuardActive && isRateLimit) {
+        const cooldownEstimate = 'unknown; check the provider';
+        if (providerId) emitRateLimitNotification(providerId, cooldownEstimate);
 
-        return {
+        return withResponseDetails({
           isError: true,
           content: [
             {
               type: 'text',
-              text: formatAgentHaltDirective(providerId, cooldownEstimate),
+              text: formatAgentHaltDirective(providerId || 'AI service', cooldownEstimate),
             },
           ],
           metadata: {
@@ -1814,11 +1948,16 @@ export class TransgenticMcpServer {
             agentHaltTriggered: true,
             durationMs: Date.now() - startTime,
           },
-        };
+        }, { status: 'failed', mode: effectiveResponseMode, responseProfile, failedProvider: providerId });
       }
 
-      throw new Error(`Transgentic Execution Halt: ${err?.message || 'Request execution stopped'}`);
+      const errorText = cancelled ? 'Request cancelled.' : (err?.message || 'Request execution stopped');
+      const content = [{ type: 'text', text: errorText }];
+      if (!cancelled && isAgenticClient) content.push({ type: 'text', text: '[TRANSGENTIC GUIDANCE]: This request failed. Consider another approach within the user\'s requested scope.' });
+      return withResponseDetails({ isError: true, content, metadata: { mode: effectiveResponseMode, providerUsed: providerId } },
+        { status: cancelled ? 'cancelled' : 'failed', mode: effectiveResponseMode, responseProfile, failedProvider: providerId });
     } finally {
+      detachAbort?.();
       this.activeAbortControllers.delete(reqId);
       // 8. Request-scoped 'finally' purge: GUARANTEES all volatile tokens for this request are purged
       globalBlindingEngine.purgeRequestContext(contextId);
@@ -1827,11 +1966,12 @@ export class TransgenticMcpServer {
   }
 
   public async start(): Promise<number> {
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
       const tryListen = (attemptPort: number) => {
         this.httpServer = this.app
           .listen(attemptPort, '127.0.0.1', () => {
-            this.port = attemptPort;
+            const address = this.httpServer?.address();
+            this.port = address && typeof address !== 'string' ? address.port : attemptPort;
             console.log(`[Transgentic MCP Server] Listening on http://127.0.0.1:${this.port}`);
             resolve(this.port);
           })
@@ -1841,6 +1981,7 @@ export class TransgenticMcpServer {
               tryListen(attemptPort + 1);
             } else {
               console.error('[Transgentic MCP Server] Failed to start:', err);
+              reject(err);
             }
           });
       };

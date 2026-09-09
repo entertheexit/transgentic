@@ -98,14 +98,20 @@ export const RoutesSettings: React.FC<RoutesSettingsProps> = ({
 
   const currentRoute: ModeRouteConfig = {
     mode: selectedMode,
-    primary: (currentPipelineConfig?.defaultService || (activePipeline === 'co' ? 'chatgpt' : modeRoutes[selectedMode]?.primary || 'claude')) as ProviderId,
+    primary: (currentPipelineConfig?.defaultService !== undefined
+      ? currentPipelineConfig.defaultService
+      : (activePipeline === 'co' ? 'chatgpt' : (modeRoutes[selectedMode]?.primary ?? 'claude'))) as ProviderId,
     fallbacks: (currentPipelineConfig?.fallbackChain || (activePipeline === 'co' ? ['gemini', 'grok'] : modeRoutes[selectedMode]?.fallbacks) || []) as ProviderId[],
     providerModels: currentPipelineConfig?.modelRouting || modeRoutes[selectedMode]?.providerModels,
     outputFormat: modeRoutes[selectedMode]?.outputFormat || 'prose_markdown',
   };
 
-  const mainPrimary = (routeMatrix?.main?.[selectedMode]?.defaultService || modeRoutes[selectedMode]?.primary || 'claude') as ProviderId;
-  const coPrimary = (routeMatrix?.co?.[selectedMode]?.defaultService || 'chatgpt') as ProviderId;
+  const mainPrimary = (routeMatrix?.main?.[selectedMode]?.defaultService !== undefined
+    ? routeMatrix.main[selectedMode].defaultService
+    : (modeRoutes[selectedMode]?.primary ?? 'claude')) as ProviderId;
+  const coPrimary = (routeMatrix?.co?.[selectedMode]?.defaultService !== undefined
+    ? routeMatrix.co[selectedMode].defaultService
+    : 'chatgpt') as ProviderId;
 
   const getProviderIcon = (id: ProviderId) => {
     const theme = getProviderTheme(id, servicesManifest?.services?.[id]);
@@ -114,6 +120,7 @@ export const RoutesSettings: React.FC<RoutesSettingsProps> = ({
   };
 
   const getProviderLabel = (id: ProviderId) => {
+    if (!id) return 'None';
     if (id === 'localllm') {
       return 'Local LLM';
     }
@@ -154,9 +161,21 @@ export const RoutesSettings: React.FC<RoutesSettingsProps> = ({
 
   const handleSetPrimary = (newPrimary: ProviderId) => {
     soundFx.playClick();
+    if (currentRoute.primary === newPrimary) {
+      // Toggle off / Deselect
+      onUpdateRoute(selectedMode, {
+        primary: '' as any,
+        defaultService: '',
+        fallbacks: currentRoute.fallbacks,
+        providerModels: currentRoute.providerModels,
+      }, activePipeline);
+      return;
+    }
+
     const updatedFallbacks = currentRoute.fallbacks.filter((p) => p !== newPrimary);
     onUpdateRoute(selectedMode, {
       primary: newPrimary,
+      defaultService: newPrimary,
       fallbacks: updatedFallbacks,
       providerModels: currentRoute.providerModels,
     }, activePipeline);
@@ -168,6 +187,7 @@ export const RoutesSettings: React.FC<RoutesSettingsProps> = ({
       const altCoPrimary = coFallbacks[0] || fallbackOptions.find((p) => p !== newPrimary) || 'claude';
       onUpdateRoute(selectedMode, {
         primary: altCoPrimary,
+        defaultService: altCoPrimary,
         fallbacks: coFallbacks.filter((p) => p !== altCoPrimary),
       }, 'co');
     }
@@ -531,13 +551,30 @@ export const RoutesSettings: React.FC<RoutesSettingsProps> = ({
         {/* 1. Primary Default Provider */}
         <div className="space-y-1.5">
           <label className="text-[10px] font-mono uppercase tracking-wider text-slate-400 flex items-center justify-between">
-            <span>1. Default AI Service (Primary)</span>
+            <span className="flex items-center gap-1.5">
+              <span>1. Default AI Service (Primary)</span>
+              <span className="text-[9px] text-slate-500 font-sans normal-case">(click selected to deselect & fallback to Codex)</span>
+            </span>
             {activePipeline === 'co' && (
               <span className="text-[9px] font-mono text-cyan-400">
-                Main Agent Primary: {getProviderLabel(mainPrimary)}
+                Main Agent Primary: {mainPrimary ? getProviderLabel(mainPrimary) : 'Deselected'}
               </span>
             )}
           </label>
+
+          {!currentRoute.primary && (
+            <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/25 flex items-center justify-between text-xs">
+              <div className="flex items-center gap-2">
+                <Bot className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                <span className="text-[10px] text-amber-200">
+                  <strong>No Service Selected</strong>: Requests in {selectedMode} mode will fall back to your agentic client (Codex / Antigravity / Cursor). Quick prompt is disabled.
+                </span>
+              </div>
+              <span className="text-[9px] font-mono font-bold text-amber-300 bg-amber-500/20 px-1.5 py-0.5 rounded border border-amber-500/30 shrink-0">
+                CODEX FALLBACK
+              </span>
+            </div>
+          )}
 
           <div className="grid grid-cols-2 gap-2">
             {allProviders.map((id) => {
@@ -574,7 +611,9 @@ export const RoutesSettings: React.FC<RoutesSettingsProps> = ({
                       : 'bg-white/5 border-white/5 hover:border-white/15 text-slate-300 cursor-pointer'
                   }`}
                   title={
-                    isActiveInMain
+                    isSelected
+                      ? 'Currently selected as Primary. Click to deselect (falls back to Codex).'
+                      : isActiveInMain
                       ? 'Currently active as Primary in Main Agent. Mutual exclusion prevents dual assignment.'
                       : !isModeSupported
                       ? isLocal
