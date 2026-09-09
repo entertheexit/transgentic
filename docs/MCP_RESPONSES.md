@@ -1,4 +1,16 @@
-# MCP responses and caller profiles
+# Transgentic MCP responses and caller profiles
+
+Response contract for Transgentic MCP clients: agentic and plain profiles, conversation scope, structured outcomes, cancellation, and progress.
+
+[Documentation index](../README.md#documentation-index) · [Tool reference](MCP_TOOLS.md)
+
+## Contents
+
+- [Choosing a response profile](#choosing-a-response-profile)
+- [Conversation and request isolation](#conversation-and-request-isolation)
+- [Structured outcomes](#structured-outcomes)
+- [Optional progress](#optional-progress)
+- [Verification](#verification)
 
 Transgentic keeps provider answers in the first text content block. Agentic connections receive a separate trailing workflow reminder. Plain connections and Quick Prompt receive neutral model prompts, answers, and errors. Existing `content` and `metadata` fields remain available.
 

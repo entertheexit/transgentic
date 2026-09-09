@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="197" height="26" viewBox="0 0 197 26" role="img" aria-labelledby="title">
+  <title id="title">STATUS: EXPERIMENTAL</title>
+  <rect x="0.5" y="0.5" width="196" height="25" rx="6" fill="#111827" stroke="#374151"/>
+  <text x="11" y="17" fill="#9ca3af" font-family="Verdana,DejaVu Sans,sans-serif" font-size="10" letter-spacing="0.5">STATUS</text>
+  <text x="64" y="17" fill="#fcd34d" font-family="Verdana,DejaVu Sans,sans-serif" font-size="10" font-weight="600">EXPERIMENTAL</text>
+</svg>
