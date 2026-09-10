@@ -1,4 +1,6 @@
-import { CliServicesSettings } from './CliServicesSettings.js';
+import { CliServicesSettings, setCachedCliState } from './CliServicesSettings.js';
+import { loadCliState } from '../utils/cliStateLoader.js';
+import { motion } from 'framer-motion';
 import React, { useState } from 'react';
 import {
   ProviderConfig,
@@ -218,6 +220,12 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   React.useEffect(() => {
     try { window.localStorage.setItem('transgentic.providerUi', JSON.stringify({ category: providerCategory, selections: selectedProviders })); } catch {}
   }, [providerCategory, selectedProviders]);
+
+  React.useEffect(() => {
+    if (window.transgenticApi?.getCliState) {
+      void loadCliState(window.transgenticApi).then(setCachedCliState).catch(() => {});
+    }
+  }, []);
 
   React.useEffect(() => {
     const fetchToken = async () => {
@@ -931,7 +939,7 @@ http_headers = { "Authorization" = "Bearer ${clientToken || 'YOUR_TOKEN'}" }`;
                   }}
                   className="sr-only peer"
                 />
-                <div className="w-9 h-5 bg-slate-700/80 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-4 peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-cyan-500 relative border border-white/10 shadow-inner"></div>
+                <span className="relative h-5 w-9 rounded-full border border-white/10 bg-slate-700/80 shadow-inner transition-colors peer-checked:border-cyan-400/40 peer-checked:bg-cyan-500 after:absolute after:left-[2px] after:top-[2px] after:h-3.5 after:w-3.5 after:rounded-full after:bg-slate-300 after:shadow after:transition-transform peer-checked:after:translate-x-4 peer-checked:after:bg-white" />
                 <span className={`text-[10px] font-mono font-semibold tracking-tight ${isBalancedMode ? 'text-cyan-300' : 'text-slate-400'
                   }`}>
                   {isBalancedMode ? 'ACTIVE' : 'DISABLED'}
@@ -974,7 +982,7 @@ http_headers = { "Authorization" = "Bearer ${clientToken || 'YOUR_TOKEN'}" }`;
                   }}
                   className="sr-only peer"
                 />
-                <div className="w-9 h-5 bg-slate-700/80 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-4 peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-amber-500 relative border border-white/10 shadow-inner group-hover:border-white/20 transition-colors"></div>
+                <span className="relative h-5 w-9 rounded-full border border-white/10 bg-slate-700/80 shadow-inner transition-colors group-hover:border-white/20 peer-checked:border-amber-400/40 peer-checked:bg-amber-500 after:absolute after:left-[2px] after:top-[2px] after:h-3.5 after:w-3.5 after:rounded-full after:bg-slate-300 after:shadow after:transition-transform peer-checked:after:translate-x-4 peer-checked:after:bg-white" />
                 <span className={`text-[10px] font-mono font-semibold tracking-tight ${config.doubleAgent?.enabled ? 'text-amber-300' : 'text-slate-500'
                   }`}>
                   {config.doubleAgent?.enabled ? 'ENABLED' : 'OFF'}
@@ -1038,7 +1046,7 @@ http_headers = { "Authorization" = "Bearer ${clientToken || 'YOUR_TOKEN'}" }`;
               </div>
               <label className="flex shrink-0 cursor-pointer items-center gap-2" onClick={event => event.stopPropagation()}>
                 <input type="checkbox" checked={config.doubleAgent?.completionReviewEnabled ?? false} onChange={event => { soundFx.playClick(); void onUpdateDoubleAgent?.({ completionReviewEnabled: event.target.checked }); }} className="peer sr-only" />
-                <span className="relative h-5 w-9 rounded-full border border-white/10 bg-slate-700/80 shadow-inner peer-checked:bg-amber-500 after:absolute after:left-[2px] after:top-[2px] after:h-4 after:w-4 after:rounded-full after:bg-white after:transition-transform peer-checked:after:translate-x-4" />
+                <span className="relative h-5 w-9 rounded-full border border-white/10 bg-slate-700/80 shadow-inner transition-colors peer-checked:border-amber-400/40 peer-checked:bg-amber-500 after:absolute after:left-[2px] after:top-[2px] after:h-3.5 after:w-3.5 after:rounded-full after:bg-slate-300 after:shadow after:transition-transform peer-checked:after:translate-x-4 peer-checked:after:bg-white" />
               </label>
             </div>
 
@@ -1115,8 +1123,10 @@ http_headers = { "Authorization" = "Bearer ${clientToken || 'YOUR_TOKEN'}" }`;
           {/* Agent Halt Guard Card */}
           <div className="tactile-core-card p-3.5 rounded-2xl space-y-3 border border-emerald-500/20 shadow-[0_0_15px_rgba(16,185,129,0.05)]">
             <div className="flex items-center justify-between pb-2 border-b border-white/5">
-              <div className="flex items-center gap-2">
-                <ShieldCheck className="w-4 h-4 text-emerald-400" />
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 shadow-[0_0_12px_rgba(16,185,129,0.15)]">
+                  <ShieldCheck className="w-4 h-4" />
+                </div>
                 <div>
                   <span className="text-xs font-bold text-slate-100 uppercase tracking-wide">
                     Agent Halt Guard
@@ -1172,8 +1182,10 @@ http_headers = { "Authorization" = "Bearer ${clientToken || 'YOUR_TOKEN'}" }`;
           {/* Recall & Context Memory Engine Card */}
           <div className="tactile-core-card p-3.5 rounded-2xl space-y-3 border border-purple-500/20 shadow-[0_0_15px_rgba(168,85,247,0.05)]">
             <div className="flex items-center justify-between pb-2 border-b border-white/5">
-              <div className="flex items-center gap-2">
-                <Brain className="w-4 h-4 text-purple-400" />
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-purple-500/10 border border-purple-500/30 text-purple-400 shadow-[0_0_12px_rgba(168,85,247,0.15)]">
+                  <Brain className="w-4 h-4" />
+                </div>
                 <div>
                   <span className="text-xs font-bold text-slate-100 uppercase tracking-wide">
                     Recall & Context Memory
@@ -1195,7 +1207,7 @@ http_headers = { "Authorization" = "Bearer ${clientToken || 'YOUR_TOKEN'}" }`;
                   }}
                   className="sr-only peer"
                 />
-                <div className="w-9 h-5 bg-slate-700/80 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-4 peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-purple-500 relative border border-white/10 shadow-inner"></div>
+                <span className="relative h-5 w-9 rounded-full border border-white/10 bg-slate-700/80 shadow-inner transition-colors peer-checked:border-purple-400/40 peer-checked:bg-purple-500 after:absolute after:left-[2px] after:top-[2px] after:h-3.5 after:w-3.5 after:rounded-full after:bg-slate-300 after:shadow after:transition-transform peer-checked:after:translate-x-4 peer-checked:after:bg-white" />
                 <span className={`text-[10px] font-mono font-semibold tracking-tight ${(config.recall?.enabled ?? true) ? 'text-purple-300' : 'text-slate-400'
                   }`}>
                   {(config.recall?.enabled ?? true) ? 'ENABLED' : 'DISABLED'}
@@ -1261,7 +1273,7 @@ http_headers = { "Authorization" = "Bearer ${clientToken || 'YOUR_TOKEN'}" }`;
                       }}
                       className="sr-only peer"
                     />
-                    <div className="w-9 h-5 bg-slate-700/80 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-4 peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-purple-500 relative border border-white/10 shadow-inner"></div>
+                    <span className="relative h-5 w-9 rounded-full border border-white/10 bg-slate-700/80 shadow-inner transition-colors peer-checked:border-purple-400/40 peer-checked:bg-purple-500 after:absolute after:left-[2px] after:top-[2px] after:h-3.5 after:w-3.5 after:rounded-full after:bg-slate-300 after:shadow after:transition-transform peer-checked:after:translate-x-4 peer-checked:after:bg-white" />
                   </label>
                 </div>
                 <p className="text-[9px] text-slate-500 font-sans">
@@ -1281,7 +1293,7 @@ http_headers = { "Authorization" = "Bearer ${clientToken || 'YOUR_TOKEN'}" }`;
               </div>
               <label className="flex shrink-0 cursor-pointer items-center gap-2">
                 <input type="checkbox" checked={config.recall?.completionEnabled ?? false} onChange={event => { soundFx.playClick(); void onUpdateRecallConfig?.({ completionEnabled: event.target.checked }); }} className="peer sr-only" />
-                <span className="relative h-5 w-9 rounded-full border border-white/10 bg-slate-700/80 shadow-inner peer-checked:bg-purple-500 after:absolute after:left-[2px] after:top-[2px] after:h-4 after:w-4 after:rounded-full after:bg-white after:transition-transform peer-checked:after:translate-x-4" />
+                <span className="relative h-5 w-9 rounded-full border border-white/10 bg-slate-700/80 shadow-inner transition-colors peer-checked:border-purple-400/40 peer-checked:bg-purple-500 after:absolute after:left-[2px] after:top-[2px] after:h-3.5 after:w-3.5 after:rounded-full after:bg-slate-300 after:shadow after:transition-transform peer-checked:after:translate-x-4 peer-checked:after:bg-white" />
               </label>
             </div>
 
@@ -1343,10 +1355,12 @@ http_headers = { "Authorization" = "Bearer ${clientToken || 'YOUR_TOKEN'}" }`;
           </div>
 
           {/* Rate-Limiting & Operational Guardrails */}
-          <div className="tactile-core-card p-3.5 rounded-2xl space-y-3">
+          <div className="tactile-core-card p-3.5 rounded-2xl space-y-3 border border-emerald-500/20 shadow-[0_0_15px_rgba(16,185,129,0.05)]">
             <div className="flex items-center justify-between pb-2 border-b border-white/5">
-              <div className="flex items-center gap-2">
-                <ShieldAlert className="w-4 h-4 text-emerald-400" />
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 shadow-[0_0_12px_rgba(16,185,129,0.15)]">
+                  <ShieldAlert className="w-4 h-4" />
+                </div>
                 <div>
                   <span className="text-xs font-bold text-slate-100 uppercase tracking-wide">
                     Rate-Limiting & Operational Guardrails
@@ -1435,8 +1449,10 @@ http_headers = { "Authorization" = "Bearer ${clientToken || 'YOUR_TOKEN'}" }`;
           {/* DOM Self-Healing & Watchdog Engine Card (Orange Theme) */}
           <div className="tactile-core-card p-3.5 rounded-2xl space-y-3 border border-orange-500/25 shadow-[0_0_20px_rgba(249,115,22,0.08)]">
             <div className="flex items-center justify-between pb-2 border-b border-white/5">
-              <div className="flex items-center gap-2">
-                <Wrench className="w-4 h-4 text-orange-400" />
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-orange-500/10 border border-orange-500/30 text-orange-400 shadow-[0_0_12px_rgba(249,115,22,0.15)]">
+                  <Wrench className="w-4 h-4" />
+                </div>
                 <div>
                   <div className="flex items-center gap-2">
                     <span className="text-xs font-bold text-slate-100 uppercase tracking-wide">
@@ -1630,8 +1646,10 @@ http_headers = { "Authorization" = "Bearer ${clientToken || 'YOUR_TOKEN'}" }`;
           {/* MCP Client Security & Access Token Management */}
           <div className="tactile-core-card p-3.5 rounded-2xl space-y-3 border border-cyan-500/20 shadow-[0_0_15px_rgba(6,182,212,0.05)]">
             <div className="flex items-center justify-between pb-2 border-b border-white/5">
-              <div className="flex items-center gap-2">
-                <Lock className="w-4 h-4 text-cyan-400" />
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 shadow-[0_0_12px_rgba(6,182,212,0.15)]">
+                  <Lock className="w-4 h-4" />
+                </div>
                 <div>
                   <span className="text-xs font-bold text-slate-100 uppercase tracking-wide">
                     MCP Client Security & Authentication
@@ -1706,9 +1724,11 @@ http_headers = { "Authorization" = "Bearer ${clientToken || 'YOUR_TOKEN'}" }`;
           </div>
 
           {/* MCP Port Config Card */}
-          <div className="tactile-core-card p-3.5 rounded-2xl space-y-3">
-            <div className="flex items-center gap-2 pb-2 border-b border-white/5">
-              <Server className="w-4 h-4 text-cyan-400" />
+          <div className="tactile-core-card p-3.5 rounded-2xl space-y-3 border border-cyan-500/20 shadow-[0_0_15px_rgba(6,182,212,0.05)]">
+            <div className="flex items-center gap-2.5 pb-2 border-b border-white/5">
+              <div className="p-2 rounded-xl bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 shadow-[0_0_12px_rgba(6,182,212,0.15)]">
+                <Server className="w-4 h-4" />
+              </div>
               <div>
                 <span className="text-xs font-bold text-slate-100 uppercase tracking-wide">
                   Gateway Port & Network
@@ -1744,7 +1764,7 @@ http_headers = { "Authorization" = "Bearer ${clientToken || 'YOUR_TOKEN'}" }`;
               </div>
             )}
             <div className="space-y-2 border-t border-white/[0.06] pt-3">
-              <label className={`flex items-center justify-between rounded-xl border border-white/[0.07] bg-black/25 px-3 py-2.5 ${isApplyingNetwork ? 'cursor-wait opacity-65' : 'cursor-pointer'}`}><div><div className="text-[10.5px] font-semibold text-slate-200">Share on local network</div><div className="text-[9.5px] text-slate-500">Changes apply immediately. Remote clients must use the access token.</div></div><input type="checkbox" className="sr-only peer" checked={lanEnabled} disabled={isApplyingNetwork} onChange={event => void handleNetworkToggle(event.target.checked)} /><span className="relative h-5 w-9 rounded-full border border-white/10 bg-slate-800 peer-checked:bg-cyan-500/70 after:absolute after:left-[2px] after:top-[2px] after:h-3.5 after:w-3.5 after:rounded-full after:bg-white after:transition-transform peer-checked:after:translate-x-4" /></label>
+              <label className={`flex items-center justify-between rounded-xl border border-white/[0.07] bg-black/25 px-3 py-2.5 ${isApplyingNetwork ? 'cursor-wait opacity-65' : 'cursor-pointer'}`}><div><div className="text-[10.5px] font-semibold text-slate-200">Share on local network</div><div className="text-[9.5px] text-slate-500">Changes apply immediately. Remote clients must use the access token.</div></div><input type="checkbox" className="sr-only peer" checked={lanEnabled} disabled={isApplyingNetwork} onChange={event => void handleNetworkToggle(event.target.checked)} /><span className="relative h-5 w-9 rounded-full border border-white/10 bg-slate-800 shadow-inner transition-colors peer-checked:border-cyan-400/40 peer-checked:bg-cyan-500/70 after:absolute after:left-[2px] after:top-[2px] after:h-3.5 after:w-3.5 after:rounded-full after:bg-slate-300 after:shadow after:transition-transform peer-checked:after:translate-x-4 peer-checked:after:bg-white" /></label>
               {lanEnabled && <select value={lanAddress} disabled={isApplyingNetwork} onChange={event => void handleNetworkAddressChange(event.target.value)} className="w-full rounded-xl border border-cyan-500/20 bg-black/40 px-3 py-2 text-[10.5px] font-mono text-cyan-200 outline-none focus:border-cyan-500/50 disabled:cursor-wait disabled:opacity-60">{networkInterfaces.map(item => <option key={`${item.name}-${item.address}`} value={item.address}>{item.name} · {item.address}</option>)}</select>}
               <div className="rounded-xl border border-white/[0.06] bg-black/25 px-3 py-2 font-mono text-[9.5px] text-slate-400">Completion: http://{gatewayHost}:{currentPort}/v1<br />MCP: http://{gatewayHost}:{currentPort}/mcp<br />SSE: http://{gatewayHost}:{currentPort}/sse</div>
               {networkStatus && <div className="rounded-lg border border-cyan-500/15 bg-cyan-500/[0.06] px-2.5 py-1.5 text-[9.5px] font-mono text-cyan-300">{networkStatus}</div>}
@@ -1752,10 +1772,12 @@ http_headers = { "Authorization" = "Bearer ${clientToken || 'YOUR_TOKEN'}" }`;
           </div>
 
           {/* Local Media & File Storage Management */}
-          <div className="tactile-core-card p-3.5 rounded-2xl space-y-3">
+          <div className="tactile-core-card p-3.5 rounded-2xl space-y-3 border border-purple-500/20 shadow-[0_0_15px_rgba(168,85,247,0.05)]">
             <div className="flex items-center justify-between pb-2 border-b border-white/5">
-              <div className="flex items-center gap-2">
-                <HardDrive className="w-4 h-4 text-purple-400" />
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-purple-500/10 border border-purple-500/30 text-purple-400 shadow-[0_0_12px_rgba(168,85,247,0.15)]">
+                  <HardDrive className="w-4 h-4" />
+                </div>
                 <div>
                   <span className="text-xs font-bold text-slate-100 uppercase tracking-wide">
                     Local Media File Storage
@@ -1824,8 +1846,10 @@ http_headers = { "Authorization" = "Bearer ${clientToken || 'YOUR_TOKEN'}" }`;
           {/* Browser Storage & Privacy Clearance Card (Uninstall Cleanup) */}
           <div className="tactile-core-card p-3.5 rounded-2xl space-y-3 border border-amber-500/20 shadow-[0_0_15px_rgba(245,158,11,0.05)]">
             <div className="flex items-center justify-between pb-2 border-b border-white/5">
-              <div className="flex items-center gap-2">
-                <Shield className="w-4 h-4 text-amber-400" />
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-400 shadow-[0_0_12px_rgba(245,158,11,0.15)]">
+                  <Shield className="w-4 h-4" />
+                </div>
                 <div>
                   <span className="text-xs font-bold text-slate-100 uppercase tracking-wide">
                     Browser Cookies, Storage & Data
@@ -1906,10 +1930,12 @@ http_headers = { "Authorization" = "Bearer ${clientToken || 'YOUR_TOKEN'}" }`;
           </div>
 
           {/* Quick MCP Client Configuration Card with Config Locations */}
-          <div className="tactile-core-card p-3.5 rounded-2xl space-y-3">
+          <div className="tactile-core-card p-3.5 rounded-2xl space-y-3 border border-cyan-500/20 shadow-[0_0_15px_rgba(6,182,212,0.05)]">
             <div className="flex items-center justify-between pb-2 border-b border-white/5">
-              <div className="flex items-center gap-2">
-                <Terminal className="w-4 h-4 text-cyan-400" />
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 shadow-[0_0_12px_rgba(6,182,212,0.15)]">
+                  <Terminal className="w-4 h-4" />
+                </div>
                 <div>
                   <span className="text-xs font-bold text-slate-100 uppercase tracking-wide">
                     Connect Any MCP Client
@@ -2010,7 +2036,7 @@ http_headers = { "Authorization" = "Bearer ${clientToken || 'YOUR_TOKEN'}" }`;
           </div>
 
           {/* Full API Developer Documentation Accordion */}
-          <div className="tactile-core-card p-3.5 rounded-2xl space-y-3">
+          <div className="tactile-core-card p-3.5 rounded-2xl space-y-3 border border-purple-500/20 shadow-[0_0_15px_rgba(168,85,247,0.05)]">
             <button
               onClick={() => {
                 soundFx.playClick();
@@ -2018,8 +2044,10 @@ http_headers = { "Authorization" = "Bearer ${clientToken || 'YOUR_TOKEN'}" }`;
               }}
               className="w-full flex items-center justify-between text-left cursor-pointer"
             >
-              <div className="flex items-center gap-2">
-                <BookOpen className="w-4 h-4 text-purple-400" />
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-purple-500/10 border border-purple-500/30 text-purple-400 shadow-[0_0_12px_rgba(168,85,247,0.15)]">
+                  <BookOpen className="w-4 h-4" />
+                </div>
                 <div>
                   <span className="text-xs font-bold text-slate-100 uppercase tracking-wide">
                     Developer API & Integration Documentation
@@ -2506,12 +2534,37 @@ http_headers = { "Authorization" = "Bearer ${clientToken || 'YOUR_TOKEN'}" }`;
 
             return <div className="space-y-2.5">
               <div className="flex items-center gap-2">
-                <div className="grid min-w-0 flex-1 grid-cols-3 gap-1 rounded-xl border border-white/[0.06] bg-black/40 p-1">
-                  {(['webview', 'api', 'cli'] as ProviderCategory[]).map(category => <button key={category} onClick={() => switchCategory(category)} className={`flex items-center justify-center gap-1.5 rounded-lg border px-2 py-2 text-[10px] font-semibold uppercase tracking-wider transition-all ${providerCategory === category ? 'border-cyan-500/40 bg-cyan-500/15 text-cyan-200 shadow-[0_0_14px_rgba(6,182,212,0.14)]' : 'border-transparent text-slate-500 hover:bg-white/5 hover:text-slate-300'}`}>{category === 'webview' ? <Globe className="h-3.5 w-3.5" /> : category === 'api' ? <Braces className="h-3.5 w-3.5" /> : <Terminal className="h-3.5 w-3.5" />}{category}</button>)}
+                <div className="relative grid min-w-0 flex-1 grid-cols-3 gap-1 rounded-xl border border-white/[0.06] bg-black/40 p-1">
+                  {(['webview', 'api', 'cli'] as ProviderCategory[]).map(category => {
+                    const isSelected = providerCategory === category;
+                    return (
+                      <button
+                        key={category}
+                        onClick={() => switchCategory(category)}
+                        className={`relative z-10 flex items-center justify-center gap-1.5 rounded-lg px-2 py-2 text-[10px] font-semibold uppercase tracking-wider transition-colors duration-200 cursor-pointer select-none ${
+                          isSelected ? 'text-cyan-200' : 'text-slate-500 hover:text-slate-300'
+                        }`}
+                      >
+                        {isSelected && (
+                          <motion.div
+                            layoutId="activeProviderCategoryPill"
+                            className="absolute inset-0 rounded-lg border border-cyan-500/40 bg-cyan-500/15 shadow-[0_0_14px_rgba(6,182,212,0.14)]"
+                            transition={{ type: 'spring', stiffness: 450, damping: 32 }}
+                          />
+                        )}
+                        <span className="relative z-10 flex items-center gap-1.5">
+                          {category === 'webview' ? <Globe className="h-3.5 w-3.5" /> : category === 'api' ? <Braces className="h-3.5 w-3.5" /> : <Terminal className="h-3.5 w-3.5" />}
+                          {category}
+                        </span>
+                      </button>
+                    );
+                  })}
                 </div>
                 <button disabled={providerCategory === 'cli'} title={providerCategory === 'cli' ? 'CLI providers are built in' : `Manage ${providerCategory} providers`} onClick={() => { soundFx.playClick(); setMoreProvidersTab(providerCategory as 'api' | 'webview'); setShowExperimentalPage(true); }} className={`flex shrink-0 items-center gap-1.5 rounded-lg border px-3 py-2 text-[10px] font-semibold transition-all ${showExperimentalPage ? 'border-teal-500/45 bg-teal-500/15 text-teal-200 shadow-[0_0_14px_rgba(20,184,166,0.14)]' : 'border-white/10 bg-white/[0.035] text-slate-400 hover:border-teal-500/30 hover:text-teal-200'} disabled:cursor-not-allowed disabled:opacity-35`}><Wrench className="h-3.5 w-3.5" />Manage</button>
               </div>
-              {activeTabsProviders.length ? <div className="grid grid-cols-4 gap-1 rounded-xl border border-white/[0.05] bg-black/30 p-1">{activeTabsProviders.map(renderProviderTab)}</div> : <div className="rounded-xl border border-dashed border-white/10 bg-black/20 px-4 py-5 text-center text-[10.5px] text-slate-500">No API providers configured. Use Manage to add one.</div>}
+              <div key={`subtabs-${providerCategory}`} className="provider-panel-enter">
+                {activeTabsProviders.length ? <div className="grid grid-cols-4 gap-1 rounded-xl border border-white/[0.05] bg-black/30 p-1">{activeTabsProviders.map(renderProviderTab)}</div> : <div className="rounded-xl border border-dashed border-white/10 bg-black/20 px-4 py-5 text-center text-[10.5px] text-slate-500">No API providers configured. Use Manage to add one.</div>}
+              </div>
             </div>;
           })()}
 
@@ -2585,9 +2638,14 @@ http_headers = { "Authorization" = "Bearer ${clientToken || 'YOUR_TOKEN'}" }`;
                   {showApiForm && (
                     <form onSubmit={handleSaveApiProvider} className="p-4 rounded-xl bg-black/40 border border-cyan-500/30 space-y-3.5 animate-in fade-in duration-150">
                       <div className="flex items-center justify-between pb-2 border-b border-white/5">
-                        <span className="text-xs font-bold text-cyan-300 uppercase tracking-wide">
-                          {editingApiId ? 'Edit API Provider' : 'Add API Provider'}
-                        </span>
+                        <div className="flex items-center gap-2">
+                          <div className="p-1.5 rounded-lg bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 shadow-[0_0_10px_rgba(6,182,212,0.15)]">
+                            <Braces className="w-3.5 h-3.5" />
+                          </div>
+                          <span className="text-xs font-bold text-cyan-300 uppercase tracking-wide">
+                            {editingApiId ? 'Edit API Provider' : 'Add API Provider'}
+                          </span>
+                        </div>
                         <button
                           type="button"
                           onClick={() => {
@@ -2815,7 +2873,9 @@ http_headers = { "Authorization" = "Bearer ${clientToken || 'YOUR_TOKEN'}" }`;
                           <div className="p-4 rounded-xl bg-black/40 border border-teal-500/40 space-y-3.5 animate-in fade-in duration-150 shadow-[0_0_20px_rgba(20,184,166,0.1)]">
                             <div className="flex items-center justify-between pb-2 border-b border-white/5">
                               <div className="flex items-center gap-2">
-                                <Globe className="w-4 h-4 text-teal-400" />
+                                <div className="p-1.5 rounded-lg bg-teal-500/10 border border-teal-500/30 text-teal-400 shadow-[0_0_10px_rgba(20,184,166,0.15)]">
+                                  <Globe className="w-3.5 h-3.5" />
+                                </div>
                                 <span className="text-xs font-bold text-teal-300 uppercase tracking-wide">
                                   Add Webview Provider (Recipe)
                                 </span>
@@ -3134,7 +3194,69 @@ http_headers = { "Authorization" = "Bearer ${clientToken || 'YOUR_TOKEN'}" }`;
                 </div>
                 <div className="space-y-3 p-4">
                   <div className="grid gap-3 sm:grid-cols-2"><div className="rounded-xl border border-white/[0.07] bg-black/25 p-3"><div className="text-[9px] font-mono uppercase tracking-wider text-slate-500">Base URL</div><div className="mt-1 truncate font-mono text-[10.5px] text-cyan-200" title={service.baseUrl}>{service.baseUrl}</div></div><div className="rounded-xl border border-white/[0.07] bg-black/25 p-3"><div className="text-[9px] font-mono uppercase tracking-wider text-slate-500">Default model</div><div className="mt-1 truncate font-mono text-[10.5px] text-slate-200">{service.defaultModelId || 'default'}</div></div></div>
-                  <div className="flex items-center justify-between rounded-xl border border-emerald-500/15 bg-emerald-500/[0.045] p-3"><div className="flex items-center gap-2 text-[10.5px] text-emerald-200"><CheckCircle2 className="h-4 w-4" />Available to routes and the completion gateway when enabled.</div><button onClick={() => { setEditingApiId(service.id); setApiFormName(service.name); setApiFormBaseUrl(service.baseUrl || ''); setApiFormApiKey(service.apiKey || ''); setApiFormModel(service.defaultModelId || ''); setApiFormError(null); setShowApiForm(true); setMoreProvidersTab('api'); setShowExperimentalPage(true); }} className="rounded-lg border border-cyan-500/25 bg-cyan-500/10 px-3 py-1.5 text-[10px] font-semibold text-cyan-200 hover:bg-cyan-500/20"><Pencil className="mr-1.5 inline h-3 w-3" />Edit in Manage</button></div>
+                  {/* Gateway Routing Status & Edit Action */}
+                  <div className={`flex flex-col gap-3 rounded-2xl border p-3.5 sm:flex-row sm:items-center sm:justify-between transition-all ${
+                    currentProvConfig.serviceEnabled
+                      ? 'border-emerald-500/25 bg-gradient-to-r from-emerald-500/[0.08] via-emerald-500/[0.03] to-transparent shadow-[0_0_20px_rgba(16,185,129,0.06)]'
+                      : 'border-white/[0.07] bg-black/30'
+                  }`}>
+                    <div className="flex items-start gap-3">
+                      <div className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border ${
+                        currentProvConfig.serviceEnabled
+                          ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400 shadow-[0_0_10px_rgba(16,185,129,0.15)]'
+                          : 'border-white/10 bg-white/[0.04] text-slate-500'
+                      }`}>
+                        {currentProvConfig.serviceEnabled ? (
+                          <CheckCircle2 className="h-4 w-4 text-emerald-400" />
+                        ) : (
+                          <AlertCircle className="h-4 w-4 text-slate-500" />
+                        )}
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className={`text-[11px] font-bold uppercase tracking-wider ${
+                            currentProvConfig.serviceEnabled ? 'text-emerald-300' : 'text-slate-400'
+                          }`}>
+                            {currentProvConfig.serviceEnabled ? 'Gateway Active' : 'Service Inactive'}
+                          </span>
+                          {currentProvConfig.serviceEnabled && (
+                            <span className="relative flex h-2 w-2">
+                              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+                              <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-400" />
+                            </span>
+                          )}
+                        </div>
+                        <p className={`mt-0.5 text-[10px] leading-relaxed ${
+                          currentProvConfig.serviceEnabled ? 'text-emerald-200/80' : 'text-slate-500'
+                        }`}>
+                          {currentProvConfig.serviceEnabled
+                            ? 'Available to task routes and the completion gateway for active inference.'
+                            : 'Enable toggle above to connect this provider to task routing and completion gateway.'}
+                        </p>
+                      </div>
+                    </div>
+
+                    <button
+                      onClick={() => {
+                        soundFx.playClick();
+                        setEditingApiId(service.id);
+                        setApiFormName(service.name);
+                        setApiFormBaseUrl(service.baseUrl || '');
+                        setApiFormApiKey(service.apiKey || '');
+                        setApiFormModel(service.defaultModelId || '');
+                        setApiFormError(null);
+                        setShowApiForm(true);
+                        setMoreProvidersTab('api');
+                        setShowExperimentalPage(true);
+                      }}
+                      className="group inline-flex shrink-0 items-center justify-center gap-2 rounded-xl border border-cyan-500/30 bg-cyan-500/10 px-3.5 py-2 text-xs font-semibold text-cyan-200 shadow-[0_0_12px_rgba(6,182,212,0.12)] transition-all hover:border-cyan-500/50 hover:bg-cyan-500/20 hover:text-white hover:shadow-[0_0_16px_rgba(6,182,212,0.22)] cursor-pointer"
+                      title="Edit endpoint URL, API key, or default model"
+                    >
+                      <Pencil className="h-3.5 w-3.5 text-cyan-300 transition-transform group-hover:rotate-12" />
+                      <span>Configure Provider</span>
+                      <ArrowRight className="h-3 w-3 text-cyan-400/70 transition-transform group-hover:translate-x-0.5" />
+                    </button>
+                  </div>
                 </div>
               </div>;
             })() : null
@@ -3340,7 +3462,7 @@ http_headers = { "Authorization" = "Bearer ${clientToken || 'YOUR_TOKEN'}" }`;
                       }}
                       className="sr-only peer"
                     />
-                    <div className="w-9 h-5 bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-cyan-500"></div>
+                    <span className="relative h-5 w-9 rounded-full border border-white/10 bg-slate-700/80 shadow-inner transition-colors peer-checked:border-cyan-400/40 peer-checked:bg-cyan-500 after:absolute after:left-[2px] after:top-[2px] after:h-3.5 after:w-3.5 after:rounded-full after:bg-slate-300 after:shadow after:transition-transform peer-checked:after:translate-x-4 peer-checked:after:bg-white" />
                   </label>
                 </div>
 

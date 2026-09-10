@@ -106,9 +106,7 @@
         "gemini",
         "grok"
       ],
-      "outputFormat": "prose_markdown",
-      "modelRouting": {},
-      "providerModels": {}
+      "outputFormat": "prose_markdown"
     },
     "coding": {
       "mode": "coding",
@@ -122,9 +120,7 @@
         "gemini",
         "grok"
       ],
-      "outputFormat": "json_code",
-      "modelRouting": {},
-      "providerModels": {}
+      "outputFormat": "json_code"
     },
     "writing": {
       "mode": "writing",
@@ -138,9 +134,7 @@
         "grok",
         "gemini"
       ],
-      "outputFormat": "prose_markdown",
-      "modelRouting": {},
-      "providerModels": {}
+      "outputFormat": "prose_markdown"
     },
     "image": {
       "mode": "image",
@@ -152,9 +146,7 @@
       "fallbacks": [
         "gemini"
       ],
-      "outputFormat": "file_download",
-      "modelRouting": {},
-      "providerModels": {}
+      "outputFormat": "file_download"
     },
     "video": {
       "mode": "video",
@@ -162,9 +154,7 @@
       "primary": "gemini",
       "fallbackChain": [],
       "fallbacks": [],
-      "outputFormat": "file_download",
-      "modelRouting": {},
-      "providerModels": {}
+      "outputFormat": "file_download"
     },
     "audio": {
       "mode": "audio",
@@ -176,9 +166,7 @@
       "fallbacks": [
         "gemini"
       ],
-      "outputFormat": "file_download",
-      "modelRouting": {},
-      "providerModels": {}
+      "outputFormat": "file_download"
     }
   }
 }

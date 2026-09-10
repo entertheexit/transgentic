@@ -123,25 +123,7 @@ export const RoutesSettings: React.FC<RoutesSettingsProps> = ({
 
   const getProviderLabel = (id: ProviderId) => {
     if (!id) return 'None';
-    if (id === 'localllm') {
-      return 'Local LLM';
-    }
-    const s = servicesManifest?.services?.[id];
-    if (s?.providerType === 'api' || id.startsWith('api_')) {
-      return `${s?.name || 'Custom API'} (API)`;
-    }
-    switch (id) {
-      case 'chatgpt':
-        return 'ChatGPT (OpenAI)';
-      case 'claude':
-        return 'Claude (Anthropic)';
-      case 'gemini':
-        return 'Gemini (Google)';
-      case 'grok':
-        return 'Grok (xAI)';
-      default:
-        return getProviderDisplayName(id, servicesManifest, providers);
-    }
+    return getProviderDisplayName(id, servicesManifest, providers);
   };
 
   const getModeIcon = (mode: TaskMode) => {
@@ -653,11 +635,6 @@ export const RoutesSettings: React.FC<RoutesSettingsProps> = ({
                             N/A
                           </span>
                         )}
-                        {!isActiveInMain && isApi && isModeSupported && !isDevDisabled && (
-                          <span className="text-[8px] font-mono text-cyan-300 bg-cyan-500/20 px-1 py-0.2 rounded border border-cyan-500/40 absolute -top-1 -right-0.5 shadow-[0_0_8px_rgba(6,182,212,0.3)]">
-                            API
-                          </span>
-                        )}
                       </div>
                       <div className="text-[9px] text-slate-500 font-mono">
                         {isActiveInMain
@@ -674,7 +651,7 @@ export const RoutesSettings: React.FC<RoutesSettingsProps> = ({
                           ? '○ Disabled in settings'
                           : isApi
                           ? Boolean(sEntry?.baseUrl)
-                            ? `● Connected (${sEntry?.defaultModelId || 'API'})`
+                            ? `● Connected (${sEntry?.defaultModelId || 'Default'})`
                             : '○ Not configured'
                           : prov?.isAuthenticated
                           ? '● Authenticated'
@@ -769,14 +746,6 @@ export const RoutesSettings: React.FC<RoutesSettingsProps> = ({
                           )}
                           {(() => {
                             const sFb = servicesManifest?.services?.[fbId];
-                            const isFbApi = sFb?.providerType === 'api' || fbId.startsWith('api_');
-                            if (isFbApi) {
-                              return (
-                                <span className="text-[7.5px] font-mono font-bold text-cyan-300 bg-cyan-500/20 px-1.5 py-0.2 rounded-full border border-cyan-400/40">
-                                  API
-                                </span>
-                              );
-                            }
                             const isFbRecipe = sFb?.providerType === 'webview' || fbId.startsWith('custom_') || fbId.startsWith('webview_');
                             if (isFbRecipe) {
                               return (
@@ -843,13 +812,9 @@ export const RoutesSettings: React.FC<RoutesSettingsProps> = ({
                 </option>
                 {availableToAdd.map((id) => {
                   const isSupported = doesProviderSupportMode(id, selectedMode);
-                  const srv = servicesManifest?.services?.[id];
-                  const isApi = srv?.providerType === 'api' || id.startsWith('api_');
-                  const isRecipe = !isApi && (srv?.providerType === 'webview' || id.startsWith('custom_') || id.startsWith('webview_'));
-                  const tag = isApi ? '(API)' : isRecipe ? '(Recipe)' : '';
                   return (
                     <option key={id} value={id} disabled={!isSupported}>
-                      {getProviderLabel(id)} {!isSupported ? `(Unsupported for ${selectedMode})` : ''} {tag}
+                      {getProviderLabel(id)} {!isSupported ? `(Unsupported for ${selectedMode})` : ''}
                     </option>
                   );
                 })}

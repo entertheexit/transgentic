@@ -6,7 +6,7 @@ import { CLI_IDS, builtInCliServices, defaultCliService } from '../src/shared/cl
 import { resolvePolicy, cliEnvironment, macSandboxProfile, validatedMacUserKeychainPaths } from '../src/main/cli/executionPolicy.js';
 import { JsonLineDecoder } from '../src/main/cli/processRunner.js';
 import { adapterArgs, executeAdapter } from '../src/main/cli/adapters.js';
-import { CliRuntimeManager, normalizeCliConfig } from '../src/main/cli/cliRuntimeManager.js';
+import { CliRuntimeManager, normalizeCliConfig, parseCliModelText, parseCodexModelList } from '../src/main/cli/cliRuntimeManager.js';
 
 vi.mock('electron', () => ({ app: undefined }));
 
@@ -83,6 +83,37 @@ describe('CLI permissions and registration', () => {
       '/Users/alex/Library/Keychains/login.keychain-db',
       '/Users/alex/Library/Keychains/work.keychain',
     ]);
+  });
+  it('keeps native configuration read-only during model discovery', () => {
+    const standard = macSandboxProfile('/bin/tool', { cwd: '/scratch', allowCommands: false, allowProjectEditing: false }, '/scratch', ['/Users/test/.codex']);
+    const discovery = macSandboxProfile('/bin/tool', { cwd: '/scratch', allowCommands: false, allowProjectEditing: false }, '/scratch', ['/Users/test/.codex'], 58420, [], [], [], true);
+    expect(standard).toContain('(deny file-read-data (regex #"/(config\\.toml');
+    expect(discovery).not.toContain('(deny file-read-data (regex #"/(config\\.toml');
+    expect(discovery).toContain('(deny file-write* (regex #"/(config\\.toml');
+    expect(discovery).toContain('(deny process-exec');
+  });
+});
+
+describe('CLI model discovery', () => {
+  it('parses native text catalogs and ignores headings and diagnostics', () => {
+    expect(parseCliModelText(`Available models:\n\u001b[36mgemini-3.8-flash-high\u001b[0m  Gemini 3.8 Flash (High)\nmodel  display name\ngrok-4.6  Grok 4.6\nWARNING: refresh delayed\n`)).toEqual([
+      { id: 'gemini-3.8-flash-high', name: 'Gemini 3.8 Flash (High)' },
+      { id: 'grok-4.6', name: 'Grok 4.6' },
+    ]);
+  });
+  it('uses Codex model slugs, removes duplicates, and bounds labels', () => {
+    expect(parseCodexModelList([
+      { id: 'internal-a', model: 'gpt-6-codex', displayName: 'GPT-6 Codex' },
+      { id: 'internal-b', model: 'gpt-6-codex', displayName: 'Duplicate' },
+      { id: 'internal-c', model: 'gpt-6-mini', displayName: 'GPT-6 Mini' },
+      { id: '../invalid model', displayName: 'Invalid' },
+    ])).toEqual([
+      { id: 'gpt-6-codex', name: 'GPT-6 Codex' },
+      { id: 'gpt-6-mini', name: 'GPT-6 Mini' },
+    ]);
+  });
+  it('reports Claude model discovery as unsupported without invoking a model request', async () => {
+    await expect(new CliRuntimeManager().discoverModels('cli_claude_code')).resolves.toMatchObject({ provider: 'cli_claude_code', state: 'unsupported', models: [] });
   });
 });
 

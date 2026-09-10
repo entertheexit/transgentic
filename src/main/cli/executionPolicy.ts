@@ -40,7 +40,7 @@ export function validatedMacUserKeychainPaths(output: string, home = os.homedir(
   });
 }
 
-export function macSandboxProfile(executable: string, policy: ExecutionPolicy, scratch: string, nativeStorage: string[], gatewayPort = 58420, trustedAuthExecutables: readonly string[] = [], trustedAuthReadFiles: readonly string[] = [], nativeRuntimeRoots: readonly string[] = []): string {
+export function macSandboxProfile(executable: string, policy: ExecutionPolicy, scratch: string, nativeStorage: string[], gatewayPort = 58420, trustedAuthExecutables: readonly string[] = [], trustedAuthReadFiles: readonly string[] = [], nativeRuntimeRoots: readonly string[] = [], allowNativeConfigRead = false): string {
   const readRoots = ['/System', '/usr', '/bin', '/sbin', '/Library', '/Applications', '/dev', '/private/etc', '/private/var/db', scratch, policy.cwd, ...nativeStorage, ...nativeRuntimeRoots];
   const readable = [...readRoots.map(p => `(subpath ${quote(p)})`), ...trustedAuthReadFiles.map(p => `(literal ${quote(p)})`)].join(' ');
   const runtimeWrites = nativeStorage.flatMap(root => ['sessions', 'archived_sessions', 'log', 'logs', 'cache', 'tmp', '.tmp', 'projects', 'debug', 'todos', 'conversations', 'brain', 'implicit', 'knowledge', 'crashes', 'shell_snapshots', 'sqlite', 'state', 'rollout-migrations', 'ipc', 'process_manager'].map(name => path.join(root, name)));
@@ -58,14 +58,15 @@ ${policy.allowCommands ? '' : `(deny process-exec (require-not (require-any ${ex
 (deny file-read-data ${nativeStorage.flatMap(root => ['plugins', 'skills', 'rules'].map(name => `(subpath ${quote(path.join(root, name))})`)).join(' ') || '(literal "/__transgentic_no_native_plugins__")'})
 (deny network-outbound (remote ip "localhost:${gatewayPort}"))
 (deny network-outbound (require-all (remote unix-socket) (require-not (literal "/private/var/run/mDNSResponder"))))
-(deny file-read-data file-write* (regex #"/(config\\.toml|settings\\.json|settings\\.local\\.json|mcp_config\\.json|mcp\\.json)$"))
+${allowNativeConfigRead ? '' : `(deny file-read-data (regex #"/(config\\.toml|settings\\.json|settings\\.local\\.json|mcp_config\\.json|mcp\\.json)$"))`}
+(deny file-write* (regex #"/(config\\.toml|settings\\.json|settings\\.local\\.json|mcp_config\\.json|mcp\\.json)$"))
 (deny file-read-data file-write* (subpath ${quote(path.join(os.homedir(), '.codex', 'memories'))}) (subpath ${quote(path.join(os.homedir(), '.codex', 'automations'))}))
 `;
 }
 
-export function sandboxInvocation(executable: string, args: string[], policy: ExecutionPolicy, scratch: string, nativeStorage: string[], gatewayPort = 58420, trustedAuthExecutables: readonly string[] = [], trustedAuthReadFiles: readonly string[] = [], nativeRuntimeRoots: readonly string[] = []) {
+export function sandboxInvocation(executable: string, args: string[], policy: ExecutionPolicy, scratch: string, nativeStorage: string[], gatewayPort = 58420, trustedAuthExecutables: readonly string[] = [], trustedAuthReadFiles: readonly string[] = [], nativeRuntimeRoots: readonly string[] = [], allowNativeConfigRead = false) {
   if (!sandboxAvailable()) throw new Error('CLI execution requires the macOS process sandbox. This platform is not yet supported; permissions will not be relaxed.');
-  return { command: '/usr/bin/sandbox-exec', args: ['-p', macSandboxProfile(executable, policy, scratch, nativeStorage, gatewayPort, trustedAuthExecutables, trustedAuthReadFiles, nativeRuntimeRoots), executable, ...args] };
+  return { command: '/usr/bin/sandbox-exec', args: ['-p', macSandboxProfile(executable, policy, scratch, nativeStorage, gatewayPort, trustedAuthExecutables, trustedAuthReadFiles, nativeRuntimeRoots, allowNativeConfigRead), executable, ...args] };
 }
 
 /** No inherited API keys, gateway tokens, loader overrides, proxies or shell startup configuration. */

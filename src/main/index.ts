@@ -660,6 +660,10 @@ function setupIpcHandlers() {
   handleCli('cli:state', cliState);
   handleCli('cli:configure', (id, updates) => persistCli(globalCliRuntime.validateServiceUpdates(id, updates).config));
   handleCli('cli:probe', async id => { if (!isCliProvider(id)) throw new Error('Unknown CLI service.'); await globalCliRuntime.probe(id); return cliState(); });
+  handleCli('cli:models', async (id, force) => {
+    if (!isCliProvider(id) || (force !== undefined && typeof force !== 'boolean')) throw new Error('Unknown CLI service.');
+    return globalCliRuntime.discoverModels(id, force === true);
+  });
   handleCli('cli:test', async id => {
     if (!isCliProvider(id)) throw new Error('Unknown CLI service.');
     return globalCliRuntime.testConnection(id);

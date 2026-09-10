@@ -442,7 +442,7 @@ export const LocalLLMModal: React.FC<LocalLLMModalProps> = ({
                 onChange={(e) => handleToggleEnable(e.target.checked)}
                 className="sr-only peer"
               />
-              <div className="w-10 h-5 bg-slate-700/80 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-5 peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-500 relative border border-white/10 shadow-inner"></div>
+              <span className="relative h-5 w-9 rounded-full border border-white/10 bg-slate-700/80 shadow-inner transition-colors peer-checked:border-blue-400/40 peer-checked:bg-blue-500 after:absolute after:left-[2px] after:top-[2px] after:h-3.5 after:w-3.5 after:rounded-full after:bg-slate-300 after:shadow after:transition-transform peer-checked:after:translate-x-4 peer-checked:after:bg-white" />
               <span className={`text-[10px] font-mono font-bold tracking-tight ${
                 enabled ? 'text-blue-300' : 'text-slate-500'
               }`}>
@@ -474,7 +474,7 @@ export const LocalLLMModal: React.FC<LocalLLMModalProps> = ({
                 onChange={(e) => handleToggleMicroTask(e.target.checked)}
                 className="sr-only peer"
               />
-              <div className="w-10 h-5 bg-slate-700/80 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-5 peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-teal-500 relative border border-white/10 shadow-inner"></div>
+              <span className="relative h-5 w-9 rounded-full border border-white/10 bg-slate-700/80 shadow-inner transition-colors peer-checked:border-teal-400/40 peer-checked:bg-teal-500 after:absolute after:left-[2px] after:top-[2px] after:h-3.5 after:w-3.5 after:rounded-full after:bg-slate-300 after:shadow after:transition-transform peer-checked:after:translate-x-4 peer-checked:after:bg-white" />
               <span className={`text-[10px] font-mono font-bold tracking-tight ${
                 localMicroTask ? 'text-teal-300' : 'text-slate-500'
               }`}>
@@ -506,7 +506,7 @@ export const LocalLLMModal: React.FC<LocalLLMModalProps> = ({
                 onChange={(e) => handleToggleZeroLeak(e.target.checked)}
                 className="sr-only peer"
               />
-              <div className="w-10 h-5 bg-slate-700/80 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-5 peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-purple-500 relative border border-white/10 shadow-inner"></div>
+              <span className="relative h-5 w-9 rounded-full border border-white/10 bg-slate-700/80 shadow-inner transition-colors peer-checked:border-purple-400/40 peer-checked:bg-purple-500 after:absolute after:left-[2px] after:top-[2px] after:h-3.5 after:w-3.5 after:rounded-full after:bg-slate-300 after:shadow after:transition-transform peer-checked:after:translate-x-4 peer-checked:after:bg-white" />
               <span className={`text-[10px] font-mono font-bold tracking-tight ${
                 localZeroLeak ? 'text-purple-300' : 'text-slate-500'
               }`}>
@@ -539,7 +539,7 @@ export const LocalLLMModal: React.FC<LocalLLMModalProps> = ({
                   onChange={(e) => handleToggleCompact(e.target.checked)}
                   className="sr-only peer"
                 />
-                <div className="w-10 h-5 bg-slate-700/80 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-5 peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-indigo-500 relative border border-white/10 shadow-inner"></div>
+                <span className="relative h-5 w-9 rounded-full border border-white/10 bg-slate-700/80 shadow-inner transition-colors peer-checked:border-indigo-400/40 peer-checked:bg-indigo-500 after:absolute after:left-[2px] after:top-[2px] after:h-3.5 after:w-3.5 after:rounded-full after:bg-slate-300 after:shadow after:transition-transform peer-checked:after:translate-x-4 peer-checked:after:bg-white" />
                 <span className={`text-[10px] font-mono font-bold tracking-tight ${
                   localCompact ? 'text-indigo-300' : 'text-slate-500'
                 }`}>
@@ -582,7 +582,7 @@ export const LocalLLMModal: React.FC<LocalLLMModalProps> = ({
               </div>
               <label className={`flex shrink-0 items-center gap-2 ${enabled ? 'cursor-pointer' : 'cursor-not-allowed'}`}>
                 <input type="checkbox" checked={completionCompact} disabled={!enabled} onChange={event => void handleToggleCompletionCompact(event.target.checked)} className="peer sr-only" />
-                <span className="relative h-5 w-9 rounded-full border border-white/10 bg-slate-700/80 shadow-inner peer-disabled:opacity-50 peer-checked:bg-indigo-500 after:absolute after:left-[2px] after:top-[2px] after:h-4 after:w-4 after:rounded-full after:bg-white after:transition-transform peer-checked:after:translate-x-4" />
+                <span className="relative h-5 w-9 rounded-full border border-white/10 bg-slate-700/80 shadow-inner transition-colors peer-disabled:opacity-50 peer-checked:border-indigo-400/40 peer-checked:bg-indigo-500 after:absolute after:left-[2px] after:top-[2px] after:h-3.5 after:w-3.5 after:rounded-full after:bg-slate-300 after:shadow after:transition-transform peer-checked:after:translate-x-4 peer-checked:after:bg-white" />
               </label>
             </div>
           </div>

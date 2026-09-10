@@ -409,6 +409,27 @@ export function getProviderDisplayName(
   if (lower === 'grok') {
     return 'Grok';
   }
+  if (lower === 'cli_codex') {
+    return 'Codex CLI';
+  }
+  if (lower === 'cli_claude_code') {
+    return 'Claude Code CLI';
+  }
+  if (lower === 'cli_antigravity') {
+    return 'Antigravity CLI';
+  }
+  if (lower === 'cli_grok') {
+    return 'Grok CLI';
+  }
+
+  const formatResolvedName = (name: string, isApi: boolean): string => {
+    const clean = name.replace(/\s*\([^)]*\)/g, '').trim();
+    if (!clean) return isApi ? 'Custom API' : name;
+    if (isApi) {
+      return /\bapi\b/i.test(clean) ? clean : `${clean} API`;
+    }
+    return clean;
+  };
 
   // 3. Search in servicesManifest
   if (servicesManifest?.services) {
@@ -420,17 +441,21 @@ export function getProviderDisplayName(
     const entry = sExact || sWithPrefix || sWithoutPrefix;
 
     if (entry) {
+      const isApi = entry.providerType === 'api' || rawId.startsWith('api_');
+      let baseName = '';
       if (entry.name && !entry.name.toLowerCase().includes('experimental')) {
-        return entry.name;
-      }
-      if (entry.url) {
+        baseName = entry.name;
+      } else if (entry.url) {
         try {
           const u = new URL(entry.url);
-          if (u.hostname) return u.hostname;
+          if (u.hostname) baseName = u.hostname;
         } catch {}
       }
-      if (entry.name) {
-        return entry.name;
+      if (!baseName && entry.name) {
+        baseName = entry.name;
+      }
+      if (baseName) {
+        return formatResolvedName(baseName, isApi);
       }
     }
   }
@@ -445,20 +470,29 @@ export function getProviderDisplayName(
     const pStatus = pExact || pWithPrefix || pWithoutPrefix;
 
     if (pStatus) {
+      const isApi = pStatus.id?.startsWith('api_') || rawId.startsWith('api_');
+      let baseName = '';
       if (pStatus.name && !pStatus.name.toLowerCase().includes('experimental')) {
-        return pStatus.name;
-      }
-      if (pStatus.url) {
+        baseName = pStatus.name;
+      } else if (pStatus.url) {
         try {
           const u = new URL(pStatus.url);
-          if (u.hostname) return u.hostname;
+          if (u.hostname) baseName = u.hostname;
         } catch {}
       }
-      if (pStatus.name) {
-        return pStatus.name;
+      if (!baseName && pStatus.name) {
+        baseName = pStatus.name;
+      }
+      if (baseName) {
+        return formatResolvedName(baseName, isApi);
       }
     }
   }
+
+  if (rawId.startsWith('api_')) {
+    return 'Custom API';
+  }
+
   // 5. Generic webview fallback if hash not matched
   if (lower.startsWith('webview_')) {
     const hash = rawId.slice(8);

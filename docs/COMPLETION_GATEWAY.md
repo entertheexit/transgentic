@@ -39,6 +39,6 @@ Provider Mode forces host workspaces, project editing, and commands off. Complet
 
 ## LAN sharing
 
-The gateway binds to loopback by default. To use it from another computer, enable LAN sharing under **Settings → General → Gateway Port & Network**, select the advertised interface, apply the change, and copy the displayed `/v1` URL. Remote requests require the access token. Provider management and authentication endpoints accept loopback callers only.
+The gateway binds to loopback by default. To use it from another computer, enable LAN sharing under **Settings → General → Gateway Port & Network** and select the advertised interface. The switch and interface selector apply changes immediately. Copy the displayed `/v1` URL after the gateway restarts. Remote requests require the access token. Provider management and authentication endpoints accept loopback callers only.
 
 On the client computer, use the copied LAN base URL such as `http://192.168.1.20:58420/v1`. Keep Cline's project and command tools enabled only on that client. A Provider Mode CLI running behind Transgentic receives the messages and proposes tool calls, while Cline performs the actual read, edit, and command operations in its local project.

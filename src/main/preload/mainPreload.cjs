@@ -70,6 +70,7 @@ const api = {
   getCliState: () => ipcRenderer.invoke('cli:state'),
   configureCli: (id, updates) => ipcRenderer.invoke('cli:configure', id, updates),
   probeCli: (id) => ipcRenderer.invoke('cli:probe', id),
+  fetchCliModels: (id, force = false) => ipcRenderer.invoke('cli:models', id, force),
   testCli: (id) => ipcRenderer.invoke('cli:test', id),
   selectCliExecutable: (id) => ipcRenderer.invoke('cli:select-executable', id),
   addCliWorkspace: () => ipcRenderer.invoke('cli:add-workspace'),

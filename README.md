@@ -1,8 +1,8 @@
 <h1 align="center">Transgentic</h1>
 
 <p align="center">
-  <strong>Local-First AI Orchestration Workspace &amp; MCP Gateway</strong><br>
-  <em>Connect agentic IDEs, local LLMs, and user-authorized provider workflows, with Recall to help carry planning context into implementation.</em>
+  <strong>Local-First AI Orchestration Workspace, Completion Provider &amp; MCP Gateway</strong><br>
+  <em>Connect AI clients to local LLMs, native CLI services, APIs, and user-authorized web workflows, with Recall to help carry planning context into implementation.</em>
 </p>
 
 <p align="center">
@@ -20,7 +20,7 @@
 <p align="center">
   <a href="#overview">Overview</a> ·
   <a href="#getting-started">Downloads &amp; quick start</a> ·
-  <a href="#mcp-endpoints">Endpoints</a> ·
+  <a href="#provider-and-mcp-endpoints">Endpoints</a> ·
   <a href="#features">Features</a> ·
   <a href="#response-behavior">Responses</a> ·
   <a href="#documentation-index">Reference</a> ·
@@ -40,13 +40,14 @@
 
 ## Overview
 
-Transgentic is an experimental, source-available Electron desktop application and Model Context Protocol (MCP) gateway. It connects MCP clients to local large language models (LLMs) and configured web AI sessions. You can use it from an agentic IDE, a script or application, or the desktop's own Quick Prompt.
+Transgentic is an experimental, source-available Electron desktop application, OpenAI-compatible completion provider, and Model Context Protocol (MCP) gateway. It connects AI clients to local large language models (LLMs), configured APIs, installed native AI CLIs, and authorized web AI sessions. You can use it as the primary model behind a client such as Cline, as an MCP tool in an agentic IDE, from a script or application, or through the desktop's own Quick Prompt.
 
-Its two main uses are carrying available planning context into a task through **Recall**, and routing work between configured **local models and web providers**. The desktop manages routes, sessions, request formatting, and returned media files. Recall asks a provider to consult context available to its session; it does not directly access the provider's internal memory store.
+Its two main uses are carrying available planning context into a task through **Recall**, and routing work between configured **Webview, API, CLI, and Local LLM providers**. The desktop manages routes, sessions, request formatting, permissions, and returned media files. Recall asks a provider to consult context available to its session; it does not directly access the provider's internal memory store.
 
 | Use it from | Configure where work goes | Receive |
 | :--- | :--- | :--- |
-| Agentic IDEs and MCP clients | Local model endpoints, built-in web adapters, or custom recipes | Model answers with caller-appropriate guidance |
+| OpenAI-compatible clients such as Cline | General, Coding, and Writing routes across eligible API, CLI, and Local LLM services | Chat completions and tool calls; the client owns project actions |
+| Agentic IDEs and MCP clients | Local models, APIs, built-in CLI services, web adapters, or custom recipes | Model answers with caller-appropriate guidance |
 | Scripts and custom applications | Per-mode Main and Co-Agent routes with configured fallbacks | Text, code, saved-media paths, and structured outcomes |
 | Desktop Quick Prompt | The same provider and routing settings | In-app answers without IDE workflow reminders |
 
@@ -86,18 +87,20 @@ Open the desktop package and follow its installation or launch steps. The deskto
 
 Downloads are supplied under [LICENSE](LICENSE). For source changes, custom builds, or contributor testing, use the separate [custom development and build guide](docs/DEVELOPMENT.md#source-setup).
 
-### 2. Configure a model or web session
+### 2. Configure a provider
 
-| Local model | Web AI session |
+| Provider type | Configure it |
 | :--- | :--- |
-| Start your model server and load a model. | Sign in to an account whose intended use and automation are permitted by the provider. |
-| Open **Local LLM** settings, enable it, and select the matching preset. | Install the downloaded **Transgentic Sync** extension as described above. |
-| Set the server URL, fetch the model list, and select a model. The app's presets use `http://127.0.0.1:11434` for Ollama and `http://127.0.0.1:1234` for LM Studio; use your actual server address. | Open the provider page and choose **Sync Active Session** in the extension. |
-| Check the connection in the Local LLM settings. | Check the resulting provider state in Transgentic. |
+| **Webview** | Install Transgentic Sync, sign in to an account whose intended use and automation are permitted, then synchronize the active provider session. |
+| **API** | Open **Settings → Providers → API → Manage**, add an OpenAI-compatible endpoint and credential, then enable the provider. |
+| **CLI** | Install and sign in to a supported native CLI, then open **Settings → Providers → CLI**, check its installation, test its connection, and enable it. |
+| **Local LLM** | Start Ollama, LM Studio, or a compatible server; enable Local LLM, set its URL, fetch its model list, and select a model. |
 
 Chrome does not need to remain open after synchronization, but a provider can later require login or verification. Treat imported session data as sensitive account access.
 
-On the **Routing** page, choose the intended provider for your task mode and review its fallback order. For local-only model requests, use a model endpoint on your machine and remove external providers from the applicable routes.
+Codex CLI, Claude Code CLI, Antigravity CLI, and Grok CLI are built-in service definitions; Transgentic discovers installed executables but does not install them. **Provider Mode** is the default and supplies completions from caller-provided context while forcing access to host projects, project editing, and commands off. **Agentic Mode** allows explicitly registered workspaces on the Transgentic host, with editing and commands controlled separately and disabled by default. See [CLI services](docs/CLI_SERVICES.md) for setup, permission boundaries, and compatibility details.
+
+On the **Routes** page, choose the intended provider for each task mode and review its fallback order. Webview, API, CLI, and Local LLM services participate in the same routing system. For local-only requests, use a model endpoint on your machine and remove external providers from the applicable routes.
 
 ### 3. Send a first request
 
@@ -144,7 +147,7 @@ For scripts and terminal-based workflows, see the [command-line request examples
 | API key | Your Transgentic access token |
 | Model | `transgentic/coding` |
 
-The available route models are `transgentic/general`, `transgentic/coding`, and `transgentic/writing`. Provider Mode CLIs and compatible API/local services also appear in `GET /v1/models`. See the [completion gateway guide](docs/COMPLETION_GATEWAY.md).
+The stable route models are `transgentic/general`, `transgentic/coding`, and `transgentic/writing`. Enabled API providers, enabled Local LLM, and enabled, connected CLI services in Provider Mode also appear as direct `transgentic/provider/<provider-id>` models in `GET /v1/models`. Webview services are excluded until their recipes can verify temporary-chat or equivalent memory isolation. See the [completion gateway guide](docs/COMPLETION_GATEWAY.md).
 
 ### 4. Check the result
 
@@ -156,7 +159,14 @@ For follow-up requests, reuse the connection, mode, response profile, and `threa
 
 ## Provider and MCP endpoints
 
-Clients that use Transgentic as their primary model provider use the OpenAI-compatible endpoints below. They require the same access token as MCP.
+Choose the gateway surface according to which application owns the task:
+
+| Client role | Use | Task ownership |
+| :--- | :--- | :--- |
+| Transgentic is the client's primary model provider | OpenAI-compatible `/v1` API | The client owns conversation history and executes its project tools locally. |
+| An agent calls Transgentic as one tool among others | `/mcp` or `/sse` | The agent owns the surrounding task; Transgentic executes the selected route or service. |
+
+Completion and MCP endpoints require the same Transgentic access token.
 
 | Operation | Endpoint |
 | :--- | :--- |
@@ -241,9 +251,9 @@ For transport details, selection examples, and plain-client configuration, see [
 
   Configure Main and Co-Agent providers, model choices, and fallback order across six task modes.
 
-- **Quick Prompt and CLI:**
+- **Quick Prompt and CLI providers:**
 
-  Send requests from the desktop or bundled command-line bridge without requiring an agentic IDE.
+  Send requests from the desktop or bundled command-line bridge without requiring an agentic IDE. Built-in native CLI services can act as isolated completion providers or, with explicit host permissions, as Agentic Mode services.
 
 - **MCP client profiles:**
 
@@ -299,9 +309,9 @@ For transport details, selection examples, and plain-client configuration, see [
 
   Adds a separate request-scoped masking layer. The feature name is not a promise of zero disclosure.
 
-- **Authenticated loopback gateway:**
+- **Authenticated local gateway:**
 
-  Requires an access token for MCP endpoints. Companion synchronization endpoints have separate authentication boundaries.
+  Requires an access token for MCP and completion endpoints. It binds to loopback by default and can be explicitly shared on a selected local network interface. Companion synchronization endpoints have separate authentication boundaries.
 
 - **Update checks:**
 
@@ -331,6 +341,7 @@ Model responses include `content` and structured fields such as `status`, `answe
 | :--- | :--- |
 | [Connections and provider setup](docs/CONNECTING.md) | Authentication, HTTP/SSE endpoints, stdio bridge, companion extension, connection checks |
 | [OpenAI-compatible completion gateway](docs/COMPLETION_GATEWAY.md) | Cline setup, route models, tool ownership, Provider Mode, LAN access |
+| [Built-in CLI services](docs/CLI_SERVICES.md) | Native CLI setup, Provider and Agentic modes, workspaces, permissions, compatibility |
 | [MCP tools and application integration](docs/MCP_TOOLS.md) | Tool arguments, task modes, multi-turn examples, command-line requests |
 | [MCP responses and caller profiles](docs/MCP_RESPONSES.md) | Agentic/plain responses, conversation isolation, outcomes, cancellation, progress |
 | [Settings and routing](docs/CONFIGURATION.md) | Balanced Mode, Double Agent, Recall, local models, fallbacks, media, updates |
@@ -347,7 +358,7 @@ The guides describe this source checkout. They are not a live provider compatibi
 
 - **Gateway authentication:**
 
-  MCP endpoints require an access token and bind to loopback. Browser-session and recipe synchronization use separate endpoints; they do not share the MCP authentication guarantee. Keep tokens and synchronized sessions private.
+  MCP and completion endpoints require an access token and bind to loopback by default. LAN sharing must be enabled explicitly and exposes the authenticated gateway on the selected local interface. Browser-session and recipe synchronization use separate endpoints; they do not share the gateway authentication guarantee. Keep tokens and synchronized sessions private.
 
 - **Provider communication:**
 
@@ -426,7 +437,3 @@ Transgentic uses the custom [Transgentic Source-Available License 1.0](LICENSE):
   selling, renting, commercially redistributing, or bundling Transgentic or modified versions in a paid product, and offering its functionality to third parties as a hosted or managed service. Internal hosting is allowed.
 
 This is source-available software, not OSI open source. The full license controls. Third-party components retain their own licenses and notices; licenses accompanying previously distributed versions are unaffected.
-
-### Built-in CLI services
-
-Codex CLI, Claude Code CLI, Antigravity CLI, and Grok CLI are built in under **Settings → Providers → CLI**. Provider Mode is the migrated default and accepts only caller-supplied context; host project access, editing, and commands are forced off. Agentic Mode can use locally registered workspaces with editing and commands independently controlled and defaulting to off. Execution currently requires macOS sandboxing; vendor compatibility and remaining qualification limits are documented in the [CLI services guide](docs/CLI_SERVICES.md).

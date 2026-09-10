@@ -390,6 +390,7 @@ export interface IpcApi {
   getCliState?: () => Promise<import('./cli.js').CliState>;
   configureCli?: (id: import('./cli.js').CliProviderId, updates: Partial<import('./cli.js').CliServiceConfig>) => Promise<import('./cli.js').CliState>;
   probeCli?: (id: import('./cli.js').CliProviderId) => Promise<import('./cli.js').CliState>;
+  fetchCliModels?: (id: import('./cli.js').CliProviderId, force?: boolean) => Promise<import('./cli.js').CliModelDiscovery>;
   testCli?: (id: import('./cli.js').CliProviderId) => Promise<string>;
   selectCliExecutable?: (id: import('./cli.js').CliProviderId) => Promise<import('./cli.js').CliState>;
   addCliWorkspace?: () => Promise<import('./cli.js').CliState>;

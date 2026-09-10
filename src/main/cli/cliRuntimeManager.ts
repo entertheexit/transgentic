@@ -5,7 +5,7 @@ import crypto from 'node:crypto';
 import { execFile, execFileSync } from 'node:child_process';
 import { promisify } from 'node:util';
 import { app } from 'electron';
-import { CLI_IDS, CLI_DEFINITIONS, defaultCliService, isCliProvider, type CliConfig, type CliProviderId, type CliRequestOptions, type CliState, type CliStatus, type CliServiceConfig } from '../../shared/cli.js';
+import { CLI_IDS, CLI_DEFINITIONS, defaultCliService, isCliProvider, type CliConfig, type CliModelDiscovery, type CliModelOption, type CliProviderId, type CliRequestOptions, type CliState, type CliStatus, type CliServiceConfig } from '../../shared/cli.js';
 import { cliEnvironment, resolvePolicy, sandboxAvailable, sandboxInvocation, validatedMacUserKeychainPaths } from './executionPolicy.js';
 import { CliProcess } from './processRunner.js';
 import { adapterArgs, executeAdapter, type CliResult } from './adapters.js';
@@ -22,6 +22,45 @@ function antigravityMacosAuthReadFiles(): string[] {
     });
     return validatedMacUserKeychainPaths(output);
   } catch { return []; }
+}
+
+const MODEL_ID = /^[a-z0-9][a-z0-9._:/-]{0,199}$/i;
+const MODEL_LIST_HEADERS = new Set(['available', 'default', 'display', 'id', 'model', 'models', 'name', 'slug']);
+
+function normalizeModelOptions(items: Array<{ id?: unknown; name?: unknown }>): CliModelOption[] {
+  const models: CliModelOption[] = [];
+  const seen = new Set<string>();
+  for (const item of items) {
+    const id = typeof item.id === 'string' ? item.id.trim() : '';
+    if (!MODEL_ID.test(id) || MODEL_LIST_HEADERS.has(id.toLowerCase()) || seen.has(id)) continue;
+    seen.add(id);
+    const rawName = typeof item.name === 'string' ? item.name.replace(/\s+/g, ' ').trim() : '';
+    models.push({ id, name: (rawName || id).slice(0, 200) });
+    if (models.length >= 200) break;
+  }
+  return models;
+}
+
+export function parseCliModelText(output: string): CliModelOption[] {
+  const lines = output.replace(/\u001b\[[0-?]*[ -/]*[@-~]/g, '').split(/\r?\n/);
+  const candidates: Array<{ id: string; name: string }> = [];
+  for (const rawLine of lines) {
+    const line = rawLine.trim().replace(/^[>*•]\s*/, '');
+    if (!line || /^(?:error|warning|usage|flags?):/i.test(line)) continue;
+    const columns = line.split(/\t+|\s{2,}/).map(value => value.trim()).filter(Boolean);
+    if (!columns.length) continue;
+    const firstParts = columns[0].split(/\s+/);
+    const id = firstParts[0];
+    if (!MODEL_ID.test(id) || MODEL_LIST_HEADERS.has(id.toLowerCase())) continue;
+    const inlineName = firstParts.slice(1).join(' ');
+    candidates.push({ id, name: columns.slice(1).join(' · ') || inlineName || id });
+  }
+  return normalizeModelOptions(candidates);
+}
+
+export function parseCodexModelList(items: unknown): CliModelOption[] {
+  if (!Array.isArray(items)) return [];
+  return normalizeModelOptions(items.map((item: any) => ({ id: item?.model || item?.id, name: item?.displayName || item?.model || item?.id })));
 }
 export function normalizeCliConfig(input?: CliConfig): CliConfig {
   return {
@@ -64,6 +103,8 @@ export class CliRuntimeManager {
   private statuses: Partial<Record<CliProviderId, CliStatus>> = {};
   private active = new Map<string, { provider: CliProviderId; controller: AbortController }>();
   private sessions = new Map<string, { id: string; lastUsed: number }>();
+  private modelCatalogCache = new Map<CliProviderId, { fingerprint: string; result: CliModelDiscovery; expiresAt: number }>();
+  private modelCatalogRequests = new Map<CliProviderId, Promise<CliModelDiscovery>>();
   private listeners = new Set<() => void>();
   setConfig(config?: CliConfig) {
     const next = normalizeCliConfig(config);
@@ -98,6 +139,68 @@ export class CliRuntimeManager {
         message: !sandboxAvailable() ? 'Process sandbox unavailable on this platform.' : compatible ? 'Executable detected. Test Connection verifies native sign-in and protocol compatibility.' : 'This CLI version lacks required automation options. Update the native CLI.' });
     } catch { this.setStatus(id, { state: 'incompatible', executablePath: executable, message: 'Could not inspect this executable within 10 seconds.', checkedAt: Date.now() }); }
     return this.statuses[id]!;
+  }
+  async discoverModels(id: CliProviderId, force = false): Promise<CliModelDiscovery> {
+    const unsupported = (): CliModelDiscovery => ({ provider: id, state: 'unsupported', models: [], message: 'This CLI does not expose a stable model-list command.', fetchedAt: Date.now() });
+    if (id === 'cli_claude_code') return unsupported();
+    const executable = resolveExecutable(id, this.config.services[id]?.executablePath);
+    if (!executable) return { provider: id, state: 'error', models: [], message: 'Install or select this CLI to discover models.', fetchedAt: Date.now() };
+    let fingerprint = executable;
+    try { fingerprint = `${executable}:${fs.statSync(executable).mtimeMs}`; } catch {}
+    const cached = this.modelCatalogCache.get(id);
+    if (!force && cached?.fingerprint === fingerprint && cached.expiresAt > Date.now()) return structuredClone(cached.result);
+    const pending = this.modelCatalogRequests.get(id);
+    if (pending) return structuredClone(await pending);
+    const request = this.discoverModelsUncached(id, executable).then(result => {
+      this.modelCatalogCache.set(id, { fingerprint, result, expiresAt: Date.now() + (result.state === 'available' ? 10 * 60_000 : 30_000) });
+      return result;
+    }).finally(() => this.modelCatalogRequests.delete(id));
+    this.modelCatalogRequests.set(id, request);
+    return structuredClone(await request);
+  }
+  private async discoverModelsUncached(id: CliProviderId, executable: string): Promise<CliModelDiscovery> {
+    const fetchedAt = Date.now();
+    if (!sandboxAvailable()) return { provider: id, state: 'error', models: [], message: 'Model discovery requires the CLI permission sandbox on this platform.', fetchedAt };
+    const base = app?.getPath ? path.join(app.getPath('userData'), 'cli-runs') : path.join(os.tmpdir(), 'transgentic-cli-runs');
+    fs.mkdirSync(base, { recursive: true, mode: 0o700 });
+    const scratch = fs.realpathSync(fs.mkdtempSync(path.join(base, 'models-')));
+    const nativeStorage = [path.join(os.homedir(), id === 'cli_codex' ? '.codex' : id === 'cli_grok' ? '.grok' : '.gemini/antigravity-cli')];
+    const trustedAuthExecutables = id === 'cli_antigravity' && process.platform === 'darwin' ? ANTIGRAVITY_MACOS_AUTH_EXECUTABLES : [];
+    const trustedAuthReadFiles = id === 'cli_antigravity' ? antigravityMacosAuthReadFiles() : [];
+    const nativeRuntimeRoots = id === 'cli_antigravity' ? [path.join(os.homedir(), '.gemini', 'config', 'projects')] : [];
+    const policy = { cwd: scratch, allowProjectEditing: false, allowCommands: false };
+    let proc: CliProcess | undefined;
+    try {
+      let models: CliModelOption[] = [];
+      if (id === 'cli_codex') {
+        const launch = sandboxInvocation(executable, ['app-server', '--stdio'], policy, scratch, nativeStorage, this.gatewayPort, [], [], [], true);
+        proc = new CliProcess(launch.command, launch.args, { cwd: scratch, env: { ...cliEnvironment(), TMPDIR: scratch }, timeoutMs: 20_000 });
+        await proc.request('initialize', { clientInfo: { name: 'transgentic', title: 'Transgentic', version: '1.0.1' }, capabilities: { experimentalApi: true, requestAttestation: false } });
+        proc.write({ method: 'initialized' });
+        let cursor: string | null = null;
+        const items: unknown[] = [];
+        for (let page = 0; page < 5; page++) {
+          const response = await proc.request('model/list', { cursor, limit: 100, includeHidden: false });
+          if (Array.isArray(response?.data)) items.push(...response.data);
+          cursor = typeof response?.nextCursor === 'string' && response.nextCursor ? response.nextCursor : null;
+          if (!cursor) break;
+        }
+        models = parseCodexModelList(items);
+        proc.markComplete();
+      } else {
+        const args = id === 'cli_antigravity' ? ['models'] : ['--no-auto-update', 'models'];
+        const launch = sandboxInvocation(executable, args, policy, scratch, nativeStorage, this.gatewayPort, trustedAuthExecutables, trustedAuthReadFiles, nativeRuntimeRoots, true);
+        const result = await execFileAsync(launch.command, launch.args, { cwd: scratch, env: { ...cliEnvironment(), TMPDIR: scratch }, encoding: 'utf8', timeout: 20_000, maxBuffer: 1024 * 1024, windowsHide: true });
+        models = parseCliModelText(result.stdout);
+      }
+      if (!models.length) return { provider: id, state: 'error', models: [], message: 'The CLI returned no selectable models. You can enter a model manually.', fetchedAt };
+      return { provider: id, state: 'available', models, fetchedAt };
+    } catch {
+      return { provider: id, state: 'error', models: [], message: 'Could not fetch this CLI model list. You can enter a model manually.', fetchedAt };
+    } finally {
+      if (proc) { proc.stop(); await proc.closed; }
+      fs.rmSync(scratch, { recursive: true, force: true });
+    }
   }
   cancelProvider(id: CliProviderId) { for (const job of this.active.values()) if (job.provider === id) job.controller.abort(); }
   dispose() { for (const job of this.active.values()) job.controller.abort(); }

@@ -29,6 +29,14 @@ export interface CliStatus {
   provider: CliProviderId; state: 'not_checked' | 'missing' | 'incompatible' | 'available' | 'ready' | 'busy' | 'authentication_required' | 'error';
   executablePath?: string; version?: string; message?: string; checkedAt?: number;
 }
+export interface CliModelOption { id: string; name: string }
+export interface CliModelDiscovery {
+  provider: CliProviderId;
+  state: 'available' | 'unsupported' | 'error';
+  models: CliModelOption[];
+  message?: string;
+  fetchedAt: number;
+}
 export interface CliState { config: CliConfig; statuses: Partial<Record<CliProviderId, CliStatus>>; sandboxAvailable: boolean }
 export const defaultCliService = (): CliServiceConfig => ({ ...NO_CLI_PERMISSIONS, timeoutSeconds: 300, workMode: 'provider' });
 export function cliSupportsMode(mode: TaskMode): boolean { return ['general', 'coding', 'writing'].includes(mode); }
