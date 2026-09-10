@@ -217,7 +217,7 @@ export const RadialHub: React.FC<RadialHubProps> = ({
         !['chatgpt', 'claude', 'gemini', 'grok', 'localllm'].includes(s.id) &&
         s.enabled !== false &&
         !s.hidden &&
-        (s.providerType === 'webview' || s.providerType === 'api' || s.id.startsWith('custom_') || s.id.startsWith('webview_') || s.id.startsWith('api_'))
+        (s.providerType === 'cli' || s.providerType === 'webview' || s.providerType === 'api' || s.id.startsWith('custom_') || s.id.startsWith('webview_') || s.id.startsWith('api_'))
     )
     .map((s) => {
       const theme = getProviderTheme(s.id, s as any);

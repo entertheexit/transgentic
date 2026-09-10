@@ -82,6 +82,7 @@ export interface ProviderModelRouteConfig {
 }
 
 export interface ModePipelineConfig {
+  cliWorkspaces?: Partial<Record<import('./cli.js').CliProviderId, string>>;
   defaultService: string;             // e.g., "chatgpt", "claude", "localllm"
   fallbackChain: string[];            // Ordered provider IDs
   modelRouting?: Record<string, any>;
@@ -114,10 +115,12 @@ export interface RouteMatrix {
 export interface doubleAgentConfig {
   enabled: boolean;                   // Master toggle (independent)
   includeLocalLlm: boolean;
+  completionReviewEnabled?: boolean;  // Explicit Co-route review for text-only completion requests
   modes?: Record<TaskMode, boolean>;  // Per-mode toggle for Double Agent
 }
 
 export interface ModeRouteConfig {
+  cliWorkspaces?: Partial<Record<import('./cli.js').CliProviderId, string>>;
   mode: TaskMode;
   primary: ProviderId;
   fallbacks: ProviderId[];
@@ -187,6 +190,7 @@ export interface RecallConfig {
   enabled: boolean;          // Master toggle in Settings
   strategy: 'single-pass' | 'two-stage'; // single-pass default for speed
   autoTriggerKeywords: boolean;
+  completionEnabled?: boolean; // Explicit Recall opt-in for text-only completion requests
   modes?: RecallModesConfig; // Per-mode enabling (general, coding, writing, image, video, audio)
 }
 
@@ -245,6 +249,7 @@ export interface LocalLLMConfig {
   localMicroTask?: boolean;         // Offload micro-tasks to Local LLM after Turn 1 in Balanced Mode if in fallback chain
   localZeroLeak?: boolean;          // Ephemeral secret masking before Cloud AI Webview dispatch & reverse restoration
   localCompact?: boolean;           // Context distillation for prompts exceeding character threshold before Cloud AI
+  completionCompact?: boolean;      // Explicit Local LLM compaction for text-only completion requests
   compactThresholdChars?: number;   // Character threshold to trigger Local Compact (default: 4000)
 }
 
@@ -267,6 +272,7 @@ export const DEFAULT_LOCAL_LLM_CONFIG: LocalLLMConfig = {
   localMicroTask: false,
   localZeroLeak: false,
   localCompact: false,
+  completionCompact: false,
   compactThresholdChars: 4000,
 };
 
@@ -278,6 +284,11 @@ export const DEFAULT_HEALING_CONFIG: HealingConfig = {
 };
 
 export interface TransgenticConfig {
+  cli?: import('./cli.js').CliConfig;
+  serverAccess?: {
+    lanEnabled: boolean;
+    advertisedAddress: string;
+  };
   port: number;
   defaultMode: TaskMode;
   interMessageCooldownMs: number; // Enforced delay between consecutive calls (default: 6000ms)
@@ -326,7 +337,7 @@ export interface ServiceManifestEntry {
   enabled: boolean;
   hidden?: boolean;
   experimental?: boolean;
-  providerType?: 'api' | 'webview';
+  providerType?: 'api' | 'webview' | 'cli';
   apiKey?: string;
   baseUrl?: string;
   supportsModelRouting?: boolean;
@@ -376,6 +387,14 @@ export interface ProviderAccountStore {
 export type AccountRegistryStore = Record<string, ProviderAccountStore>;
 
 export interface IpcApi {
+  getCliState?: () => Promise<import('./cli.js').CliState>;
+  configureCli?: (id: import('./cli.js').CliProviderId, updates: Partial<import('./cli.js').CliServiceConfig>) => Promise<import('./cli.js').CliState>;
+  probeCli?: (id: import('./cli.js').CliProviderId) => Promise<import('./cli.js').CliState>;
+  testCli?: (id: import('./cli.js').CliProviderId) => Promise<string>;
+  selectCliExecutable?: (id: import('./cli.js').CliProviderId) => Promise<import('./cli.js').CliState>;
+  addCliWorkspace?: () => Promise<import('./cli.js').CliState>;
+  updateCliWorkspace?: (id: string, updates: Pick<import('./cli.js').CliWorkspace, 'grants' | 'allowMcp'>) => Promise<import('./cli.js').CliState>;
+  removeCliWorkspace?: (id: string) => Promise<import('./cli.js').CliState>;
   getCoreStatus: () => Promise<CoreStatus>;
   getProviderStatuses: () => Promise<Record<ProviderId, ProviderStatus>>;
   getRequestLogs: (limit?: number, offset?: number) => Promise<{ logs: McpRequestLog[]; total: number }>;
@@ -406,6 +425,8 @@ export interface IpcApi {
   resyncModels: (providerId?: ProviderId) => Promise<RegistryStore>;
   selectDirectory: () => Promise<string | null>;
   applyPort: (newPort: number) => Promise<{ success: boolean; port: number; error?: string }>;
+  getNetworkInterfaces?: () => Promise<Array<{ name: string; address: string }>>;
+  applyNetworkAccess?: (lanEnabled: boolean, advertisedAddress: string) => Promise<{ success: boolean; port: number; serverAccess?: { lanEnabled: boolean; advertisedAddress: string }; error?: string }>;
   openProviderDrawer: (providerId: ProviderId) => Promise<void>;
   closeProviderDrawer: () => Promise<void>;
   setMode: (mode: TaskMode) => Promise<void>;
@@ -416,7 +437,7 @@ export interface IpcApi {
   reloadProvider: (providerId: ProviderId) => Promise<void>;
   openProviderWindow: (providerId: ProviderId, partitionKey?: string) => Promise<void>;
   openSystemBrowser: (providerId: ProviderId) => Promise<void>;
-  executePrompt: (prompt: string, mode?: TaskMode, preferredProvider?: ProviderId, model?: string) => Promise<any>;
+  executePrompt: (prompt: string, mode?: TaskMode, preferredProvider?: ProviderId, model?: string, cliRequest?: import('./cli.js').CliRequestOptions) => Promise<any>;
   getThreadSessions: () => Promise<any[]>;
   clearThreadSessions: (params?: { providerId?: ProviderId; threadId?: string; scope?: 'quick_prompt' | 'all' }) => Promise<{ success: boolean; sessions: any[] }>;
   getServicesManifest: () => Promise<ServicesManifest>;

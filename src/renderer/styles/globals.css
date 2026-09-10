@@ -47,6 +47,27 @@ html, body, #root {
   border-color: rgba(255, 255, 255, 0.16);
 }
 
+@keyframes provider-panel-enter {
+  from {
+    transform: translateY(4px) scale(0.985);
+  }
+
+  to {
+    transform: translateY(0) scale(1);
+  }
+}
+
+.provider-panel-enter {
+  animation: provider-panel-enter 200ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  transform-origin: top center;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .provider-panel-enter {
+    animation: none;
+  }
+}
+
 /* Modern Sleek Service List Button */
 .service-list-card {
   background: rgba(255, 255, 255, 0.05);

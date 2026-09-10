@@ -37,6 +37,8 @@ const api = {
   resyncModels: (providerId?: string) => ipcRenderer.invoke('models:resync', providerId),
   selectDirectory: () => ipcRenderer.invoke('settings:select-directory'),
   applyPort: (newPort: number) => ipcRenderer.invoke('settings:apply-port', newPort),
+  getNetworkInterfaces: () => ipcRenderer.invoke('settings:get-network-interfaces'),
+  applyNetworkAccess: (lanEnabled: boolean, advertisedAddress: string) => ipcRenderer.invoke('settings:apply-network-access', { lanEnabled, advertisedAddress }),
 
   // Local Media Streaming & Handling
   openMediaFile: (filePath: string) => ipcRenderer.invoke('media:open-file', filePath),
@@ -66,8 +68,16 @@ const api = {
   openProviderWindow: (providerId: string, partitionKey?: string) => ipcRenderer.invoke('open-provider-window', providerId, partitionKey),
   openSystemBrowser: (providerId: string) => ipcRenderer.invoke('open-system-browser', providerId),
   openExternalUrl: (url: string) => ipcRenderer.invoke('open-external-url', url),
-  executePrompt: (prompt: string, mode?: string, provider?: string, model?: string) =>
-    ipcRenderer.invoke('execute-prompt', { prompt, mode, provider, model }),
+  getCliState: () => ipcRenderer.invoke('cli:state'),
+  configureCli: (id: string, updates: any) => ipcRenderer.invoke('cli:configure', id, updates),
+  probeCli: (id: string) => ipcRenderer.invoke('cli:probe', id),
+  testCli: (id: string) => ipcRenderer.invoke('cli:test', id),
+  selectCliExecutable: (id: string) => ipcRenderer.invoke('cli:select-executable', id),
+  addCliWorkspace: () => ipcRenderer.invoke('cli:add-workspace'),
+  updateCliWorkspace: (id: string, updates: any) => ipcRenderer.invoke('cli:update-workspace', id, updates),
+  removeCliWorkspace: (id: string) => ipcRenderer.invoke('cli:remove-workspace', id),
+  executePrompt: (prompt: string, mode?: string, provider?: string, model?: string, cliRequest?: import('../../shared/cli.js').CliRequestOptions) =>
+    ipcRenderer.invoke('execute-prompt', { prompt, mode, provider, model, cliRequest }),
   getThreadSessions: () => ipcRenderer.invoke('threads:get-sessions'),
   clearThreadSessions: (params?: any) => ipcRenderer.invoke('threads:clear-sessions', params),
   getServicesManifest: () => ipcRenderer.invoke('services:get-manifest'),

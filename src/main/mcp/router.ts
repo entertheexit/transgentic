@@ -1,3 +1,5 @@
+import { isCliProvider, cliSupportsMode } from '../../shared/cli.js';
+import { globalCliRuntime } from '../cli/cliRuntimeManager.js';
 import fs from 'fs';
 import path from 'path';
 import { app } from 'electron';
@@ -438,6 +440,7 @@ export class DynamicRouter {
   }
 
   public static isProviderEnabled(p: ProviderId, mode?: TaskMode): boolean {
+    if (isCliProvider(p)) return ServiceManifestManager.isServiceEnabled(p) && (!mode || cliSupportsMode(mode)) && globalCliRuntime.available(p);
     if (p === 'localllm') {
       if (mode && !this.isLocalLlmSupportedForMode(mode)) {
         return false;
@@ -448,6 +451,7 @@ export class DynamicRouter {
   }
 
   public static providerSupportsMode(p: ProviderId, mode: TaskMode): boolean {
+    if (isCliProvider(p)) return cliSupportsMode(mode);
     if (p === 'localllm') {
       return this.isLocalLlmSupportedForMode(mode);
     }

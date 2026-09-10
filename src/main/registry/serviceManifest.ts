@@ -1,4 +1,5 @@
 import fs from "fs";
+import { builtInCliServices } from '../../shared/cli.js';
 import path from "path";
 import { fileURLToPath } from "url";
 import { app } from "electron";
@@ -11,6 +12,7 @@ export class ServiceManifestManager {
   private static readonly DEFAULT_MANIFEST: ServicesManifest = {
     version: "1.0.0",
     services: {
+      ...builtInCliServices(),
       chatgpt: {
         id: "chatgpt",
         name: "ChatGPT",

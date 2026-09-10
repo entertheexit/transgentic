@@ -153,4 +153,17 @@ export class SseTransportManager {
   public static getActiveCount(): number {
     return this.clients.size;
   }
+
+  /**
+   * Ends every long-lived stream before the HTTP listener is restarted.
+   * Node's server.close() otherwise waits indefinitely for SSE clients.
+   */
+  public static closeAll(): void {
+    for (const [sessionId, client] of Array.from(this.clients.entries())) {
+      this.removeClient(sessionId);
+      if (!client.res.writableEnded) {
+        try { client.res.end(); } catch {}
+      }
+    }
+  }
 }

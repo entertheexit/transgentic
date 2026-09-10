@@ -42,6 +42,7 @@ export interface LocalLLMConfig {
   localMicroTask?: boolean;
   localZeroLeak?: boolean;
   localCompact?: boolean;
+  completionCompact?: boolean;
   compactThresholdChars?: number;
 }
 
@@ -62,6 +63,7 @@ export const DEFAULT_LOCAL_LLM_CONFIG: LocalLLMConfig = {
   localMicroTask: false,
   localZeroLeak: false,
   localCompact: false,
+  completionCompact: false,
   compactThresholdChars: 4000,
 };
 
@@ -92,4 +94,3 @@ export interface AppConfig {
   dataBlindingEnabled?: boolean;
   assetsDir?: string;
 }
-

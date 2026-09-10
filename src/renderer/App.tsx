@@ -1,3 +1,4 @@
+import { isCliProvider } from '../shared/cli.js';
 import React, { useState, useEffect, useRef } from 'react';
 import { UPDATE_CHECK_INTERVAL_MS } from '../shared/release.js';
 import { version as appVersion } from '../../package.json';
@@ -75,6 +76,7 @@ export function App() {
     resyncModels,
     selectDirectory,
     applyPort,
+    applyNetworkAccess,
     openDrawer,
     closeDrawer,
     clearVault,
@@ -119,6 +121,8 @@ export function App() {
     installRecipe,
   } = useTransgentic();
 
+  const [settingsInitialTab, setSettingsInitialTab] = useState<'general' | 'models'>('general');
+  const [settingsInitialProvider, setSettingsInitialProvider] = useState<ProviderId | undefined>();
   const [activeTab, setActiveTab] = useState<ActiveTab>('hub');
   const [routesInitialPipeline, setRoutesInitialPipeline] = useState<'main' | 'co'>('main');
   const [isPinned, setIsPinned] = useState(false);
@@ -169,14 +173,52 @@ export function App() {
   const [showAccountModalProvider, setShowAccountModalProvider] = useState<ProviderId | null>(null);
   const [isCompactMode, setIsCompactMode] = useState(false);
   const [processingSec, setProcessingSec] = useState(0);
-  const [footerEndpointType, setFooterEndpointType] = useState<'sse' | 'mcp'>('sse');
+  const [footerEndpointType, setFooterEndpointType] = useState<'mcp' | 'sse' | 'completion'>('mcp');
   const [copiedEndpoint, setCopiedEndpoint] = useState(false);
+  const [footerLanAddress, setFooterLanAddress] = useState(config.serverAccess?.advertisedAddress || '');
+  const [isUpdatingFooterNetwork, setIsUpdatingFooterNetwork] = useState(false);
 
-  const currentEndpointUrl = `http://127.0.0.1:${coreStatus.port}/${footerEndpointType}`;
+  const isLanSharing = config.serverAccess?.lanEnabled === true;
+  const endpointHost = isLanSharing && config.serverAccess?.advertisedAddress ? config.serverAccess.advertisedAddress : '127.0.0.1';
+  const footerEndpointPath = footerEndpointType === 'completion' ? 'v1' : footerEndpointType;
+  const footerEndpointLabel = footerEndpointType === 'completion' ? 'Completion:' : `${footerEndpointType.toUpperCase()} Endpoint:`;
+  const nextFooterEndpointLabel = footerEndpointType === 'mcp' ? 'SSE Endpoint' : footerEndpointType === 'sse' ? 'Completion' : 'MCP Endpoint';
+  const currentEndpointUrl = `http://${endpointHost}:${coreStatus.port}/${footerEndpointPath}`;
+
+  useEffect(() => {
+    if (config.serverAccess?.advertisedAddress) setFooterLanAddress(config.serverAccess.advertisedAddress);
+  }, [config.serverAccess?.advertisedAddress]);
+
+  useEffect(() => {
+    void (window as any).transgenticApi?.getNetworkInterfaces?.().then((items: Array<{ name: string; address: string }>) => {
+      if (items?.[0]) setFooterLanAddress(current => current || items[0].address);
+    }).catch(() => {});
+  }, []);
 
   const handleToggleEndpointType = () => {
     soundFx.playClick();
-    setFooterEndpointType((prev) => (prev === 'sse' ? 'mcp' : 'sse'));
+    setFooterEndpointType((prev) => prev === 'mcp' ? 'sse' : prev === 'sse' ? 'completion' : 'mcp');
+  };
+
+  const handleFooterNetworkToggle = async () => {
+    if (isUpdatingFooterNetwork) return;
+    soundFx.playClick();
+    const nextEnabled = !isLanSharing;
+    const address = footerLanAddress || config.serverAccess?.advertisedAddress || '';
+    if (nextEnabled && !address) {
+      soundFx.playWarnTone();
+      return;
+    }
+    setIsUpdatingFooterNetwork(true);
+    try {
+      const result = await applyNetworkAccess(nextEnabled, address);
+      if (!result.success) throw new Error(result.error || 'Could not update local network sharing.');
+      soundFx.playTaskSuccess();
+    } catch {
+      soundFx.playWarnTone();
+    } finally {
+      setIsUpdatingFooterNetwork(false);
+    }
   };
 
   const handleCopyEndpointUrl = () => {
@@ -263,6 +305,7 @@ export function App() {
   };
 
   const handleTabChange = (tab: ActiveTab) => {
+    if (tab === 'settings') { setSettingsInitialTab('general'); setSettingsInitialProvider(undefined); }
     soundFx.playClick();
     if (tab === 'routes') {
       setRoutesInitialPipeline('main');
@@ -278,8 +321,8 @@ export function App() {
 
   const handleSatelliteClick = (providerId: ProviderId) => {
     const s = servicesManifest?.services?.[providerId];
-    if (s?.providerType === 'api' || providerId.startsWith('api_')) {
-      return;
+    if (isCliProvider(providerId) || s?.providerType === 'api' || providerId.startsWith('api_')) {
+      setSettingsInitialTab('models'); setSettingsInitialProvider(providerId); setActiveTab('settings'); return;
     }
     soundFx.playDrawerSlide();
     openDrawer(providerId);
@@ -288,8 +331,7 @@ export function App() {
   const handleSendPrompt = async (promptText: string) => {
     soundFx.playClick();
     try {
-      const targetProvider = activeDrawerProvider || undefined;
-      const result = await executePrompt(promptText, coreStatus.activeMode, targetProvider);
+      const result = await executePrompt(promptText, coreStatus.activeMode);
       soundFx.playTaskSuccess();
       return result;
     } catch (err) {
@@ -615,7 +657,7 @@ export function App() {
               </div>
 
               {/* Tab Content Area */}
-              <div className="flex-1 min-h-0 overflow-hidden relative">
+              <div className="flex-1 min-h-0 overflow-clip relative">
                 {activeTab === 'hub' && (
                   <RadialHub
                     coreStatus={coreStatus}
@@ -662,6 +704,8 @@ export function App() {
                 )}
                 {activeTab === 'settings' && (
                   <SettingsView
+                    initialTab={settingsInitialTab}
+                    initialProvider={settingsInitialProvider}
                     config={config}
                     registry={registry}
                     providers={providers}
@@ -690,6 +734,7 @@ export function App() {
                     onResyncModels={resyncModels}
                     onSelectDirectory={selectDirectory}
                     onApplyPort={applyPort}
+                    onApplyNetworkAccess={applyNetworkAccess}
                     onClearBrowserStorage={clearBrowserStorage}
                     onPurgeAllLocalStorage={purgeAllLocalStorage}
                     onOpenAuthModal={() => {
@@ -725,20 +770,30 @@ export function App() {
               {/* Bottom Bar with Connection Info */}
               <div className="h-7 px-4 bg-black/40 flex items-center justify-between border-t border-white/5 text-[10px] font-mono text-slate-400 drag-region">
                 <div className="flex items-center gap-1.5 no-drag">
-                  {/* Clickable Endpoint Label -> Toggles SSE / MCP */}
+                  <button
+                    onClick={() => void handleFooterNetworkToggle()}
+                    disabled={isUpdatingFooterNetwork}
+                    className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-md border transition-all ${isLanSharing ? 'border-emerald-500/35 bg-emerald-500/15 text-emerald-300 shadow-[0_0_8px_rgba(16,185,129,0.16)]' : 'border-white/[0.08] bg-white/[0.035] text-slate-500 hover:border-cyan-500/25 hover:text-cyan-300'} disabled:cursor-wait disabled:opacity-50`}
+                    title={isLanSharing ? `Stop local network sharing (${endpointHost})` : footerLanAddress ? `Share gateway on ${footerLanAddress}` : 'No local network interface available'}
+                    aria-label={isLanSharing ? 'Disable local network sharing' : 'Enable local network sharing'}
+                  >
+                    <Globe className={`h-3 w-3 ${isUpdatingFooterNetwork ? 'animate-pulse' : ''}`} />
+                  </button>
+
+                  {/* Clickable Endpoint Label -> Cycles MCP / SSE / Completion */}
                   <button
                     onClick={handleToggleEndpointType}
                     className="text-slate-500 hover:text-cyan-300 transition-colors cursor-pointer flex items-center gap-1 font-mono group"
-                    title={`Click to switch to ${footerEndpointType === 'sse' ? 'MCP (Streamable HTTP)' : 'SSE'} Endpoint`}
+                    title={`Click to switch to ${nextFooterEndpointLabel}`}
                   >
-                    <span>{footerEndpointType === 'sse' ? 'SSE Endpoint:' : 'MCP Endpoint:'}</span>
+                    <span>{footerEndpointLabel}</span>
                   </button>
 
                   {/* Clickable URL -> Copies to Clipboard */}
                   <button
                     onClick={handleCopyEndpointUrl}
                     className="flex items-center gap-1 text-cyan-300 hover:text-cyan-200 font-semibold font-mono selection:bg-cyan-500 selection:text-black cursor-pointer group bg-cyan-500/5 hover:bg-cyan-500/10 px-1.5 py-0.5 rounded transition-all border border-transparent hover:border-cyan-500/20"
-                    title={`Click to copy ${footerEndpointType.toUpperCase()} URL (${currentEndpointUrl})`}
+                    title={`Click to copy ${footerEndpointType === 'completion' ? 'completion' : footerEndpointType.toUpperCase()} URL (${currentEndpointUrl})`}
                   >
                     <span>{currentEndpointUrl}</span>
                     {copiedEndpoint ? (

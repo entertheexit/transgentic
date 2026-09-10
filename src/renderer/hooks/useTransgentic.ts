@@ -377,6 +377,21 @@ export function useTransgentic() {
     return { success: false, port: config.port, error: 'API not available' };
   }, [api, config.port]);
 
+  const applyNetworkAccess = useCallback(async (lanEnabled: boolean, advertisedAddress: string) => {
+    if (api?.applyNetworkAccess) {
+      const result = await api.applyNetworkAccess(lanEnabled, advertisedAddress);
+      if (result.success) {
+        setConfig((previous) => ({
+          ...previous,
+          port: result.port,
+          serverAccess: result.serverAccess || { lanEnabled, advertisedAddress: lanEnabled ? advertisedAddress : '' },
+        }));
+      }
+      return result;
+    }
+    return { success: false, port: config.port, error: 'API not available' };
+  }, [api, config.port]);
+
   const openDrawer = useCallback((providerId: ProviderId) => {
     if (providerId.startsWith('api_')) return;
     setActiveDrawerProvider(providerId);
@@ -781,9 +796,9 @@ export function useTransgentic() {
     return nextVal;
   }, [api, config.agentHaltGuard]);
 
-  const executePrompt = useCallback(async (prompt: string, mode?: TaskMode, preferredProvider?: ProviderId, model?: string) => {
+  const executePrompt = useCallback(async (prompt: string, mode?: TaskMode, preferredProvider?: ProviderId, model?: string, cliRequest?: import('../../shared/cli.js').CliRequestOptions) => {
     if (api?.executePrompt) {
-      return await api.executePrompt(prompt, mode, preferredProvider, model);
+      return await api.executePrompt(prompt, mode, preferredProvider, model, cliRequest);
     }
     throw new Error('API not available');
   }, [api]);
@@ -1033,6 +1048,7 @@ export function useTransgentic() {
     resyncModels,
     selectDirectory,
     applyPort,
+    applyNetworkAccess,
     openDrawer,
     closeDrawer,
     setMode,

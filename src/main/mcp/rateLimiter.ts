@@ -1,3 +1,5 @@
+import { CLI_IDS } from '../../shared/cli.js';
+import { setTimeout as delay } from 'node:timers/promises';
 import { ProviderId, TaskMode, TransgenticConfig } from '../../shared/types.js';
 import { globalCircuitBreaker } from './circuitBreaker.js';
 
@@ -12,7 +14,8 @@ interface ProviderRateStatus {
 }
 
 export class AdaptiveRateLimiter {
-  private statusMap: Map<ProviderId, ProviderRateStatus> = new Map([
+  private statusMap: Map<ProviderId, ProviderRateStatus> = new Map<ProviderId, ProviderRateStatus>([
+    ...CLI_IDS.map(id => [id, { rateLimitedUntil: 0, rateLimitCount: 0, consecutiveFailures: 0, lastUsed: 0, hourlyRequests: 0, hourlyLimit: 30, cooldownSeconds: 6 }] as [ProviderId, ProviderRateStatus]),
     ['chatgpt', { rateLimitedUntil: 0, rateLimitCount: 0, consecutiveFailures: 0, lastUsed: 0, hourlyRequests: 0, hourlyLimit: 30, cooldownSeconds: 6 }],
     ['claude', { rateLimitedUntil: 0, rateLimitCount: 0, consecutiveFailures: 0, lastUsed: 0, hourlyRequests: 0, hourlyLimit: 35, cooldownSeconds: 6 }],
     ['gemini', { rateLimitedUntil: 0, rateLimitCount: 0, consecutiveFailures: 0, lastUsed: 0, hourlyRequests: 0, hourlyLimit: 50, cooldownSeconds: 5 }],
@@ -68,6 +71,12 @@ export class AdaptiveRateLimiter {
   /**
    * Calculates random jitter delay based on task mode.
    */
+  public async applyCliCooldown(provider: ProviderId, signal?: AbortSignal): Promise<void> {
+    const status = this.statusMap.get(provider);
+    const wait = status ? status.lastUsed + status.cooldownSeconds * 1000 - Date.now() : 0;
+    if (wait > 0) await delay(wait, undefined, { signal });
+  }
+
   public calculateJitterMs(mode: TaskMode): number {
     const isMedia = mode === 'image' || mode === 'video' || mode === 'audio' || (mode as any) === 'music';
     const min = isMedia ? this.mediaJitterMinMs : this.textJitterMinMs;
@@ -262,10 +271,10 @@ export class AdaptiveRateLimiter {
    * Sets custom hourly limit for a provider.
    */
   public setHourlyLimit(provider: ProviderId, limit: number): void {
-    const status = this.statusMap.get(provider);
-    if (status && limit > 0) {
-      status.hourlyLimit = limit;
-    }
+    if (!Number.isFinite(limit) || limit <= 0) return;
+    const status = this.statusMap.get(provider) || { rateLimitedUntil: 0, rateLimitCount: 0, consecutiveFailures: 0, lastUsed: 0, hourlyRequests: 0, hourlyLimit: limit, cooldownSeconds: 0 };
+    status.hourlyLimit = limit;
+    this.statusMap.set(provider, status);
   }
 
   public reset(): void {

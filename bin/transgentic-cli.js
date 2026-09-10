@@ -43,6 +43,9 @@ const rawArgs = process.argv.slice(2);
 let mode = undefined;
 let provider = undefined;
 let model = undefined;
+let workspaceId;
+let disallowEditing = false;
+let disallowCommands = false;
 let port = parseInt(process.env.TRANSGENTIC_PORT || '58420', 10);
 let token = '';
 let isJson = false;
@@ -60,6 +63,12 @@ for (let i = 0; i < rawArgs.length; i++) {
     provider = rawArgs[++i];
   } else if (arg === '--model') {
     model = rawArgs[++i];
+  } else if (arg === '--workspace') {
+    workspaceId = rawArgs[++i];
+  } else if (arg === '--disallow-editing') {
+    disallowEditing = true;
+  } else if (arg === '--disallow-commands') {
+    disallowCommands = true;
   } else if (arg === '--port') {
     port = parseInt(rawArgs[++i], 10);
   } else if (arg === '--token' || arg === '-t') {
@@ -92,8 +101,11 @@ USAGE:
 
 FLAGS:
   -m, --mode <mode>        Task mode hint: image | video | audio | coding | writing | general
-  -p, --provider <name>    Provider override: chatgpt | claude | gemini | grok
+  -p, --provider <name>    Provider: chatgpt | claude | gemini | grok | cli_codex | cli_claude_code | cli_antigravity | cli_grok
       --model <modelId>    Specific model ID (e.g. dall-e-3, o1, claude-3-5-sonnet)
+      --workspace <id>     Registered CLI workspace with a local MCP grant
+      --disallow-editing   Restrict this request to no project editing
+      --disallow-commands  Restrict this request to no commands
       --port <number>      Transgentic local gateway port (default: 58420)
   -t, --token <token>      Client auth bearer token (auto-resolved from client_auth.json if omitted)
       --json               Output raw JSON-RPC response
@@ -148,6 +160,9 @@ async function executeDirectCommand() {
     if (model) toolArgs.model = model;
   }
 
+  if (workspaceId) toolArgs.workspace_id = workspaceId;
+  if (disallowEditing) toolArgs.allow_project_editing = false;
+  if (disallowCommands) toolArgs.allow_commands = false;
   const payload = JSON.stringify({
     jsonrpc: '2.0',
     id: 1,

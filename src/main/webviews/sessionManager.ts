@@ -1,3 +1,4 @@
+import { isCliProvider } from '../../shared/cli.js';
 import path from 'path';
 import fs from 'fs';
 import crypto from 'crypto';
@@ -174,6 +175,7 @@ export class SessionManager {
    * even when the user is not actively viewing the drawer.
    */
   public async ensureWebContents(id: ProviderId, targetPartition?: string): Promise<WebContents> {
+    if (isCliProvider(id)) throw new Error('CLI services do not use browser sessions.');
     const adapter = this.adapters.get(id);
     if (!adapter) throw new Error(`Unknown provider ${id}`);
 

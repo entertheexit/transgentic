@@ -62,6 +62,7 @@ export const LocalLLMModal: React.FC<LocalLLMModalProps> = ({
   const [localMicroTask, setLocalMicroTask] = useState<boolean>(config?.localMicroTask ?? false);
   const [localZeroLeak, setLocalZeroLeak] = useState<boolean>(config?.localZeroLeak ?? false);
   const [localCompact, setLocalCompact] = useState<boolean>(config?.localCompact ?? false);
+  const [completionCompact, setCompletionCompact] = useState<boolean>(config?.completionCompact ?? false);
   const [compactThresholdChars, setCompactThresholdChars] = useState<number>(config?.compactThresholdChars ?? 4000);
 
   // Discovery & Test State
@@ -85,6 +86,7 @@ export const LocalLLMModal: React.FC<LocalLLMModalProps> = ({
       setLocalMicroTask(config.localMicroTask ?? false);
       setLocalZeroLeak(config.localZeroLeak ?? false);
       setLocalCompact(config.localCompact ?? false);
+      setCompletionCompact(config.completionCompact ?? false);
       setCompactThresholdChars(config.compactThresholdChars ?? 4000);
     }
   }, [isOpen]);
@@ -117,6 +119,7 @@ export const LocalLLMModal: React.FC<LocalLLMModalProps> = ({
         localMicroTask,
         localZeroLeak,
         localCompact,
+        completionCompact,
         compactThresholdChars,
       });
       setSaveStatus('Preset switched');
@@ -137,6 +140,7 @@ export const LocalLLMModal: React.FC<LocalLLMModalProps> = ({
         localMicroTask,
         localZeroLeak,
         localCompact,
+        completionCompact,
         compactThresholdChars,
       });
       setSaveStatus('Model updated');
@@ -156,6 +160,7 @@ export const LocalLLMModal: React.FC<LocalLLMModalProps> = ({
         localMicroTask,
         localZeroLeak,
         localCompact,
+        completionCompact,
         compactThresholdChars,
       });
     } catch {}
@@ -174,6 +179,7 @@ export const LocalLLMModal: React.FC<LocalLLMModalProps> = ({
         localMicroTask,
         localZeroLeak,
         localCompact,
+        completionCompact,
         compactThresholdChars,
       });
     } catch {}
@@ -203,6 +209,7 @@ export const LocalLLMModal: React.FC<LocalLLMModalProps> = ({
           localMicroTask,
           localZeroLeak,
           localCompact,
+          completionCompact,
           compactThresholdChars,
         });
       } else {
@@ -234,6 +241,7 @@ export const LocalLLMModal: React.FC<LocalLLMModalProps> = ({
         localMicroTask,
         localZeroLeak,
         localCompact,
+        completionCompact,
         compactThresholdChars,
       };
       const res = await onTestConnection(currentPayload);
@@ -268,6 +276,7 @@ export const LocalLLMModal: React.FC<LocalLLMModalProps> = ({
       localMicroTask,
       localZeroLeak,
       localCompact,
+      completionCompact,
       compactThresholdChars,
     };
     try {
@@ -300,6 +309,7 @@ export const LocalLLMModal: React.FC<LocalLLMModalProps> = ({
         localMicroTask: checked,
         localZeroLeak,
         localCompact,
+        completionCompact,
         compactThresholdChars,
       });
       setSaveStatus(checked ? 'Local Micro-task enabled' : 'Local Micro-task disabled');
@@ -323,6 +333,7 @@ export const LocalLLMModal: React.FC<LocalLLMModalProps> = ({
         localMicroTask,
         localZeroLeak: checked,
         localCompact,
+        completionCompact,
         compactThresholdChars,
       });
       setSaveStatus(checked ? 'Local Zero-Leak enabled' : 'Local Zero-Leak disabled');
@@ -346,6 +357,7 @@ export const LocalLLMModal: React.FC<LocalLLMModalProps> = ({
         localMicroTask,
         localZeroLeak,
         localCompact: checked,
+        completionCompact,
         compactThresholdChars,
       });
       setSaveStatus(checked ? 'Local Compact enabled' : 'Local Compact disabled');
@@ -357,6 +369,18 @@ export const LocalLLMModal: React.FC<LocalLLMModalProps> = ({
 
   const handleCompactThresholdChange = async (val: number) => {
     setCompactThresholdChars(val);
+  };
+
+  const handleToggleCompletionCompact = async (checked: boolean) => {
+    soundFx.playClick();
+    setCompletionCompact(checked);
+    try {
+      await onUpdateConfig({ completionCompact: checked });
+      setSaveStatus(checked ? 'Completion compact enabled' : 'Completion compact disabled');
+      setTimeout(() => setSaveStatus(null), 2000);
+    } catch {
+      setSaveStatus('Save failed');
+    }
   };
 
   return (
@@ -546,6 +570,21 @@ export const LocalLLMModal: React.FC<LocalLLMModalProps> = ({
                 />
               </div>
             )}
+
+            <div className={`flex items-center justify-between border-t border-white/5 pt-2.5 ${enabled ? '' : 'opacity-60'}`}>
+              <div className="min-w-0 pr-3">
+                <div className="flex items-center gap-2">
+                  <Minimize2 className={`h-3.5 w-3.5 shrink-0 ${completionCompact ? 'text-indigo-300' : 'text-slate-500'}`} />
+                  <span className="text-[10.5px] font-semibold text-slate-200">Completion gateway compact</span>
+                  <span className="rounded border border-indigo-500/20 bg-indigo-500/10 px-1.5 py-0.5 font-mono text-[8px] text-indigo-300">TEXT ONLY</span>
+                </div>
+                <p className="mt-1 text-[9px] text-slate-500">Distill long `/v1` text history before generation. Tool requests always stay direct.</p>
+              </div>
+              <label className={`flex shrink-0 items-center gap-2 ${enabled ? 'cursor-pointer' : 'cursor-not-allowed'}`}>
+                <input type="checkbox" checked={completionCompact} disabled={!enabled} onChange={event => void handleToggleCompletionCompact(event.target.checked)} className="peer sr-only" />
+                <span className="relative h-5 w-9 rounded-full border border-white/10 bg-slate-700/80 shadow-inner peer-disabled:opacity-50 peer-checked:bg-indigo-500 after:absolute after:left-[2px] after:top-[2px] after:h-4 after:w-4 after:rounded-full after:bg-white after:transition-transform peer-checked:after:translate-x-4" />
+              </label>
+            </div>
           </div>
 
           {/* Runtimes & Presets */}
@@ -608,6 +647,7 @@ export const LocalLLMModal: React.FC<LocalLLMModalProps> = ({
                       localMicroTask,
                       localZeroLeak,
                       localCompact,
+                      completionCompact,
                       compactThresholdChars,
                     });
                   } catch {}

@@ -135,6 +135,17 @@ Client formats vary; use the endpoint and header above in your client's supporte
 
 For scripts and terminal-based workflows, see the [command-line request examples](docs/MCP_TOOLS.md#command-line-requests). They are optional; desktop and MCP use do not require a source checkout.
 
+**As an OpenAI-compatible model provider:** use this when Cline or another client should own the project, tools, and conversation while Transgentic supplies the model:
+
+| Connection setting | Value |
+| :--- | :--- |
+| Provider type | OpenAI Compatible |
+| Base URL | `http://127.0.0.1:58420/v1` |
+| API key | Your Transgentic access token |
+| Model | `transgentic/coding` |
+
+The available route models are `transgentic/general`, `transgentic/coding`, and `transgentic/writing`. Provider Mode CLIs and compatible API/local services also appear in `GET /v1/models`. See the [completion gateway guide](docs/COMPLETION_GATEWAY.md).
+
 ### 4. Check the result
 
 Expect a model answer, not just a workflow reminder. Inspect the reported provider and result status; a failure, partial result, or handoff is different from a completed model response. Review generated code before running it.
@@ -143,7 +154,16 @@ For follow-up requests, reuse the connection, mode, response profile, and `threa
 
 ---
 
-## MCP endpoints
+## Provider and MCP endpoints
+
+Clients that use Transgentic as their primary model provider use the OpenAI-compatible endpoints below. They require the same access token as MCP.
+
+| Operation | Endpoint |
+| :--- | :--- |
+| List models | `GET http://127.0.0.1:58420/v1/models` |
+| Chat completion | `POST http://127.0.0.1:58420/v1/chat/completions` |
+
+Keep `/mcp` and `/sse` for clients that use Transgentic as an agentic tool.
 
 Use **Streamable HTTP** when your client supports it, or **Server-Sent Events (SSE)** for clients using the legacy event-stream transport. Both reach the same local gateway and require authentication.
 
@@ -310,6 +330,7 @@ Model responses include `content` and structured fields such as `status`, `answe
 | Topic | Contents |
 | :--- | :--- |
 | [Connections and provider setup](docs/CONNECTING.md) | Authentication, HTTP/SSE endpoints, stdio bridge, companion extension, connection checks |
+| [OpenAI-compatible completion gateway](docs/COMPLETION_GATEWAY.md) | Cline setup, route models, tool ownership, Provider Mode, LAN access |
 | [MCP tools and application integration](docs/MCP_TOOLS.md) | Tool arguments, task modes, multi-turn examples, command-line requests |
 | [MCP responses and caller profiles](docs/MCP_RESPONSES.md) | Agentic/plain responses, conversation isolation, outcomes, cancellation, progress |
 | [Settings and routing](docs/CONFIGURATION.md) | Balanced Mode, Double Agent, Recall, local models, fallbacks, media, updates |
@@ -405,3 +426,7 @@ Transgentic uses the custom [Transgentic Source-Available License 1.0](LICENSE):
   selling, renting, commercially redistributing, or bundling Transgentic or modified versions in a paid product, and offering its functionality to third parties as a hosted or managed service. Internal hosting is allowed.
 
 This is source-available software, not OSI open source. The full license controls. Third-party components retain their own licenses and notices; licenses accompanying previously distributed versions are unaffected.
+
+### Built-in CLI services
+
+Codex CLI, Claude Code CLI, Antigravity CLI, and Grok CLI are built in under **Settings → Providers → CLI**. Provider Mode is the migrated default and accepts only caller-supplied context; host project access, editing, and commands are forced off. Agentic Mode can use locally registered workspaces with editing and commands independently controlled and defaulting to off. Execution currently requires macOS sandboxing; vendor compatibility and remaining qualification limits are documented in the [CLI services guide](docs/CLI_SERVICES.md).

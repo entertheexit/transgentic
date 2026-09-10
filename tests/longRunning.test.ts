@@ -60,6 +60,26 @@ describe('Long-Running Operations & SSE Transports', () => {
       SseTransportManager.removeClient('session_123');
       expect(SseTransportManager.getClient('session_123')).toBeUndefined();
     });
+
+    it('ends active streams so a gateway restart cannot wait on SSE clients', () => {
+      const makeResponse = () => ({
+        setHeader: vi.fn(),
+        flushHeaders: vi.fn(),
+        write: vi.fn(),
+        end: vi.fn(),
+        writableEnded: false,
+      });
+      const first: any = makeResponse();
+      const second: any = makeResponse();
+      SseTransportManager.registerClient('restart_one', first);
+      SseTransportManager.registerClient('restart_two', second);
+
+      SseTransportManager.closeAll();
+
+      expect(first.end).toHaveBeenCalledOnce();
+      expect(second.end).toHaveBeenCalledOnce();
+      expect(SseTransportManager.getActiveCount()).toBe(0);
+    });
   });
 
   describe('DomObserver', () => {

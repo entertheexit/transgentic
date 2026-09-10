@@ -1,3 +1,4 @@
+import { CliServicesSettings } from './CliServicesSettings.js';
 import React, { useState } from 'react';
 import {
   ProviderConfig,
@@ -68,8 +69,11 @@ import { soundFx } from '../audio/soundFx.js';
 import { getProviderTheme, getProviderDisplayName } from '../utils/providerTheme.js';
 import { AuthModal } from './AuthModal.js';
 import { DeleteProviderModal } from './DeleteProviderModal.js';
+import { CLI_IDS, isCliProvider, type CliProviderId } from '../../shared/cli.js';
 
 interface SettingsViewProps {
+  initialTab?: SettingsTab;
+  initialProvider?: ProviderId;
   config: TransgenticConfig;
   registry: RegistryStore;
   providers: Record<ProviderId, ProviderStatus>;
@@ -98,6 +102,7 @@ interface SettingsViewProps {
   onResyncModels: (providerId?: ProviderId) => Promise<any>;
   onSelectDirectory: () => Promise<string | null>;
   onApplyPort: (port: number) => Promise<{ success: boolean; port: number; error?: string }>;
+  onApplyNetworkAccess?: (lanEnabled: boolean, advertisedAddress: string) => Promise<{ success: boolean; port: number; serverAccess?: { lanEnabled: boolean; advertisedAddress: string }; error?: string }>;
   onClearBrowserStorage?: () => Promise<any>;
   onPurgeAllLocalStorage?: () => Promise<any>;
   onOpenAuthModal?: () => void;
@@ -106,9 +111,19 @@ interface SettingsViewProps {
 }
 
 type SettingsTab = 'general' | 'models';
+type ProviderCategory = 'webview' | 'api' | 'cli';
 type ClientPlatform = 'codex' | 'cursor' | 'antigravity' | 'claude_desktop' | 'cli_stdio';
 
+const loadProviderUiState = (): { category?: ProviderCategory; selections?: Partial<Record<ProviderCategory, ProviderId>> } => {
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem('transgentic.providerUi') || '{}');
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch { return {}; }
+};
+
 export const SettingsView: React.FC<SettingsViewProps> = ({
+  initialTab = 'general',
+  initialProvider,
   config,
   registry,
   providers,
@@ -137,14 +152,30 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   onResyncModels,
   onSelectDirectory,
   onApplyPort,
+  onApplyNetworkAccess,
   onClearBrowserStorage,
   onPurgeAllLocalStorage,
   onOpenAuthModal,
   onNavigateToRoutes,
   onBack,
 }) => {
-  const [activeTab, setActiveTab] = useState<SettingsTab>('general');
-  const [selectedProvider, setSelectedProvider] = useState<ProviderId>('chatgpt');
+  const [activeTab, setActiveTab] = useState<SettingsTab>(initialTab);
+  const savedProviderUi = React.useMemo(loadProviderUiState, []);
+  const categoryForProvider = (provider?: ProviderId): ProviderCategory => {
+    if (provider && isCliProvider(provider)) return 'cli';
+    const service = provider ? servicesManifest?.services?.[provider] : undefined;
+    return service?.providerType === 'api' || provider?.startsWith('api_') ? 'api' : 'webview';
+  };
+  const initialCategory = initialProvider ? categoryForProvider(initialProvider) : savedProviderUi.category || 'webview';
+  const initialSelections: Record<ProviderCategory, ProviderId> = {
+    webview: savedProviderUi.selections?.webview || 'chatgpt',
+    api: savedProviderUi.selections?.api || '',
+    cli: savedProviderUi.selections?.cli || 'cli_codex',
+  };
+  if (initialProvider) initialSelections[initialCategory] = initialProvider;
+  const [providerCategory, setProviderCategory] = useState<ProviderCategory>(initialCategory);
+  const [selectedProvider, setSelectedProvider] = useState<ProviderId>(initialSelections[initialCategory]);
+  const [selectedProviders, setSelectedProviders] = useState<Record<ProviderCategory, ProviderId>>(initialSelections);
   const [showExperimentalPage, setShowExperimentalPage] = useState<boolean>(false);
   const [moreProvidersTab, setMoreProvidersTab] = useState<'api' | 'webview'>('api');
   const [showApiForm, setShowApiForm] = useState<boolean>(false);
@@ -167,6 +198,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [selectedPlatform, setSelectedPlatform] = useState<ClientPlatform>('codex');
   const [portInput, setPortInput] = useState<string>(String(config.port || 58420));
   const [portStatus, setPortStatus] = useState<string>('');
+  const [networkInterfaces, setNetworkInterfaces] = useState<Array<{ name: string; address: string }>>([]);
+  const [lanEnabled, setLanEnabled] = useState(config.serverAccess?.lanEnabled === true);
+  const [lanAddress, setLanAddress] = useState(config.serverAccess?.advertisedAddress || '');
+  const [networkStatus, setNetworkStatus] = useState('');
+  const [isApplyingNetwork, setIsApplyingNetwork] = useState(false);
   const [isResyncing, setIsResyncing] = useState<boolean>(false);
   const [resyncSuccess, setResyncSuccess] = useState<boolean>(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -178,6 +214,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [providerToDelete, setProviderToDelete] = useState<{ id: ProviderId; name?: string; isWebview?: boolean } | null>(null);
   const [isDeletingProvider, setIsDeletingProvider] = useState<boolean>(false);
   const isBalancedMode = config.balancedMode ?? config.coding?.balancedMode ?? true;
+
+  React.useEffect(() => {
+    try { window.localStorage.setItem('transgentic.providerUi', JSON.stringify({ category: providerCategory, selections: selectedProviders })); } catch {}
+  }, [providerCategory, selectedProviders]);
 
   React.useEffect(() => {
     const fetchToken = async () => {
@@ -194,6 +234,19 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     });
     return () => unsub?.();
   }, []);
+
+  React.useEffect(() => {
+    void window.transgenticApi?.getNetworkInterfaces?.().then((items: Array<{ name: string; address: string }>) => {
+      setNetworkInterfaces(items || []);
+      if (!lanAddress && items?.[0]) setLanAddress(items[0].address);
+    }).catch(() => {});
+  }, []);
+
+  React.useEffect(() => {
+    const access = config.serverAccess;
+    setLanEnabled(access?.lanEnabled === true);
+    if (access?.advertisedAddress) setLanAddress(access.advertisedAddress);
+  }, [config.serverAccess?.lanEnabled, config.serverAccess?.advertisedAddress]);
 
   const handleRegenerateToken = async () => {
     soundFx.playClick();
@@ -232,12 +285,18 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           defaultModelId: apiFormModel.trim() || undefined,
         });
       } else if (onAddCustomApiProvider) {
-        await onAddCustomApiProvider({
+        const beforeIds = new Set(Object.keys(servicesManifest?.services || {}));
+        const updated = await onAddCustomApiProvider({
           name: apiFormName.trim(),
           baseUrl: apiFormBaseUrl.trim(),
           apiKey: apiFormApiKey.trim() || undefined,
           defaultModelId: apiFormModel.trim() || undefined,
         });
+        const createdId = Object.keys(updated?.services || {}).find(id => !beforeIds.has(id) && id.startsWith('api_')) as ProviderId | undefined;
+        if (createdId) {
+          setSelectedProvider(createdId);
+          setSelectedProviders(previous => ({ ...previous, api: createdId }));
+        }
       }
       setShowApiForm(false);
       setEditingApiId(null);
@@ -380,11 +439,13 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     if (!providerToDelete) return;
     setIsDeletingProvider(true);
     try {
-      if (onDeleteProvider) {
-        await onDeleteProvider(providerToDelete.id);
-      }
+      const updated = onDeleteProvider ? await onDeleteProvider(providerToDelete.id) : undefined;
       if (selectedProvider === providerToDelete.id) {
-        setSelectedProvider('chatgpt');
+        const remaining = (Object.values((updated?.services || {}) as Record<string, any>) as any[])
+          .find(service => !service.hidden && (service.providerType === providerCategory || service.id.startsWith(`${providerCategory}_`)))?.id as ProviderId | undefined;
+        const next = providerCategory === 'webview' ? remaining || 'chatgpt' : remaining || '';
+        setSelectedProvider(next);
+        setSelectedProviders(previous => ({ ...previous, [providerCategory]: next }));
       }
       setProviderToDelete(null);
     } catch (err) {
@@ -460,6 +521,12 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [textJitterMax, setTextJitterMax] = useState<number>(Math.round((config.textJitterMaxMs || 8000) / 1000));
 
   const currentPort = config.port || 58420;
+  const gatewayHost = lanEnabled && lanAddress ? lanAddress : '127.0.0.1';
+  const completionBaseUrl = `http://${gatewayHost}:${currentPort}/v1`;
+  const completionCurlExample = `curl ${completionBaseUrl}/chat/completions \\
+  -H "Authorization: Bearer ${clientToken || 'YOUR_TOKEN'}" \\
+  -H "Content-Type: application/json" \\
+  -d '{"model":"transgentic/general","messages":[{"role":"user","content":"Hello"}]}'`;
 
   const currentProvConfig = registry[selectedProvider] || {
     serviceEnabled: true,
@@ -494,6 +561,56 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     } else {
       soundFx.playWarnTone();
       setPortStatus(`Failed: ${res.error || 'Unknown error'}`);
+    }
+  };
+
+  const applyNetworkSelection = async (nextEnabled: boolean, nextAddress: string) => {
+    setIsApplyingNetwork(true);
+    setNetworkStatus('Restarting gateway…');
+    try {
+      const result = await onApplyNetworkAccess?.(nextEnabled, nextAddress);
+      if (!result?.success) throw new Error(result?.error || 'Could not apply network access.');
+      const applied = result.serverAccess || { lanEnabled: nextEnabled, advertisedAddress: nextEnabled ? nextAddress : '' };
+      setLanEnabled(applied.lanEnabled);
+      if (applied.advertisedAddress) setLanAddress(applied.advertisedAddress);
+      setNetworkStatus(applied.lanEnabled ? `Shared at http://${applied.advertisedAddress}:${result.port}` : `Local only at http://127.0.0.1:${result.port}`);
+      soundFx.playTaskSuccess();
+    } finally {
+      setIsApplyingNetwork(false);
+    }
+  };
+
+  const handleNetworkToggle = async (nextEnabled: boolean) => {
+    if (isApplyingNetwork) return;
+    soundFx.playClick();
+    const previousEnabled = lanEnabled;
+    const nextAddress = lanAddress || networkInterfaces[0]?.address || '';
+    if (nextEnabled && !nextAddress) {
+      setNetworkStatus('No local network address is available.');
+      soundFx.playWarnTone();
+      return;
+    }
+    setLanEnabled(nextEnabled);
+    if (nextAddress) setLanAddress(nextAddress);
+    try { await applyNetworkSelection(nextEnabled, nextAddress); }
+    catch (error: any) {
+      setLanEnabled(previousEnabled);
+      setNetworkStatus(error?.message || 'Could not apply network access.');
+      soundFx.playWarnTone();
+    }
+  };
+
+  const handleNetworkAddressChange = async (nextAddress: string) => {
+    if (isApplyingNetwork) return;
+    soundFx.playClick();
+    const previousAddress = lanAddress;
+    setLanAddress(nextAddress);
+    if (!lanEnabled) return;
+    try { await applyNetworkSelection(true, nextAddress); }
+    catch (error: any) {
+      setLanAddress(previousAddress);
+      setNetworkStatus(error?.message || 'Could not apply network access.');
+      soundFx.playWarnTone();
     }
   };
 
@@ -749,7 +866,7 @@ http_headers = { "Authorization" = "Bearer ${clientToken || 'YOUR_TOKEN'}" }`;
           </div>
         </div>
 
-        {/* Clean 2-Tab Navigation */}
+        {/* Settings navigation */}
         <div className="flex items-center gap-1 bg-black/40 p-0.5 rounded-lg border border-white/5">
           <button
             onClick={() => {
@@ -902,6 +1019,27 @@ http_headers = { "Authorization" = "Bearer ${clientToken || 'YOUR_TOKEN'}" }`;
               <span className="text-[9.5px] text-slate-400 font-mono bg-white/[0.03] px-2 py-0.5 rounded border border-white/5">
                 Restricted to text &amp; coding
               </span>
+            </div>
+
+            <div
+              onClick={() => {
+                soundFx.playClick();
+                void onUpdateDoubleAgent?.({ completionReviewEnabled: !(config.doubleAgent?.completionReviewEnabled ?? false) });
+              }}
+              className={`flex cursor-pointer select-none items-center justify-between rounded-xl border p-2.5 transition-all ${config.doubleAgent?.completionReviewEnabled ? 'border-amber-500/35 bg-amber-500/10 shadow-[0_0_12px_rgba(245,158,11,0.08)]' : 'border-white/5 bg-black/40 hover:border-amber-500/25 hover:bg-black/60'}`}
+            >
+              <div className="min-w-0 pr-3">
+                <div className="flex items-center gap-2">
+                  <GitFork className={`h-3.5 w-3.5 shrink-0 ${config.doubleAgent?.completionReviewEnabled ? 'text-amber-300' : 'text-slate-500'}`} />
+                  <span className="text-[11px] font-medium text-slate-200">Completion review pass</span>
+                  <span className="rounded border border-amber-500/20 bg-amber-500/10 px-1.5 py-0.5 font-mono text-[8px] text-amber-300">TEXT ONLY</span>
+                </div>
+                <p className="mt-1 text-[9px] text-slate-500">Send `/v1` text answers through the Co route for a second pass. Requests with tools always stay direct.</p>
+              </div>
+              <label className="flex shrink-0 cursor-pointer items-center gap-2" onClick={event => event.stopPropagation()}>
+                <input type="checkbox" checked={config.doubleAgent?.completionReviewEnabled ?? false} onChange={event => { soundFx.playClick(); void onUpdateDoubleAgent?.({ completionReviewEnabled: event.target.checked }); }} className="peer sr-only" />
+                <span className="relative h-5 w-9 rounded-full border border-white/10 bg-slate-700/80 shadow-inner peer-checked:bg-amber-500 after:absolute after:left-[2px] after:top-[2px] after:h-4 after:w-4 after:rounded-full after:bg-white after:transition-transform peer-checked:after:translate-x-4" />
+              </label>
             </div>
 
             {/* Active Double Agent Modes */}
@@ -1130,6 +1268,21 @@ http_headers = { "Authorization" = "Bearer ${clientToken || 'YOUR_TOKEN'}" }`;
                   Automatically checks prompts for historical references, constraints, and project lore.
                 </p>
               </div>
+            </div>
+
+            <div className={`flex items-center justify-between rounded-xl border p-2.5 transition-all ${config.recall?.completionEnabled ? 'border-purple-500/35 bg-purple-500/10 shadow-[0_0_12px_rgba(168,85,247,0.08)]' : 'border-white/5 bg-black/40'}`}>
+              <div className="min-w-0 pr-3">
+                <div className="flex items-center gap-2">
+                  <History className={`h-3.5 w-3.5 shrink-0 ${config.recall?.completionEnabled ? 'text-purple-300' : 'text-slate-500'}`} />
+                  <span className="text-[11px] font-medium text-slate-200">Completion Recall</span>
+                  <span className="rounded border border-purple-500/20 bg-purple-500/10 px-1.5 py-0.5 font-mono text-[8px] text-purple-300">TEXT ONLY</span>
+                </div>
+                <p className="mt-1 text-[9px] text-slate-500">Allow `/v1` text requests to use available provider memory. Requests with tools always stay direct.</p>
+              </div>
+              <label className="flex shrink-0 cursor-pointer items-center gap-2">
+                <input type="checkbox" checked={config.recall?.completionEnabled ?? false} onChange={event => { soundFx.playClick(); void onUpdateRecallConfig?.({ completionEnabled: event.target.checked }); }} className="peer sr-only" />
+                <span className="relative h-5 w-9 rounded-full border border-white/10 bg-slate-700/80 shadow-inner peer-checked:bg-purple-500 after:absolute after:left-[2px] after:top-[2px] after:h-4 after:w-4 after:rounded-full after:bg-white after:transition-transform peer-checked:after:translate-x-4" />
+              </label>
             </div>
 
             {/* Active Recall Modes per Task */}
@@ -1558,10 +1711,10 @@ http_headers = { "Authorization" = "Bearer ${clientToken || 'YOUR_TOKEN'}" }`;
               <Server className="w-4 h-4 text-cyan-400" />
               <div>
                 <span className="text-xs font-bold text-slate-100 uppercase tracking-wide">
-                  MCP Server Local Port
+                  Gateway Port & Network
                 </span>
                 <p className="text-[10px] text-slate-400">
-                  Custom port for local SSE gateway and MCP tool orchestration.
+                  One authenticated port for MCP and OpenAI-compatible completion.
                 </p>
               </div>
             </div>
@@ -1590,6 +1743,12 @@ http_headers = { "Authorization" = "Bearer ${clientToken || 'YOUR_TOKEN'}" }`;
                 {portStatus}
               </div>
             )}
+            <div className="space-y-2 border-t border-white/[0.06] pt-3">
+              <label className={`flex items-center justify-between rounded-xl border border-white/[0.07] bg-black/25 px-3 py-2.5 ${isApplyingNetwork ? 'cursor-wait opacity-65' : 'cursor-pointer'}`}><div><div className="text-[10.5px] font-semibold text-slate-200">Share on local network</div><div className="text-[9.5px] text-slate-500">Changes apply immediately. Remote clients must use the access token.</div></div><input type="checkbox" className="sr-only peer" checked={lanEnabled} disabled={isApplyingNetwork} onChange={event => void handleNetworkToggle(event.target.checked)} /><span className="relative h-5 w-9 rounded-full border border-white/10 bg-slate-800 peer-checked:bg-cyan-500/70 after:absolute after:left-[2px] after:top-[2px] after:h-3.5 after:w-3.5 after:rounded-full after:bg-white after:transition-transform peer-checked:after:translate-x-4" /></label>
+              {lanEnabled && <select value={lanAddress} disabled={isApplyingNetwork} onChange={event => void handleNetworkAddressChange(event.target.value)} className="w-full rounded-xl border border-cyan-500/20 bg-black/40 px-3 py-2 text-[10.5px] font-mono text-cyan-200 outline-none focus:border-cyan-500/50 disabled:cursor-wait disabled:opacity-60">{networkInterfaces.map(item => <option key={`${item.name}-${item.address}`} value={item.address}>{item.name} · {item.address}</option>)}</select>}
+              <div className="rounded-xl border border-white/[0.06] bg-black/25 px-3 py-2 font-mono text-[9.5px] text-slate-400">Completion: http://{gatewayHost}:{currentPort}/v1<br />MCP: http://{gatewayHost}:{currentPort}/mcp<br />SSE: http://{gatewayHost}:{currentPort}/sse</div>
+              {networkStatus && <div className="rounded-lg border border-cyan-500/15 bg-cyan-500/[0.06] px-2.5 py-1.5 text-[9.5px] font-mono text-cyan-300">{networkStatus}</div>}
+            </div>
           </div>
 
           {/* Local Media & File Storage Management */}
@@ -1879,11 +2038,50 @@ http_headers = { "Authorization" = "Bearer ${clientToken || 'YOUR_TOKEN'}" }`;
 
             {showApiDocs && (
               <div className="space-y-4 pt-3 border-t border-white/5">
-                {/* 1. SSE Endpoints */}
+                {/* 1. OpenAI-compatible completion API */}
+                <div className="space-y-2">
+                  <span className="flex items-center gap-1 text-xs font-bold uppercase text-slate-200 font-mono">
+                    <Braces className="h-3.5 w-3.5 text-cyan-400" />
+                    <span>1. OpenAI-Compatible Completion API</span>
+                  </span>
+
+                  <p className="text-[10px] leading-relaxed text-slate-400">
+                    Use Transgentic as the primary model provider for Cline or any OpenAI-compatible client. Routes select the backend while the client keeps its conversation history, project files, commands, and tool execution.
+                  </p>
+
+                  <div className="space-y-1.5 text-[11px] font-mono">
+                    <div className="flex items-center justify-between rounded-xl border border-white/5 bg-black/40 p-2.5">
+                      <div className="min-w-0"><span className="font-bold text-cyan-300">Base URL</span><p className="truncate text-[10px] text-slate-400">{completionBaseUrl}</p></div>
+                      <button onClick={() => copyToClipboard(completionBaseUrl, 'completion-base')} className="ml-2 shrink-0 rounded bg-white/10 px-2 py-1 text-[10px] text-slate-200 transition-colors hover:bg-white/20">{copiedId === 'completion-base' ? 'Copied!' : 'Copy URL'}</button>
+                    </div>
+                    <div className="flex items-center justify-between rounded-xl border border-white/5 bg-black/40 p-2.5">
+                      <div><span className="font-bold text-emerald-300">GET /v1/models</span><p className="mt-0.5 text-[10px] text-slate-400 font-sans">Lists route models and eligible direct providers.</p></div>
+                      <button onClick={() => copyToClipboard(`${completionBaseUrl}/models`, 'completion-models')} className="ml-2 shrink-0 rounded bg-white/10 px-2 py-1 text-[10px] text-slate-200 transition-colors hover:bg-white/20">{copiedId === 'completion-models' ? 'Copied!' : 'Copy URL'}</button>
+                    </div>
+                    <div className="rounded-xl border border-white/5 bg-black/40 p-2.5">
+                      <span className="font-bold text-purple-300">POST /v1/chat/completions</span>
+                      <p className="mt-0.5 text-[10px] text-slate-400 font-sans">Accepts OpenAI chat messages, tools, tool results, and <code className="font-mono text-cyan-300">stream: true</code>. Tool calls are returned to the client and are never executed by the completion gateway.</p>
+                    </div>
+                  </div>
+
+                  <div className="rounded-xl border border-cyan-500/15 bg-cyan-500/[0.045] p-2.5">
+                    <div className="flex flex-wrap gap-1.5 font-mono text-[9px]">
+                      {['transgentic/general', 'transgentic/coding', 'transgentic/writing'].map(model => <span key={model} className="rounded-md border border-cyan-500/20 bg-cyan-500/10 px-1.5 py-0.5 text-cyan-300">{model}</span>)}
+                    </div>
+                    <p className="mt-2 text-[9.5px] leading-relaxed text-slate-400">Send <code className="text-cyan-300">Authorization: Bearer &lt;access token&gt;</code>. Provider Mode CLIs can appear in the model list; Agentic Mode CLIs remain available through MCP.</p>
+                  </div>
+
+                  <div className="relative rounded-xl border border-white/10 bg-black/60 p-3 font-mono text-[9.5px] text-cyan-300">
+                    <pre className="overflow-x-auto pr-16 selection:bg-cyan-500 selection:text-black">{completionCurlExample}</pre>
+                    <button onClick={() => copyToClipboard(completionCurlExample, 'completion-curl')} className="absolute right-2.5 top-2.5 rounded border border-white/10 bg-white/10 px-2 py-1 text-[9px] text-slate-200 transition-colors hover:bg-white/20">{copiedId === 'completion-curl' ? 'Copied!' : 'Copy'}</button>
+                  </div>
+                </div>
+
+                {/* 2. SSE Endpoints */}
                 <div className="space-y-2">
                   <span className="text-xs font-bold text-slate-200 uppercase font-mono flex items-center gap-1">
                     <Server className="w-3.5 h-3.5 text-cyan-400" />
-                    <span>1. SSE Transport Endpoints</span>
+                    <span>2. SSE Transport Endpoints</span>
                   </span>
 
                   <div className="space-y-1.5 text-[11px] font-mono">
@@ -1934,11 +2132,11 @@ http_headers = { "Authorization" = "Bearer ${clientToken || 'YOUR_TOKEN'}" }`;
                   </div>
                 </div>
 
-                {/* 2. MCP Tools Specification */}
+                {/* 3. MCP Tools Specification */}
                 <div className="space-y-2">
                   <span className="text-xs font-bold text-slate-200 uppercase font-mono flex items-center gap-1">
                     <Code2 className="w-3.5 h-3.5 text-emerald-400" />
-                    <span>2. Exposed MCP Tools</span>
+                    <span>3. Exposed MCP Tools</span>
                   </span>
 
                   <div className="space-y-2 text-[11px]">
@@ -1977,11 +2175,11 @@ http_headers = { "Authorization" = "Bearer ${clientToken || 'YOUR_TOKEN'}" }`;
                   </div>
                 </div>
 
-                {/* 3. Thread Mapping & Session Persistence System */}
+                {/* 4. Thread Mapping & Session Persistence System */}
                 <div className="space-y-2.5">
                   <span className="text-xs font-bold text-slate-200 uppercase font-mono flex items-center gap-1.5">
                     <History className="w-3.5 h-3.5 text-purple-400" />
-                    <span>3. Thread Mapping & Multi-Turn Session Persistence</span>
+                    <span>4. Thread Mapping & Multi-Turn Session Persistence</span>
                   </span>
 
                   <div className="space-y-2 text-[11px]">
@@ -2047,12 +2245,12 @@ http_headers = { "Authorization" = "Bearer ${clientToken || 'YOUR_TOKEN'}" }`;
                   </div>
                 </div>
 
-                {/* 4. Dedicated Task Mode Endpoints */}
+                {/* 5. Dedicated Task Mode Endpoints */}
                 <div className="space-y-3">
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-bold text-slate-200 uppercase font-mono flex items-center gap-1.5">
                       <SlidersHorizontal className="w-3.5 h-3.5 text-cyan-400" />
-                      <span>4. Dedicated Task Mode Endpoints (Pre-Locked Modes)</span>
+                      <span>5. Dedicated Task Mode Endpoints (Pre-Locked Modes)</span>
                     </span>
                     <span className="text-[9px] font-mono text-cyan-400 bg-cyan-500/10 px-2 py-0.5 rounded border border-cyan-500/20">
                       Auto-Locked Task Modes
@@ -2198,12 +2396,12 @@ http_headers = { "Authorization" = "Bearer ${clientToken || 'YOUR_TOKEN'}" }`;
                   </div>
                 </div>
 
-                {/* 5. Custom Webview Recipe Declarative Schema */}
+                {/* 6. Custom Webview Recipe Declarative Schema */}
                 <div className="space-y-3 pt-1 border-t border-white/5">
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-bold text-slate-200 uppercase font-mono flex items-center gap-1.5">
                       <FileCode className="w-3.5 h-3.5 text-teal-400" />
-                      <span>5. Custom Webview Recipe Specification</span>
+                      <span>6. Custom Webview Recipe Specification</span>
                     </span>
                     <span className="text-[9px] font-mono text-teal-400 bg-teal-500/10 px-2 py-0.5 rounded border border-teal-500/20">
                       Declarative JSON Engine
@@ -2254,18 +2452,31 @@ http_headers = { "Authorization" = "Bearer ${clientToken || 'YOUR_TOKEN'}" }`;
       {/* 2. MODELS & PROVIDERS REGISTRY TAB */}
       {activeTab === 'models' && (
         <div className="space-y-4">
-          {/* Provider Selection Tabs + Plus Button */}
+          {/* Provider family and selected provider */}
           {(() => {
             const allServices = servicesManifest?.services || {};
-            const standardProviders: ProviderId[] = ['chatgpt', 'claude', 'gemini', 'grok'];
-            const enabledCustomProviders = Object.values(allServices)
-              .filter((s) => s.enabled && !s.hidden && (s.experimental || s.providerType === 'api' || s.providerType === 'webview'))
-              .map((s) => s.id as ProviderId);
-            const activeTabsProviders = Array.from(new Set([...standardProviders, ...enabledCustomProviders]));
+            const webviewProviders: ProviderId[] = Array.from(new Set([
+              'chatgpt', 'claude', 'gemini', 'grok',
+              ...Object.values(allServices).filter(s => !s.hidden && (s.providerType === 'webview' || s.id.startsWith('webview_') || s.id.startsWith('custom_'))).map(s => s.id),
+            ]));
+            const apiProviders = Object.values(allServices).filter(s => !s.hidden && (s.providerType === 'api' || s.id.startsWith('api_'))).map(s => s.id as ProviderId);
+            const categoryProviders: Record<ProviderCategory, ProviderId[]> = { webview: webviewProviders, api: apiProviders, cli: [...CLI_IDS] };
+            const activeTabsProviders = categoryProviders[providerCategory];
+            const switchCategory = (category: ProviderCategory) => {
+              soundFx.playClick();
+              setShowExperimentalPage(false);
+              setProviderCategory(category);
+              if (category !== 'cli') setMoreProvidersTab(category);
+              const remembered = selectedProviders[category];
+              const next = categoryProviders[category].includes(remembered) ? remembered : categoryProviders[category][0] || '';
+              setSelectedProvider(next);
+              setSelectedProviders(previous => ({ ...previous, [category]: next }));
+            };
 
             const renderProviderTab = (pid: ProviderId) => {
               const isDevDisabled = servicesManifest?.services?.[pid]?.enabled === false;
               const isExp = servicesManifest?.services?.[pid]?.experimental === true;
+              const isCliProvider = providerCategory === 'cli';
               return (
                 <button
                   key={pid}
@@ -2273,18 +2484,19 @@ http_headers = { "Authorization" = "Bearer ${clientToken || 'YOUR_TOKEN'}" }`;
                     soundFx.playClick();
                     setShowExperimentalPage(false);
                     setSelectedProvider(pid);
+                    setSelectedProviders(previous => ({ ...previous, [providerCategory]: pid }));
                   }}
-                  className={`relative flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-lg text-[10px] font-semibold uppercase tracking-wider transition-all cursor-pointer select-none ${!showExperimentalPage && selectedProvider === pid
+                  className={`relative flex min-w-0 items-center justify-center gap-1.5 overflow-hidden rounded-lg px-2 py-1.5 text-[10px] font-semibold uppercase tracking-wider transition-all cursor-pointer select-none ${!showExperimentalPage && selectedProvider === pid
                       ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-[0_0_12px_rgba(6,182,212,0.25)]'
                       : isDevDisabled
                         ? 'text-rose-400/70 hover:text-rose-300 border border-transparent'
                         : 'text-slate-400 hover:text-slate-200 border border-transparent'
                     }`}
                 >
-                  {getProviderIcon(pid)}
-                  <span className="truncate">{getProviderLabel(pid)}</span>
+                  {providerCategory === 'webview' && getProviderIcon(pid)}
+                  <span className={`${isCliProvider ? 'w-full text-center' : 'min-w-0'} truncate`} title={getProviderLabel(pid)}>{getProviderLabel(pid)}</span>
                   {isDevDisabled && (
-                    <span className="text-[7.5px] font-mono text-rose-400 bg-rose-500/10 px-1 py-0.2 rounded border border-rose-500/20">
+                    <span className={`${isCliProvider ? 'pointer-events-none absolute right-0.5 top-0.5 px-1 py-0.5 text-[6.5px] leading-none' : 'px-1 py-0.2 text-[7.5px]'} rounded border border-rose-500/20 bg-rose-500/10 font-mono text-rose-400`}>
                       OFF
                     </span>
                   )}
@@ -2292,54 +2504,19 @@ http_headers = { "Authorization" = "Bearer ${clientToken || 'YOUR_TOKEN'}" }`;
               );
             };
 
-            return activeTabsProviders.length <= 4 ? (
-              <div className="flex items-center gap-1.5 bg-black/40 p-1 rounded-xl border border-white/5">
-                <div
-                  className="flex-1 grid gap-1"
-                  style={{ gridTemplateColumns: `repeat(${activeTabsProviders.length}, minmax(0, 1fr))` }}
-                >
-                  {activeTabsProviders.map(renderProviderTab)}
+            return <div className="space-y-2.5">
+              <div className="flex items-center gap-2">
+                <div className="grid min-w-0 flex-1 grid-cols-3 gap-1 rounded-xl border border-white/[0.06] bg-black/40 p-1">
+                  {(['webview', 'api', 'cli'] as ProviderCategory[]).map(category => <button key={category} onClick={() => switchCategory(category)} className={`flex items-center justify-center gap-1.5 rounded-lg border px-2 py-2 text-[10px] font-semibold uppercase tracking-wider transition-all ${providerCategory === category ? 'border-cyan-500/40 bg-cyan-500/15 text-cyan-200 shadow-[0_0_14px_rgba(6,182,212,0.14)]' : 'border-transparent text-slate-500 hover:bg-white/5 hover:text-slate-300'}`}>{category === 'webview' ? <Globe className="h-3.5 w-3.5" /> : category === 'api' ? <Braces className="h-3.5 w-3.5" /> : <Terminal className="h-3.5 w-3.5" />}{category}</button>)}
                 </div>
-
-                {/* Plus button fixed on the right in the first row */}
-                <button
-                  onClick={() => {
-                    soundFx.playClick();
-                    setShowExperimentalPage((prev) => !prev);
-                  }}
-                  title="More Providers (API & Webview)"
-                  className={`p-2 rounded-lg transition-all cursor-pointer shrink-0 ${showExperimentalPage
-                      ? 'bg-gradient-to-r from-teal-500/30 to-cyan-500/30 text-teal-300 border border-teal-500/50 shadow-[0_0_15px_rgba(20,184,166,0.3)]'
-                      : 'bg-white/5 hover:bg-white/10 text-slate-400 hover:text-teal-300 border border-white/10 hover:border-teal-500/30'
-                    }`}
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                </button>
+                <button disabled={providerCategory === 'cli'} title={providerCategory === 'cli' ? 'CLI providers are built in' : `Manage ${providerCategory} providers`} onClick={() => { soundFx.playClick(); setMoreProvidersTab(providerCategory as 'api' | 'webview'); setShowExperimentalPage(true); }} className={`flex shrink-0 items-center gap-1.5 rounded-lg border px-3 py-2 text-[10px] font-semibold transition-all ${showExperimentalPage ? 'border-teal-500/45 bg-teal-500/15 text-teal-200 shadow-[0_0_14px_rgba(20,184,166,0.14)]' : 'border-white/10 bg-white/[0.035] text-slate-400 hover:border-teal-500/30 hover:text-teal-200'} disabled:cursor-not-allowed disabled:opacity-35`}><Wrench className="h-3.5 w-3.5" />Manage</button>
               </div>
-            ) : (
-              <div className="grid grid-cols-4 gap-1 bg-black/40 p-1 rounded-xl border border-white/5">
-                {activeTabsProviders.map(renderProviderTab)}
-
-                {/* Plus button placed after the last provider */}
-                <button
-                  onClick={() => {
-                    soundFx.playClick();
-                    setShowExperimentalPage((prev) => !prev);
-                  }}
-                  title="More Providers (API & Webview)"
-                  className={`flex items-center justify-center gap-1 py-1.5 px-2 rounded-lg text-[10px] font-semibold uppercase tracking-wider transition-all cursor-pointer select-none ${showExperimentalPage
-                      ? 'bg-gradient-to-r from-teal-500/30 to-cyan-500/30 text-teal-300 border border-teal-500/50 shadow-[0_0_15px_rgba(20,184,166,0.3)]'
-                      : 'bg-white/5 hover:bg-white/10 text-slate-400 hover:text-teal-300 border border-white/10 hover:border-teal-500/30'
-                    }`}
-                >
-                  <Plus className="w-3.5 h-3.5 shrink-0" />
-                  <span className="truncate">Manage</span>
-                </button>
-              </div>
-            );
+              {activeTabsProviders.length ? <div className="grid grid-cols-4 gap-1 rounded-xl border border-white/[0.05] bg-black/30 p-1">{activeTabsProviders.map(renderProviderTab)}</div> : <div className="rounded-xl border border-dashed border-white/10 bg-black/20 px-4 py-5 text-center text-[10.5px] text-slate-500">No API providers configured. Use Manage to add one.</div>}
+            </div>;
           })()}
 
           {/* VIEW A: MORE PROVIDERS PAGE */}
+          <div key={`${providerCategory}-${showExperimentalPage ? 'manage' : 'details'}`} className="provider-panel-enter">
           {showExperimentalPage ? (
             <div className="tactile-core-card p-4 rounded-2xl space-y-4 animate-in fade-in zoom-in-95 duration-200">
               {/* Header */}
@@ -2362,44 +2539,12 @@ http_headers = { "Authorization" = "Bearer ${clientToken || 'YOUR_TOKEN'}" }`;
                       </h3>
                     </div>
                     <p className="text-[10.5px] text-slate-400 mt-0.5">
-                      Connect custom OpenAI-compatible APIs or manage Custom Recipe webview sessions.
+                      {providerCategory === 'api' ? 'Add, edit, or remove OpenAI-compatible API services.' : 'Add and maintain Custom Recipe webview services.'}
                     </p>
                   </div>
                 </div>
 
-                {/* Tab Switcher: API vs Webview */}
-                <div className="flex items-center bg-black/40 p-0.5 rounded-lg border border-white/10 gap-0.5">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      soundFx.playClick();
-                      setMoreProvidersTab('api');
-                    }}
-                    className={`flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-semibold transition-all cursor-pointer ${
-                      moreProvidersTab === 'api'
-                        ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-sm'
-                        : 'text-slate-400 hover:text-slate-200'
-                    }`}
-                  >
-                    <Braces className="w-3.5 h-3.5" />
-                    <span>API</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      soundFx.playClick();
-                      setMoreProvidersTab('webview');
-                    }}
-                    className={`flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-semibold transition-all cursor-pointer ${
-                      moreProvidersTab === 'webview'
-                        ? 'bg-teal-500/20 text-teal-300 border border-teal-500/40 shadow-sm'
-                        : 'text-slate-400 hover:text-slate-200'
-                    }`}
-                  >
-                    <Globe className="w-3.5 h-3.5" />
-                    <span>Webview</span>
-                  </button>
-                </div>
+                <span className={`rounded-lg border px-2.5 py-1 text-[9px] font-mono uppercase tracking-wider ${providerCategory === 'api' ? 'border-cyan-500/25 bg-cyan-500/10 text-cyan-300' : 'border-teal-500/25 bg-teal-500/10 text-teal-300'}`}>{providerCategory}</span>
               </div>
 
               {/* TAB 1: API PROVIDERS */}
@@ -2950,6 +3095,7 @@ http_headers = { "Authorization" = "Bearer ${clientToken || 'YOUR_TOKEN'}" }`;
                                         soundFx.playClick();
                                         setShowExperimentalPage(false);
                                         setSelectedProvider(srv.id);
+                                        setSelectedProviders(previous => ({ ...previous, webview: srv.id }));
                                       }}
                                       className="px-3 py-1 rounded-lg bg-teal-500/20 hover:bg-teal-500/30 text-teal-300 border border-teal-500/40 text-xs font-semibold transition-all cursor-pointer"
                                     >
@@ -2967,34 +3113,45 @@ http_headers = { "Authorization" = "Bearer ${clientToken || 'YOUR_TOKEN'}" }`;
                 </div>
               )}
             </div>
+          ) : providerCategory === 'cli' && isCliProvider(selectedProvider) ? (
+            <CliServicesSettings manifest={servicesManifest} selectedProvider={selectedProvider as CliProviderId} onToggleService={onToggleService} />
+          ) : providerCategory === 'api' ? (
+            selectedProvider && servicesManifest?.services?.[selectedProvider] ? (() => {
+              const service = servicesManifest.services[selectedProvider];
+              return <div className="tactile-core-card overflow-hidden rounded-2xl border border-cyan-500/15 shadow-[0_0_24px_rgba(6,182,212,0.055)]">
+                <div className="relative flex items-center justify-between gap-3 p-3.5 after:absolute after:bottom-0 after:left-3.5 after:right-3.5 after:h-px after:bg-white/5">
+                  <div className="flex min-w-0 items-center gap-3">
+                    <div className="service-icon-box flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-cyan-300"><Braces className="h-4 w-4" /></div>
+                    <div className="min-w-0">
+                      <div className="flex min-w-0 items-center gap-2"><h3 className="truncate text-xs font-bold uppercase tracking-wide text-slate-100">{service.name}</h3><span className="rounded-md border border-cyan-500/25 bg-cyan-500/10 px-1.5 py-0.5 text-[8px] font-mono uppercase text-cyan-300">API</span></div>
+                      <p className="mt-1 truncate font-mono text-[9.5px] text-slate-500">OpenAI-compatible provider</p>
+                    </div>
+                  </div>
+                  <label className="relative inline-flex shrink-0 cursor-pointer items-center" title={`${currentProvConfig.serviceEnabled ? 'Disable' : 'Enable'} ${service.name}`}>
+                    <input type="checkbox" className="peer sr-only" checked={currentProvConfig.serviceEnabled} onChange={event => { soundFx.playClick(); onToggleService(selectedProvider, event.target.checked); }} aria-label={`${currentProvConfig.serviceEnabled ? 'Disable' : 'Enable'} ${service.name}`} />
+                    <span className="relative h-5 w-9 rounded-full border border-white/10 bg-slate-800 shadow-inner transition-colors peer-checked:border-cyan-400/40 peer-checked:bg-cyan-500/70 peer-focus-visible:ring-2 peer-focus-visible:ring-cyan-400/50 after:absolute after:left-[2px] after:top-[2px] after:h-3.5 after:w-3.5 after:rounded-full after:bg-slate-300 after:shadow after:transition-transform peer-checked:after:translate-x-4 peer-checked:after:bg-white" />
+                  </label>
+                </div>
+                <div className="space-y-3 p-4">
+                  <div className="grid gap-3 sm:grid-cols-2"><div className="rounded-xl border border-white/[0.07] bg-black/25 p-3"><div className="text-[9px] font-mono uppercase tracking-wider text-slate-500">Base URL</div><div className="mt-1 truncate font-mono text-[10.5px] text-cyan-200" title={service.baseUrl}>{service.baseUrl}</div></div><div className="rounded-xl border border-white/[0.07] bg-black/25 p-3"><div className="text-[9px] font-mono uppercase tracking-wider text-slate-500">Default model</div><div className="mt-1 truncate font-mono text-[10.5px] text-slate-200">{service.defaultModelId || 'default'}</div></div></div>
+                  <div className="flex items-center justify-between rounded-xl border border-emerald-500/15 bg-emerald-500/[0.045] p-3"><div className="flex items-center gap-2 text-[10.5px] text-emerald-200"><CheckCircle2 className="h-4 w-4" />Available to routes and the completion gateway when enabled.</div><button onClick={() => { setEditingApiId(service.id); setApiFormName(service.name); setApiFormBaseUrl(service.baseUrl || ''); setApiFormApiKey(service.apiKey || ''); setApiFormModel(service.defaultModelId || ''); setApiFormError(null); setShowApiForm(true); setMoreProvidersTab('api'); setShowExperimentalPage(true); }} className="rounded-lg border border-cyan-500/25 bg-cyan-500/10 px-3 py-1.5 text-[10px] font-semibold text-cyan-200 hover:bg-cyan-500/20"><Pencil className="mr-1.5 inline h-3 w-3" />Edit in Manage</button></div>
+                </div>
+              </div>;
+            })() : null
           ) : (
             /* VIEW B: STANDARD PROVIDER CONFIG CARD */
             <div className="tactile-core-card p-3.5 rounded-2xl space-y-4">
               {/* Service-Level Toggle & Re-sync */}
-              <div className="flex items-center justify-between pb-2 border-b border-white/5">
-                <div className="flex items-center gap-3">
-                  <div className="service-icon-box p-2 rounded-xl">
+              <div className="flex items-center justify-between gap-3 border-b border-white/5 pb-3">
+                <div className="flex min-w-0 items-center gap-3">
+                  <div className="service-icon-box flex h-9 w-9 shrink-0 items-center justify-center rounded-xl">
                     {getProviderIcon(selectedProvider)}
                   </div>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs font-bold text-slate-100 uppercase tracking-wide">
+                  <div className="min-w-0">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <span className="truncate text-xs font-bold uppercase tracking-wide text-slate-100">
                         {getProviderLabel(selectedProvider)}
                       </span>
-                      <label className="flex items-center gap-1.5 text-[10px] font-mono cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={currentProvConfig.serviceEnabled}
-                          onChange={(e) => {
-                            soundFx.playClick();
-                            onToggleService(selectedProvider, e.target.checked);
-                          }}
-                          className="rounded border-white/20 bg-black/40 text-cyan-500 focus:ring-0"
-                        />
-                        <span className={currentProvConfig.serviceEnabled ? 'text-emerald-400' : 'text-slate-500'}>
-                          {currentProvConfig.serviceEnabled ? 'Enabled' : 'Disabled'}
-                        </span>
-                      </label>
                     </div>
                     <span className="text-[10px] text-slate-500 font-mono">
                       {providers[selectedProvider]?.isAuthenticated ? '● Authenticated' : '○ Not logged in'}
@@ -3003,7 +3160,7 @@ http_headers = { "Authorization" = "Bearer ${clientToken || 'YOUR_TOKEN'}" }`;
                 </div>
 
                 {/* Action Buttons */}
-                <div className="flex items-center gap-2">
+                <div className="flex shrink-0 items-center gap-1.5">
                   <button
                     onClick={() => {
                       soundFx.playClick();
@@ -3026,6 +3183,22 @@ http_headers = { "Authorization" = "Bearer ${clientToken || 'YOUR_TOKEN'}" }`;
                     <RefreshCw className={`w-3 h-3 ${isResyncing ? 'animate-spin text-cyan-400' : ''}`} />
                     <span>{isResyncing ? 'Scanning...' : 'Models Sync'}</span>
                   </button>
+                  <label
+                    className="relative inline-flex shrink-0 cursor-pointer items-center"
+                    title={`${currentProvConfig.serviceEnabled ? 'Disable' : 'Enable'} ${getProviderLabel(selectedProvider)}`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={currentProvConfig.serviceEnabled}
+                      onChange={(e) => {
+                        soundFx.playClick();
+                        onToggleService(selectedProvider, e.target.checked);
+                      }}
+                      className="peer sr-only"
+                      aria-label={`${currentProvConfig.serviceEnabled ? 'Disable' : 'Enable'} ${getProviderLabel(selectedProvider)}`}
+                    />
+                    <span className="relative h-5 w-9 rounded-full border border-white/10 bg-slate-800 shadow-inner transition-colors peer-checked:border-cyan-400/40 peer-checked:bg-cyan-500/70 peer-focus-visible:ring-2 peer-focus-visible:ring-cyan-400/50 after:absolute after:left-[2px] after:top-[2px] after:h-3.5 after:w-3.5 after:rounded-full after:bg-slate-300 after:shadow after:transition-transform peer-checked:after:translate-x-4 peer-checked:after:bg-white" />
+                  </label>
                 </div>
               </div>
 
@@ -3281,6 +3454,7 @@ http_headers = { "Authorization" = "Bearer ${clientToken || 'YOUR_TOKEN'}" }`;
               </div>
             </div>
           )}
+          </div>
         </div>
       )}
 

@@ -1,3 +1,4 @@
+import { isCliProvider } from '../../shared/cli.js';
 import React, { useState, useEffect } from 'react';
 import {
   ModeRouteConfig,
@@ -87,7 +88,7 @@ export const RoutesSettings: React.FC<RoutesSettingsProps> = ({
           s.id !== 'localllm' &&
           s.enabled !== false &&
           !s.hidden &&
-          (s.providerType === 'api' || s.providerType === 'webview' || s.id.startsWith('custom_') || s.id.startsWith('webview_') || s.id.startsWith('api_'))
+          (s.providerType === 'cli' || s.providerType === 'api' || s.providerType === 'webview' || s.id.startsWith('custom_') || s.id.startsWith('webview_') || s.id.startsWith('api_'))
       )
       .map((s) => s.id as ProviderId);
     return Array.from(new Set([...DEFAULT_PROVIDERS, ...dynamicProviders, 'localllm']));
@@ -102,6 +103,7 @@ export const RoutesSettings: React.FC<RoutesSettingsProps> = ({
       ? currentPipelineConfig.defaultService
       : (activePipeline === 'co' ? 'chatgpt' : (modeRoutes[selectedMode]?.primary ?? 'claude'))) as ProviderId,
     fallbacks: (currentPipelineConfig?.fallbackChain || (activePipeline === 'co' ? ['gemini', 'grok'] : modeRoutes[selectedMode]?.fallbacks) || []) as ProviderId[],
+    cliWorkspaces: currentPipelineConfig?.cliWorkspaces || (activePipeline === 'main' ? modeRoutes[selectedMode]?.cliWorkspaces : undefined),
     providerModels: currentPipelineConfig?.modelRouting || modeRoutes[selectedMode]?.providerModels,
     outputFormat: modeRoutes[selectedMode]?.outputFormat || 'prose_markdown',
   };
@@ -941,6 +943,17 @@ export const RoutesSettings: React.FC<RoutesSettingsProps> = ({
                         </div>
                       </div>
                     </div>
+
+                    {isCliProvider(provId) && <div className="space-y-2 border-b border-white/10 pb-3">
+                      {config?.cli?.services?.[provId]?.workMode === 'agentic' ? <label className="block text-xs text-slate-300">Host workspace (optional)
+                        <select aria-label={`${srv?.name || provId} host workspace`} className="mt-1 w-full rounded-lg border border-white/10 bg-slate-900 px-3 py-2" value={currentRoute.cliWorkspaces?.[provId] || ''} onChange={e => onUpdateRoute(selectedMode, { cliWorkspaces: { ...currentRoute.cliWorkspaces, [provId]: e.target.value } }, activePipeline)}>
+                          <option value="">No project access</option>
+                          {config?.cli?.workspaces.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
+                          {currentRoute.cliWorkspaces?.[provId] && !config?.cli?.workspaces.some(w => w.id === currentRoute.cliWorkspaces?.[provId]) && <option value={currentRoute.cliWorkspaces[provId]}>Unavailable workspace — select another</option>}
+                        </select>
+                      </label> : <div className="flex items-center gap-2 rounded-lg border border-cyan-500/20 bg-cyan-500/[0.06] px-3 py-2 text-[10.5px] text-cyan-200"><ShieldCheck className="h-3.5 w-3.5" />Provider Mode · supplied context only, no host workspace</div>}
+                      <p className="text-[11px] text-slate-400">{config?.cli?.services?.[provId]?.workMode === 'agentic' ? `A workspace belongs to the machine running Transgentic. Editing, command, and MCP grants still apply.${activePipeline === 'co' ? ' Co always disables editing and commands.' : ''}` : 'Switch this CLI to Agentic Mode in Provider settings before assigning a host workspace.'}</p>
+                    </div>}
 
                     {/* Default Model Selector */}
                     <div className="space-y-1">

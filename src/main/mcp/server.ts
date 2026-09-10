@@ -1,3 +1,5 @@
+import { isCliProvider, CLI_IDS, CLI_DEFINITIONS, cliSupportsMode, type CliRequestOptions } from '../../shared/cli.js';
+import { globalCliRuntime } from '../cli/cliRuntimeManager.js';
 import express, { Request, Response } from 'express';
 import cors from 'cors';
 import http from 'http';
@@ -66,6 +68,7 @@ import {
 } from '../../shared/types.js';
 import { getExtensionDownloadUrl } from '../../shared/release.js';
 import { app as electronApp } from 'electron';
+import { CompletionGateway } from '../completion/completionGateway.js';
 
 interface SseClient {
   id: string;
@@ -86,6 +89,7 @@ export class TransgenticMcpServer {
   private activeProvider?: ProviderId;
   private currentTaskDescription?: string;
   private config: TransgenticConfig | null = null;
+  private completionGateway = new CompletionGateway(() => this.config, () => this.port);
   private activeAbortControllers: Map<string, AbortController> = new Map();
   private clientProfiles = new Map<string, { profile: ResponseProfile; lastUsed: number }>();
 
@@ -104,11 +108,19 @@ export class TransgenticMcpServer {
       })
     );
     this.app.use(express.json({ limit: '50mb' }));
+    this.app.use((req, res, next) => {
+      const localOnly = req.path.startsWith('/api/auth/') || req.path.startsWith('/api/recipes');
+      const remote = req.socket.remoteAddress || '';
+      const loopback = remote === '127.0.0.1' || remote === '::1' || remote === '::ffff:127.0.0.1';
+      if (localOnly && !loopback) { res.status(403).json({ error: 'This administration endpoint is available only on the Transgentic machine.' }); return; }
+      next();
+    });
     this.setupRoutes();
   }
 
   public updateConfig(cfg: TransgenticConfig): void {
     this.config = cfg;
+    globalCliRuntime.setConfig(cfg.cli);
     if (cfg.localLLM) {
       DynamicRouter.setLocalLlmConfig(cfg.localLLM);
     }
@@ -131,8 +143,7 @@ export class TransgenticMcpServer {
         activePort: this.port,
         name: 'transgentic-mcp-server',
         port: this.port,
-        mode: this.currentMode,
-        providers: globalSessionManager.getAllStatuses(),
+        completionBaseUrl: `/v1`,
       });
     });
 
@@ -243,6 +254,58 @@ export class TransgenticMcpServer {
         return;
       }
       next();
+    });
+
+    // OpenAI-compatible provider surface. This path deliberately bypasses the
+    // MCP prompt/history pipeline: the caller owns its conversation and tools.
+    this.app.get('/v1/models', (_req, res) => {
+      const created = Math.floor(Date.now() / 1000);
+      res.json({
+        object: 'list',
+        data: this.completionGateway.listModels().map(model => ({
+          id: model.id,
+          object: 'model',
+          created,
+          owned_by: 'transgentic',
+          name: model.displayName,
+        })),
+      });
+    });
+
+    this.app.post('/v1/chat/completions', async (req, res) => {
+      const controller = new AbortController();
+      const abort = () => controller.abort();
+      req.once('aborted', abort);
+      res.once('close', () => { if (!res.writableEnded) abort(); });
+      try {
+        const result = await this.completionGateway.complete(req.body, controller.signal);
+        const id = `chatcmpl-${crypto.randomUUID()}`;
+        const created = Math.floor(Date.now() / 1000);
+        if (req.body?.stream === true) {
+          res.status(200);
+          res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+          res.setHeader('Cache-Control', 'no-cache, no-transform');
+          res.setHeader('Connection', 'keep-alive');
+          const base = { id, object: 'chat.completion.chunk', created, model: req.body.model };
+          const delta = { role: 'assistant', ...(result.message.content != null ? { content: result.message.content } : {}), ...(result.message.tool_calls ? { tool_calls: result.message.tool_calls.map((call, index) => ({ index, ...call })) } : {}) };
+          res.write(`data: ${JSON.stringify({ ...base, choices: [{ index: 0, delta, finish_reason: null }] })}\n\n`);
+          res.write(`data: ${JSON.stringify({ ...base, choices: [{ index: 0, delta: {}, finish_reason: result.finishReason }], ...(result.usage ? { usage: result.usage } : {}) })}\n\n`);
+          res.end('data: [DONE]\n\n');
+          return;
+        }
+        res.json({
+          id, object: 'chat.completion', created, model: req.body.model,
+          choices: [{ index: 0, message: result.message, finish_reason: result.finishReason }],
+          ...(result.usage ? { usage: result.usage } : {}),
+          transgentic: { provider: result.provider, providerModel: result.model },
+        });
+      } catch (error: any) {
+        if (res.headersSent) { res.end(); return; }
+        const message = controller.signal.aborted ? 'Completion request cancelled.' : error?.message || 'Completion request failed.';
+        res.status(controller.signal.aborted ? 499 : 400).json({ error: { message, type: 'invalid_request_error', code: controller.signal.aborted ? 'request_cancelled' : 'completion_failed' } });
+      } finally {
+        req.removeListener('aborted', abort);
+      }
     });
 
     // 1. Unified MCP Endpoint (Streamable HTTP + SSE)
@@ -567,7 +630,7 @@ export class TransgenticMcpServer {
           contentText = JSON.stringify(
             {
               core: this.getCoreStatus(),
-              providers: globalSessionManager.getAllStatuses(),
+              providers: { ...globalSessionManager.getAllStatuses(), ...globalCliRuntime.getStatuses() },
               routes: DynamicRouter.getAllRouteConfigs(),
             },
             null,
@@ -702,6 +765,9 @@ export class TransgenticMcpServer {
     const grokModels = ModelRegistryManager.getUsableModels('grok').map((m) => m.id);
 
     const sessionProperties = {
+      workspace_id: { type: 'string', description: 'Locally registered CLI workspace ID. Requires a local MCP grant. Omit for answer-only requests.' },
+      allow_project_editing: { type: 'boolean', description: 'May restrict an existing local editing grant; cannot grant additional access.' },
+      allow_commands: { type: 'boolean', description: 'May restrict an existing local command grant; cannot grant additional access.' },
       response_profile: { type: 'string', enum: ['agentic', 'plain'], description: 'Response style override: agentic adds workflow guidance; plain returns neutral answers. Defaults to the connection profile.' },
       thread_id: { type: 'string', description: 'Unique identifier for conversation continuity. Reuses existing web chat if matched.' },
       threadId: { type: 'string', description: 'Alias for thread_id.' },
@@ -718,6 +784,7 @@ export class TransgenticMcpServer {
     };
 
     return [
+      ...CLI_IDS.map(id => ({ name: ({ cli_codex: 'ask_codex_cli', cli_claude_code: 'ask_claude_code_cli', cli_antigravity: 'ask_antigravity_cli', cli_grok: 'ask_grok_cli' })[id], description: `Query the configured ${CLI_DEFINITIONS[id].name}. Editing and commands require local grants.`, inputSchema: { type: 'object', properties: { prompt: { type: 'string' }, mode: { type: 'string', enum: ['general', 'coding', 'writing'] }, model: { type: 'string' }, ...sessionProperties }, required: ['prompt'] } })),
       {
         name: 'prompt_model',
         description:
@@ -733,7 +800,7 @@ export class TransgenticMcpServer {
             },
             provider: {
               type: 'string',
-              enum: ['chatgpt', 'claude', 'gemini', 'grok'],
+              enum: ['chatgpt', 'claude', 'gemini', 'grok', ...CLI_IDS],
               description: 'Optional forced provider override. If omitted, uses intelligent auto-routing.',
             },
             model: {
@@ -921,7 +988,7 @@ export class TransgenticMcpServer {
             text: JSON.stringify(
               {
                 core: this.getCoreStatus(),
-                providers: globalSessionManager.getAllStatuses(),
+                providers: { ...globalSessionManager.getAllStatuses(), ...globalCliRuntime.getStatuses() },
                 models: ModelRegistryManager.getRegistry(),
               },
               null,
@@ -950,6 +1017,13 @@ export class TransgenticMcpServer {
     if (name === 'ask_claude') provider = 'claude';
     if (name === 'ask_gemini') provider = 'gemini';
     if (name === 'ask_grok') provider = 'grok';
+    const cliTools: Record<string, string> = { ask_codex_cli: 'cli_codex', ask_claude_code_cli: 'cli_claude_code', ask_antigravity_cli: 'cli_antigravity', ask_grok_cli: 'cli_grok' };
+    if (cliTools[name]) provider = cliTools[name];
+    if (args.workspace_id !== undefined || args.allow_project_editing !== undefined || args.allow_commands !== undefined) {
+      if (args.workspace_id !== undefined && typeof args.workspace_id !== 'string') throw new Error('workspace_id must be a registered workspace ID.');
+      for (const key of ['allow_project_editing', 'allow_commands']) if (args[key] !== undefined && typeof args[key] !== 'boolean') throw new Error(`${key} must be a boolean.`);
+      caller = { profile: caller?.profile || 'agentic', sessionId: caller?.sessionId || 'legacy', ...caller, cliRequest: { workspaceId: args.workspace_id, allowProjectEditing: args.allow_project_editing, allowCommands: args.allow_commands } };
+    }
 
     if (name === 'generate_image') {
       mode = 'image';
@@ -993,6 +1067,7 @@ export class TransgenticMcpServer {
     forcedProvider?: ProviderId;
     reportProgress?: (message: string) => void;
     isolateConversation?: boolean;
+    cliRequest?: CliRequestOptions;
   }): Promise<{
     text: string;
     finalResponseWithLocalPath: string;
@@ -1038,6 +1113,58 @@ export class TransgenticMcpServer {
       const providerId = candidateProviders[i];
       throwIfCancelled(reqAbortController?.signal || abortSignal);
       reportProgress?.(`Routing to ${getProviderDisplayName(providerId)}`);
+
+      if (isCliProvider(providerId)) {
+        const cliService = globalCliRuntime.getServiceConfig(providerId);
+        const routeWorkspace = cliService.workMode === 'agentic'
+          ? DynamicRouter.getRule(effectiveMode, pipeline).cliWorkspaces?.[providerId]
+          : undefined;
+        const cliRequest = { ...params.cliRequest, workspaceId: params.cliRequest?.workspaceId ?? routeWorkspace };
+        try {
+          if (!cliSupportsMode(effectiveMode)) throw new Error('CLI services support general, coding and writing modes.');
+          const cfg = ModelRegistryManager.getProviderConfig(providerId);
+          if (!ServiceManifestManager.isServiceEnabled(providerId) || cfg?.serviceEnabled === false) throw new Error('CLI service is disabled. Enable it in Settings.');
+          if (globalRateLimiter.isRateLimited(providerId)) throw new Error('[RATE_LIMIT] CLI service is cooling down.');
+          const scopedThreadId = JSON.stringify([effectiveThreadId, providerId, 'native', cliRequest.workspaceId || null]);
+          const rollover = !newThread && globalThreadManager.shouldRollover(scopedThreadId, providerId, 10, 30000);
+          const fresh = Boolean(newThread || rollover || !globalThreadManager.getSession(scopedThreadId, providerId));
+          let prompt = maskedText;
+          if (fresh && this.config?.recall && isRecallEnabledForMode(this.config, effectiveMode)) {
+            prompt = 'Use only the supplied context and this scoped CLI conversation. Do not claim access to web chat memory.\n\n' + prompt;
+          }
+          if (rollover) {
+            const history = globalThreadManager.getHistory(scopedThreadId, providerId).slice(-4).map(m => `${m.role}: ${m.content}`).join('\n').slice(-8000);
+            prompt = `Prior scoped conversation (bounded, possibly incomplete):\n${history}\n\nCurrent request:\n${prompt}`;
+          }
+          if (effectiveMode === 'coding' && activeLocalLlmConfig?.enabled && activeLocalLlmConfig.localZeroLeak) prompt = globalLocalZeroLeakManager.sanitizePrompt(prompt, reqId).sanitizedText;
+          if (effectiveMode === 'coding' && activeLocalLlmConfig?.enabled && activeLocalLlmConfig.localCompact) prompt = (await globalLocalCompactManager.compactPrompt(prompt, activeLocalLlmConfig, reqAbortController?.signal || abortSignal)).compactedText;
+          const explicitModel = cfg?.allowMcpOverride === false ? undefined : requestedModel;
+          const model = explicitModel || DynamicRouter.resolveTargetModel(providerId, effectiveMode, undefined, pipeline) || undefined;
+          reportProgress?.(`Queued for ${CLI_DEFINITIONS[providerId].name}`);
+          this.updateCoreState('processing', providerId, `Processing on ${CLI_DEFINITIONS[providerId].name}`);
+          executionResult = await globalCliRuntime.execute(providerId, prompt, { reqId, conversationKey: scopedThreadId, newThread: fresh,
+            model, signal: reqAbortController?.signal || abortSignal, progress: reportProgress, request: cliRequest, desktop: params.isQuickPrompt, reviewer: pipeline === 'co',
+            beforeStart: async signal => {
+              await globalRateLimiter.applyCliCooldown(providerId, signal);
+              if (globalRateLimiter.isRateLimited(providerId)) throw new Error('[RATE_LIMIT] CLI service is cooling down.');
+              globalRateLimiter.recordRequest(providerId);
+            } });
+          if (fresh) globalThreadManager.removeSession(scopedThreadId, providerId);
+          globalThreadManager.setSession(scopedThreadId, providerId, '', projectName);
+          globalThreadManager.recordTurn(scopedThreadId, providerId, maskedText, executionResult.text);
+          globalThreadManager.markPresetPromptsSent(scopedThreadId, providerId);
+          successfulProvider = providerId; successfulAccount = globalCliRuntime.identity(providerId);
+          wasNewChat = fresh || executionResult.wasNewChat; wasRolledOver = Boolean(rollover);
+          globalRateLimiter.markSuccess(providerId);
+          break;
+        } catch (error) {
+          throwIfCancelled(reqAbortController?.signal || abortSignal);
+          const err = error as Error & { noFallback?: boolean; providerUsed?: string };
+          err.providerUsed = providerId; lastCandidateError = err;
+          if (forcedProvider || err.noFallback || cliRequest.workspaceId) throw err;
+          continue;
+        }
+      }
 
       // Dedicated execution for Local LLM
       if (providerId === 'localllm') {
@@ -1567,18 +1694,25 @@ export class TransgenticMcpServer {
         ? [forcedProvider]
         : DynamicRouter.getCandidateChain(effectiveMode, undefined, true, 'main', doubleAgentCfg.includeLocalLlm);
 
+      if (caller?.cliRequest?.workspaceId) {
+        if (forcedProvider && !isCliProvider(forcedProvider)) throw new Error('Workspace execution requires a CLI provider.');
+        candidateProviders = candidateProviders.filter(isCliProvider);
+      }
       const isLocalLlmInRoute = candidateProviders.includes('localllm');
 
       const conversationId =
         threadId ||
         (isQuickPrompt ? 'quick_prompt_session' : (projectName ? `project_${projectName}` : 'default_mcp_thread'));
-      const effectiveThreadId = caller
+      let effectiveThreadId = caller
         ? JSON.stringify([isQuickPrompt ? 'quick_prompt' : 'mcp', caller.sessionId, responseProfile, effectiveMode, conversationId])
         : conversationId;
 
+      if (caller?.cliRequest?.workspaceId) effectiveThreadId = JSON.stringify([effectiveThreadId, caller.cliRequest.workspaceId, caller.cliRequest.allowCommands, caller.cliRequest.allowProjectEditing]);
       const defaultProvider = candidateProviders[0];
-      const defaultAccount = AccountRegistryManager.getActiveAccount(defaultProvider);
-      const defaultScopedThreadId = defaultAccount
+      const defaultAccount = (isCliProvider(defaultProvider) ? globalCliRuntime.identity(defaultProvider) : defaultProvider ? AccountRegistryManager.getActiveAccount(defaultProvider) : undefined);
+      const defaultScopedThreadId = isCliProvider(defaultProvider)
+        ? JSON.stringify([effectiveThreadId, defaultProvider, 'native', caller?.cliRequest?.workspaceId ?? DynamicRouter.getRule(effectiveMode).cliWorkspaces?.[defaultProvider] ?? null])
+        : defaultAccount
         ? `${effectiveThreadId}_${defaultAccount.id}`
         : `${effectiveThreadId}_${defaultProvider}`;
       const existingPrimarySession = globalThreadManager.getSession(defaultScopedThreadId, defaultProvider);
@@ -1593,6 +1727,8 @@ export class TransgenticMcpServer {
         isLocalMicroTaskEnabled &&
         microTask.isMicroTask &&
         !forcedProvider &&
+        !caller?.cliRequest?.workspaceId &&
+        !candidateProviders.some(p => isCliProvider(p) && DynamicRouter.getRule(effectiveMode).cliWorkspaces?.[p]) &&
         isLocalLlmAvailable &&
         !shouldRunScenario2
       ) {
@@ -1638,7 +1774,7 @@ export class TransgenticMcpServer {
       }
 
       const initialProvider = candidateProviders[0] || 'chatgpt';
-      const initialAccount = AccountRegistryManager.getActiveAccount(initialProvider);
+      const initialAccount = (isCliProvider(initialProvider) ? globalCliRuntime.identity(initialProvider) : AccountRegistryManager.getActiveAccount(initialProvider));
 
       log = {
         id: reqId,
@@ -1686,8 +1822,8 @@ export class TransgenticMcpServer {
 
       // 4. Execution Dispatching: Scenario 2 vs Single Pipeline
       if (shouldRunScenario2) {
-        const mainCandidates = DynamicRouter.getCandidateChain(effectiveMode, undefined, true, 'main', doubleAgentCfg.includeLocalLlm);
-        const coCandidates = DynamicRouter.getCandidateChain(effectiveMode, undefined, true, 'co', doubleAgentCfg.includeLocalLlm);
+        const mainCandidates = DynamicRouter.getCandidateChain(effectiveMode, undefined, true, 'main', doubleAgentCfg.includeLocalLlm).filter(p => !caller?.cliRequest?.workspaceId || isCliProvider(p));
+        const coCandidates = DynamicRouter.getCandidateChain(effectiveMode, undefined, true, 'co', doubleAgentCfg.includeLocalLlm).filter(p => !caller?.cliRequest?.workspaceId || isCliProvider(p));
 
         if (mainCandidates.length === 0 && coCandidates.length === 0) {
           throw new Error(`No available AI services found for mode "${effectiveMode}" in either Main or Co pipelines.`);
@@ -1712,6 +1848,7 @@ export class TransgenticMcpServer {
             pipeline: 'main',
             reportProgress: caller?.reportProgress,
             isolateConversation: Boolean(caller),
+            cliRequest: caller?.cliRequest,
             reqId: `${reqId}_main`,
             startTime,
             bypassedWebviewDispatch,
@@ -1735,6 +1872,7 @@ export class TransgenticMcpServer {
             pipeline: 'co',
             reportProgress: caller?.reportProgress,
             isolateConversation: Boolean(caller),
+            cliRequest: caller?.cliRequest,
             reqId: `${reqId}_co`,
             startTime,
             bypassedWebviewDispatch,
@@ -1788,6 +1926,7 @@ export class TransgenticMcpServer {
           pipeline: 'main',
           reportProgress: caller?.reportProgress,
           isolateConversation: Boolean(caller),
+            cliRequest: caller?.cliRequest,
           reqId,
           startTime,
           bypassedWebviewDispatch,
@@ -1856,6 +1995,8 @@ export class TransgenticMcpServer {
             type: 'text',
             text: `\n\n---\n${formatDualDispatchDoubleAgentDirective()}`,
           });
+        } else if (isCliProvider(successfulProvider)) {
+          contentItems.push({ type: 'text', text: `\n\n---\n[TRANSGENTIC CLI GUIDANCE]\n${CLI_DEFINITIONS[successfulProvider].name} answered under the configured workspace permissions. Continue within the user's requested scope; coding mode does not grant editing or command access.` });
         } else if (scenario === 'standard_balanced') {
           if (successfulProvider === 'localllm' && (isBalanced || isLocalMicroTaskEnabled)) {
             const reminderText = wasNewChat
@@ -1962,17 +2103,23 @@ export class TransgenticMcpServer {
       // 8. Request-scoped 'finally' purge: GUARANTEES all volatile tokens for this request are purged
       globalBlindingEngine.purgeRequestContext(contextId);
       globalLocalZeroLeakManager.purgeRequestContext(reqId);
+      globalLocalZeroLeakManager.purgeRequestContext(`${reqId}_main`);
+      globalLocalZeroLeakManager.purgeRequestContext(`${reqId}_co`);
     }
   }
 
   public async start(): Promise<number> {
     return new Promise((resolve, reject) => {
       const tryListen = (attemptPort: number) => {
+        const lanEnabled = this.config?.serverAccess?.lanEnabled === true;
+        const bindHost = lanEnabled ? '0.0.0.0' : '127.0.0.1';
+        const displayHost = lanEnabled ? (this.config?.serverAccess?.advertisedAddress || '0.0.0.0') : '127.0.0.1';
         this.httpServer = this.app
-          .listen(attemptPort, '127.0.0.1', () => {
+          .listen(attemptPort, bindHost, () => {
             const address = this.httpServer?.address();
             this.port = address && typeof address !== 'string' ? address.port : attemptPort;
-            console.log(`[Transgentic MCP Server] Listening on http://127.0.0.1:${this.port}`);
+            globalCliRuntime.setGatewayPort(this.port);
+            console.log(`[Transgentic MCP Server] Listening on http://${displayHost}:${this.port}`);
             resolve(this.port);
           })
           .on('error', (err: any) => {
@@ -1993,10 +2140,12 @@ export class TransgenticMcpServer {
   public stop(): Promise<void> {
     return new Promise((resolve) => {
       if (this.httpServer) {
-        this.httpServer.close(() => {
-          this.httpServer = null;
-          resolve();
-        });
+        const server = this.httpServer;
+        this.httpServer = null;
+        SseTransportManager.closeAll();
+        server.close(() => resolve());
+        server.closeIdleConnections?.();
+        server.closeAllConnections?.();
       } else {
         resolve();
       }

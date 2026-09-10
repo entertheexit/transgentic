@@ -1,3 +1,7 @@
+import crypto from 'node:crypto';
+import os from 'node:os';
+import { globalCliRuntime, normalizeCliConfig } from './cli/cliRuntimeManager.js';
+import { isCliProvider, CLI_IDS, type CliProviderId } from '../shared/cli.js';
 import fs from 'fs';
 import { isQuickPromptConversation } from '../shared/conversationScope.js';
 import { createUpdateChecker } from './updates.js';
@@ -86,6 +90,8 @@ function getDefaultAssetsDir(): string {
 function loadPersistedConfig(): TransgenticConfig {
   const defaultAssetsDir = getDefaultAssetsDir();
   const defaults: TransgenticConfig = {
+    cli: normalizeCliConfig(),
+    serverAccess: { lanEnabled: false, advertisedAddress: '' },
     port: 58420,
     defaultMode: 'general',
     interMessageCooldownMs: 6000,
@@ -100,6 +106,7 @@ function loadPersistedConfig(): TransgenticConfig {
     doubleAgent: {
       enabled: false,
       includeLocalLlm: false,
+      completionReviewEnabled: false,
       modes: {
         general: true,
         coding: true,
@@ -119,6 +126,7 @@ function loadPersistedConfig(): TransgenticConfig {
       enabled: true,
       strategy: 'single-pass',
       autoTriggerKeywords: true,
+      completionEnabled: false,
       modes: {
         general: true,
         coding: true,
@@ -143,6 +151,7 @@ function loadPersistedConfig(): TransgenticConfig {
       selectedModel: '',
       temperature: 0.2,
       contextLength: 8192,
+      completionCompact: false,
     },
     healing: {
       autoHealingEnabled: true,
@@ -157,6 +166,10 @@ function loadPersistedConfig(): TransgenticConfig {
     if (fs.existsSync(configPath)) {
       const raw = fs.readFileSync(configPath, 'utf-8');
       const parsed = JSON.parse(raw);
+      const legacyCompletion = parsed.completion && typeof parsed.completion === 'object' ? parsed.completion : undefined;
+      const hadCompletionRecall = Object.prototype.hasOwnProperty.call(parsed.recall || {}, 'completionEnabled');
+      const hadCompletionCompact = Object.prototype.hasOwnProperty.call(parsed.localLLM || {}, 'completionCompact');
+      const hadCompletionReview = Object.prototype.hasOwnProperty.call(parsed.doubleAgent || {}, 'completionReviewEnabled');
       // Migrate old developer workspace path or relative ./assets to clean Documents/Transgentic
       if (!parsed.assetsDir || parsed.assetsDir === './assets' || parsed.assetsDir.includes('/Workspace/Apps/transgentic')) {
         parsed.assetsDir = defaultAssetsDir;
@@ -249,6 +262,18 @@ function loadPersistedConfig(): TransgenticConfig {
       if (!parsed.routes) {
         parsed.routes = DynamicRouter.getRouteMatrix();
       }
+      parsed.serverAccess = { ...defaults.serverAccess, ...(parsed.serverAccess || {}) };
+      // Preserve opt-ins created by the first completion-gateway release while
+      // moving each setting to the feature that owns it.
+      if (legacyCompletion) {
+        if (!hadCompletionRecall) parsed.recall.completionEnabled = legacyCompletion.recall === true;
+        if (!hadCompletionCompact) parsed.localLLM.completionCompact = legacyCompletion.compaction === true;
+        if (!hadCompletionReview) parsed.doubleAgent.completionReviewEnabled = legacyCompletion.multiModelReview === true;
+        delete parsed.completion;
+      }
+      // CLI configurations created before Provider/Agentic modes migrate to
+      // Provider Mode. normalizeCliConfig also clears host permissions there.
+      parsed.cli = normalizeCliConfig(parsed.cli);
       return { ...defaults, ...parsed };
     }
   } catch {}
@@ -531,6 +556,13 @@ function getStealthPreloadPath(): string | undefined {
   // 5. Create Main Squircle Window
   const mainWindow = globalWindowManager.createMainWindow();
 
+  // Verify enabled native services in the background. Each connection check is
+  // answer-only and runs without a registered workspace or project permissions.
+  const enabledCliProviders = CLI_IDS.filter(id => ServiceManifestManager.isServiceEnabled(id));
+  if (enabledCliProviders.length > 0) {
+    void globalCliRuntime.testEnabledConnections(enabledCliProviders);
+  }
+
   globalHealingManager.onUpdate((reports) => {
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send('healing-reports-updated', reports);
@@ -570,7 +602,7 @@ function getStealthPreloadPath(): string | undefined {
 
   globalSessionManager.onStatusUpdate((statuses) => {
     if (!mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('provider-status-updated', statuses);
+      mainWindow.webContents.send('provider-status-updated', { ...statuses, ...globalCliRuntime.getStatuses() });
     }
   });
 
@@ -613,10 +645,52 @@ function getStealthPreloadPath(): string | undefined {
 }
 
 function setupIpcHandlers() {
+  const cliState = () => globalCliRuntime.getState();
+  const persistCli = (config: import('../shared/cli.js').CliConfig) => {
+    currentConfig = { ...currentConfig, cli: normalizeCliConfig(config) };
+    globalMcpServer.updateConfig(currentConfig);
+    savePersistedConfig(currentConfig);
+    globalWindowManager.getMainWindow()?.webContents.send('config-updated', currentConfig);
+    return cliState();
+  };
+  const handleCli = (name: string, fn: (...args: any[]) => any) => ipcMain.handle(name, (event, ...args) => {
+    if (event.sender !== globalWindowManager.getMainWindow()?.webContents || event.senderFrame !== event.sender.mainFrame) throw new Error('CLI settings are available only in the desktop window.');
+    return fn(...args);
+  });
+  handleCli('cli:state', cliState);
+  handleCli('cli:configure', (id, updates) => persistCli(globalCliRuntime.validateServiceUpdates(id, updates).config));
+  handleCli('cli:probe', async id => { if (!isCliProvider(id)) throw new Error('Unknown CLI service.'); await globalCliRuntime.probe(id); return cliState(); });
+  handleCli('cli:test', async id => {
+    if (!isCliProvider(id)) throw new Error('Unknown CLI service.');
+    return globalCliRuntime.testConnection(id);
+  });
+  handleCli('cli:select-executable', async id => {
+    if (!isCliProvider(id)) throw new Error('Unknown CLI service.');
+    const selected = await dialog.showOpenDialog(globalWindowManager.getMainWindow()!, { title: 'Select CLI executable', properties: ['openFile'] });
+    if (!selected.canceled && selected.filePaths[0]) persistCli(globalCliRuntime.validateServiceUpdates(id, { executablePath: selected.filePaths[0] }).config);
+    await globalCliRuntime.probe(id); return cliState();
+  });
+  handleCli('cli:add-workspace', async () => {
+    const selected = await dialog.showOpenDialog(globalWindowManager.getMainWindow()!, { title: 'Register CLI workspace', properties: ['openDirectory'] });
+    if (selected.canceled || !selected.filePaths[0]) return cliState();
+    const real = fs.realpathSync(selected.filePaths[0]);
+    const config = cliState().config;
+    if (!config.workspaces.some(w => w.path === real)) config.workspaces.push({ id: crypto.randomUUID(), name: path.basename(real), path: real, allowMcp: false, grants: {} });
+    return persistCli(config);
+  });
+  handleCli('cli:update-workspace', (id, updates) => {
+    const config = cliState().config; const workspace = config.workspaces.find(w => w.id === id);
+    if (!workspace || !updates || typeof updates.allowMcp !== 'boolean' || !updates.grants || Object.keys(updates).some(k => !['allowMcp', 'grants'].includes(k))) throw new Error('Invalid workspace permissions.');
+    workspace.grants = updates.grants; workspace.allowMcp = updates.allowMcp;
+    return persistCli(config);
+  });
+  handleCli('cli:remove-workspace', id => { const config = cliState().config; config.workspaces = config.workspaces.filter(w => w.id !== id); return persistCli(config); });
+  globalCliRuntime.onUpdate(() => globalWindowManager.getMainWindow()?.webContents.send('provider-status-updated', { ...globalSessionManager.getAllStatuses(), ...globalCliRuntime.getStatuses() }));
+
   const checkForUpdate = createUpdateChecker();
   ipcMain.handle('app:check-for-update', () => checkForUpdate(app.getVersion()));
   ipcMain.handle('get-core-status', () => globalMcpServer.getCoreStatus());
-  ipcMain.handle('get-provider-statuses', () => globalSessionManager.getAllStatuses());
+  ipcMain.handle('get-provider-statuses', () => ({ ...globalSessionManager.getAllStatuses(), ...globalCliRuntime.getStatuses() }));
   ipcMain.handle('get-blinded-secrets', () => globalBlindingEngine.getVaultEntries());
   ipcMain.handle('clear-vault-secrets', () => globalBlindingEngine.clearVault());
   ipcMain.handle('mem:wipe-all', () => {
@@ -628,6 +702,7 @@ function setupIpcHandlers() {
   });
   ipcMain.handle('storage:purge-all-data', async () => {
     const browserResult = await globalSessionManager.clearAllBrowserStorage();
+    globalCliRuntime.dispose(); globalCliRuntime.clearSessions();
     globalBlindingEngine.clearVault();
     globalThreadManager.clearAll();
     globalMcpServer.clearRequestLogs();
@@ -865,6 +940,7 @@ function setupIpcHandlers() {
     return currentConfig.agentHaltGuard;
   });
   ipcMain.handle('update-config', (_, newCfg: Partial<TransgenticConfig>) => {
+    if (newCfg.cli !== undefined) throw new Error('Use the CLI settings controls to change CLI permissions.');
     currentConfig = { ...currentConfig, ...newCfg };
     if (newCfg.assetsDir) {
       globalAssetManager.setAssetsDirectory(newCfg.assetsDir);
@@ -1157,20 +1233,25 @@ function setupIpcHandlers() {
   ipcMain.handle('models:toggle-service', async (_, args: any) => {
     const providerId: ProviderId = args.providerId || args.serviceId;
     const serviceEnabled: boolean = typeof args.serviceEnabled === 'boolean' ? args.serviceEnabled : args.enabled;
-    if (serviceEnabled) await globalRecipeManager.confirmEnable(providerId);
+    if (serviceEnabled && !isCliProvider(providerId)) await globalRecipeManager.confirmEnable(providerId);
+    if (!serviceEnabled && isCliProvider(providerId)) globalCliRuntime.cancelProvider(providerId);
     const reg = ModelRegistryManager.toggleService(providerId, serviceEnabled);
     const manifest = ServiceManifestManager.setServiceEnabled(providerId, serviceEnabled);
     const win = globalWindowManager.getMainWindow();
     if (win && !win.isDestroyed()) {
       win.webContents.send('services-manifest-updated', manifest);
     }
+    if (serviceEnabled && isCliProvider(providerId)) {
+      void globalCliRuntime.testEnabledConnections([providerId]);
+    }
     return reg;
   });
   ipcMain.handle('models:resync', async (_, targetProvider?: ProviderId) => {
     const providersToSync: ProviderId[] = targetProvider
       ? [targetProvider]
-      : (ServiceManifestManager.getEnabledProviders().filter((p) => p !== 'localllm' && !p.startsWith('api_')) as ProviderId[]);
+      : (ServiceManifestManager.getEnabledProviders().filter((p) => p !== 'localllm' && !isCliProvider(p) && !p.startsWith('api_')) as ProviderId[]);
     for (const p of providersToSync) {
+      if (isCliProvider(p)) { await globalCliRuntime.probe(p); continue; }
       try {
         const contents = await globalSessionManager.ensureWebContents(p);
         const discovered = await ModelScraperEngine.discoverModels(p, contents);
@@ -1211,6 +1292,21 @@ function setupIpcHandlers() {
     } catch (err: any) {
       return { success: false, port: currentConfig.port, error: err.message };
     }
+  });
+  ipcMain.handle('settings:get-network-interfaces', () => Object.entries(os.networkInterfaces()).flatMap(([name, entries]) =>
+    (entries || []).filter(entry => entry.family === 'IPv4' && !entry.internal).map(entry => ({ name, address: entry.address }))
+  ));
+  ipcMain.handle('settings:apply-network-access', async (_, { lanEnabled, advertisedAddress }: { lanEnabled: boolean; advertisedAddress: string }) => {
+    const available = Object.values(os.networkInterfaces()).flatMap(entries => entries || []).filter(entry => entry.family === 'IPv4' && !entry.internal).map(entry => entry.address);
+    if (lanEnabled && !available.includes(advertisedAddress)) return { success: false, port: currentConfig.port, error: 'Select an available local network address.' };
+    currentConfig = { ...currentConfig, serverAccess: { lanEnabled: Boolean(lanEnabled), advertisedAddress: lanEnabled ? advertisedAddress : '' } };
+    globalMcpServer.updateConfig(currentConfig);
+    try {
+      const actualPort = await globalMcpServer.restart(currentConfig.port);
+      currentConfig.port = actualPort;
+      savePersistedConfig(currentConfig);
+      return { success: true, port: actualPort, serverAccess: currentConfig.serverAccess };
+    } catch (error: any) { return { success: false, port: currentConfig.port, error: error?.message || 'Could not apply network access.' }; }
   });
 
   // Native Local Media Asset Inspection & System Handlers
@@ -1290,7 +1386,8 @@ function setupIpcHandlers() {
     }
   });
 
-  ipcMain.handle('execute-prompt', async (event, { prompt, mode, provider, model }) => {
+  ipcMain.handle('execute-prompt', async (event, { prompt, mode, provider, model, cliRequest }) => {
+    if (event.sender !== globalWindowManager.getMainWindow()?.webContents || event.senderFrame !== event.sender.mainFrame) throw new Error('Desktop prompts are available only in the main window.');
     const result = await globalMcpServer.orchestratePrompt(
       prompt,
       mode || 'general',
@@ -1302,7 +1399,7 @@ function setupIpcHandlers() {
       false,
       true,
       undefined,
-      { profile: 'plain', sessionId: `desktop_${event.sender.id}` }
+      { profile: 'plain', sessionId: `desktop_${event.sender.id}`, cliRequest }
     );
     if (result.isError) throw new Error(result.content?.[0]?.text || 'Request failed');
     return result;
@@ -1520,6 +1617,7 @@ function setupIpcHandlers() {
 
 app.on('before-quit', () => {
   globalWindowManager.isQuitting = true;
+  globalCliRuntime.dispose();
   globalMcpServer.stop();
   trayManager?.destroy();
 });

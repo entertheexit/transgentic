@@ -117,7 +117,7 @@ export class ModelRegistryManager {
             models: (srv.models || []).map((m) => ({
               id: m.id,
               displayName: m.displayName || m.id,
-              discoveredAvailable: true,
+              discoveredAvailable: srv.providerType === 'cli' ? false : true,
               userEnabled: m.enabled !== false,
               requiresTier: m.requiresTier,
               mode: m.mode,

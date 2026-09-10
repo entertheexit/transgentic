@@ -1,6 +1,7 @@
 export type ResponseProfile = 'agentic' | 'plain';
 
 export interface CallerContext {
+  cliRequest?: import('../../shared/cli.js').CliRequestOptions;
   profile: ResponseProfile;
   sessionId: string;
   reportProgress?: (message: string) => void;
