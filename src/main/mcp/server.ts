@@ -216,8 +216,8 @@ export class TransgenticMcpServer {
     this.app.get('/api/auth/download-extension', (req, res) => {
       res.setHeader('Access-Control-Allow-Origin', '*');
       const candidates = [
-        path.join(process.resourcesPath || '', 'extensions', 'transgentic-sync.zip'),
-        path.join(process.cwd(), 'extensions', 'transgentic-sync.zip'),
+        path.join(process.resourcesPath || '', 'extensions', 'transgentic-sync-v1.2.0.zip'),
+        path.join(process.cwd(), 'extensions', 'transgentic-sync-v1.2.0.zip'),
       ];
       for (const p of candidates) {
         if (fs.existsSync(p)) {

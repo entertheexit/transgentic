@@ -14,7 +14,7 @@
 
 <p align="center">
   <strong><a href="https://github.com/entertheexit/transgentic/releases/latest">Download desktop app</a></strong> ·
-  <strong><a href="https://github.com/entertheexit/transgentic/releases/latest/download/transgentic-sync.zip">Download Chrome extension (.zip)</a></strong>
+  <strong><a href="https://github.com/entertheexit/transgentic/releases/latest/download/transgentic-sync-v1.2.0.zip">Download Chrome extension (.zip)</a></strong>
 </p>
 
 <p align="center">
@@ -71,17 +71,17 @@ The gateway runs locally; requests can still leave your machine through a config
 
 ### 1. Download and start the desktop
 
-**[Desktop releases and release notes](https://github.com/entertheexit/transgentic/releases/latest)** · **[Chrome extension ZIP](https://github.com/entertheexit/transgentic/releases/latest/download/transgentic-sync.zip)**
+**[Desktop releases and release notes](https://github.com/entertheexit/transgentic/releases/latest)** · **[Chrome extension ZIP](https://github.com/entertheexit/transgentic/releases/latest/download/transgentic-sync-v1.2.0.zip)**
 
-Choose the desktop package for your system. The following files belong to [release v1.0.1](https://github.com/entertheexit/transgentic/releases/tag/v1.0.1); use the latest-release link above to check for newer builds.
+Choose the desktop package for your system. The following files belong to [release v2.0.0](https://github.com/entertheexit/transgentic/releases/tag/v2.0.0); use the latest-release link above to check for newer builds.
 
 | Download | File | Use |
 | :--- | :--- | :--- |
-| **[macOS · Apple Silicon](https://github.com/entertheexit/transgentic/releases/download/v1.0.1/Transgentic-1.0.1-arm64.dmg)** | `.dmg` · ARM64 | Desktop app for Apple Silicon Macs |
-| **[macOS · Intel](https://github.com/entertheexit/transgentic/releases/download/v1.0.1/Transgentic-1.0.1.dmg)** | `.dmg` · x64 | Desktop app for Intel Macs |
-| **[Windows](https://github.com/entertheexit/transgentic/releases/download/v1.0.1/Transgentic.Setup.1.0.1.exe)** | `.exe` · x64 | Windows desktop installer |
-| **[Linux](https://github.com/entertheexit/transgentic/releases/download/v1.0.1/Transgentic-1.0.1.AppImage)** | `.AppImage` · x64 | Linux desktop application |
-| **[Chrome extension](https://github.com/entertheexit/transgentic/releases/download/v1.0.1/transgentic-sync.zip)** | `transgentic-sync.zip` | Session synchronization for web providers |
+| **[macOS · Apple Silicon](https://github.com/entertheexit/transgentic/releases/download/v2.0.0/Transgentic-2.0.0-arm64.dmg)** | `.dmg` · ARM64 | Desktop app for Apple Silicon Macs |
+| **[macOS · Intel](https://github.com/entertheexit/transgentic/releases/download/v2.0.0/Transgentic-2.0.0.dmg)** | `.dmg` · x64 | Desktop app for Intel Macs |
+| **[Windows](https://github.com/entertheexit/transgentic/releases/download/v2.0.0/Transgentic.Setup.2.0.0.exe)** | `.exe` · x64 | Windows desktop installer |
+| **[Linux](https://github.com/entertheexit/transgentic/releases/download/v2.0.0/Transgentic-2.0.0.AppImage)** | `.AppImage` · x64 | Linux desktop application |
+| **[Chrome extension](https://github.com/entertheexit/transgentic/releases/download/v2.0.0/transgentic-sync-v1.2.0.zip)** | `transgentic-sync-v1.2.0.zip` | Session synchronization for web providers |
 
 Open the desktop package and follow its installation or launch steps. The desktop build does not require Git, Node.js, npm, or a source checkout. It does not include a local model; configure one or connect a permitted web session in the next step.
 
@@ -204,14 +204,14 @@ Choose a provider-specific connection when the workflow calls for that service. 
 
 Choose a mode-specific connection when an application consistently performs one kind of task. The mode supplies the routing context; it does not select a fixed provider.
 
-| Task mode | Streamable HTTP | SSE |
-| :--- | :--- | :--- |
-| General | `http://127.0.0.1:58420/general/mcp` | `http://127.0.0.1:58420/general/sse` |
-| Writing | `http://127.0.0.1:58420/writing/mcp` | `http://127.0.0.1:58420/writing/sse` |
-| Coding | `http://127.0.0.1:58420/coding/mcp` | `http://127.0.0.1:58420/coding/sse` |
-| Image | `http://127.0.0.1:58420/image/mcp` | `http://127.0.0.1:58420/image/sse` |
-| Video | `http://127.0.0.1:58420/video/mcp` | `http://127.0.0.1:58420/video/sse` |
-| Music | `http://127.0.0.1:58420/music/mcp` | `http://127.0.0.1:58420/music/sse` |
+| Task mode | Streamable HTTP | SSE | Routing |
+| :--- | :--- | :--- | :--- |
+| General | `http://127.0.0.1:58420/general/mcp` | `http://127.0.0.1:58420/general/sse` | Dedicated
+| Writing | `http://127.0.0.1:58420/writing/mcp` | `http://127.0.0.1:58420/writing/sse` | Shared (General)
+| Coding | `http://127.0.0.1:58420/coding/mcp` | `http://127.0.0.1:58420/coding/sse` | Dedicated
+| Image | `http://127.0.0.1:58420/image/mcp` | `http://127.0.0.1:58420/image/sse` | Dedicated
+| Video | `http://127.0.0.1:58420/video/mcp` | `http://127.0.0.1:58420/video/sse` | Dedicated
+| Music | `http://127.0.0.1:58420/music/mcp` | `http://127.0.0.1:58420/music/sse` | Dedicated
 
 Writing is a first-class backend mode. `/writing/mcp`, `/writing/sse`, explicit `mode: "writing"`, and `transgentic/writing` preserve Writing guidance and request identity, while all provider selection and per-mode policy settings resolve through General.
 

@@ -32,7 +32,7 @@ Built-in web adapters cover ChatGPT, Claude, Gemini, and Grok. Custom services u
 
 Use only sessions you are authorized to use, and confirm that the intended automation complies with the provider's terms and permissions. Account access alone is not permission to automate.
 
-Download the **[Transgentic Sync Chrome extension ZIP](https://github.com/entertheexit/transgentic/releases/latest/download/transgentic-sync.zip)** alongside the **[desktop release](https://github.com/entertheexit/transgentic/releases/latest)**. Use the same release version for both; for an older desktop, find its matching extension in the [release history](https://github.com/entertheexit/transgentic/releases). Extract the ZIP before installation. In Chrome:
+Download the **[Transgentic Sync Chrome extension ZIP](https://github.com/entertheexit/transgentic/releases/latest/download/transgentic-sync-v1.2.0.zip)** alongside the **[desktop release](https://github.com/entertheexit/transgentic/releases/latest)**. Use the same release version for both; for an older desktop, find its matching extension in the [release history](https://github.com/entertheexit/transgentic/releases). Extract the ZIP before installation. In Chrome:
 
 1. Open `chrome://extensions`.
 2. Enable **Developer mode** and choose **Load unpacked**.

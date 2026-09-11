@@ -184,8 +184,8 @@ export const MemoryHubView: React.FC<MemoryHubViewProps> = ({
       {feedbackMessage && (
         <div
           className={`p-2.5 rounded-xl border flex items-center gap-2 text-xs font-medium ${feedbackMessage.type === 'success'
-              ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
-              : 'bg-cyan-500/10 border-cyan-500/30 text-cyan-300'
+            ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
+            : 'bg-cyan-500/10 border-cyan-500/30 text-cyan-300'
             }`}
         >
           <CheckCircle2 className="w-4 h-4 shrink-0" />
@@ -195,43 +195,61 @@ export const MemoryHubView: React.FC<MemoryHubViewProps> = ({
 
       {/* Memory Status Metrics Bar */}
       <div className="grid grid-cols-3 gap-2">
-        <div className="p-2.5 rounded-xl bg-white/[0.02] border border-white/5 flex items-start gap-2.5">
-          <div className="p-1.5 rounded-lg bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 shadow-[0_0_10px_rgba(6,182,212,0.15)] shrink-0 mt-0.5">
-            <Database className="w-3.5 h-3.5" />
-          </div>
-          <div className="flex flex-col gap-0.5 min-w-0 flex-1">
-            <div className="text-slate-400 text-[10px] font-mono truncate">SQLite Storage</div>
-            <div className="text-xs font-semibold text-slate-200 truncate">Encrypted DB</div>
-            <span className="text-[9px] text-emerald-400 font-mono flex items-center gap-1 truncate">
-              <Lock className="w-2.5 h-2.5 shrink-0" />
-              <span className="truncate">transgentic_memory.db</span>
-            </span>
-          </div>
-        </div>
-
-        <div className="p-2.5 rounded-xl bg-white/[0.02] border border-white/5 flex items-start gap-2.5">
-          <div className="p-1.5 rounded-lg bg-purple-500/10 border border-purple-500/30 text-purple-400 shadow-[0_0_10px_rgba(168,85,247,0.15)] shrink-0 mt-0.5">
-            <Shield className="w-3.5 h-3.5" />
-          </div>
-          <div className="flex flex-col gap-0.5 min-w-0 flex-1">
-            <div className="text-slate-400 text-[10px] font-mono truncate">Active Secrets</div>
-            <div className="text-xs font-semibold text-slate-200 truncate">
-              {secrets.length} {secrets.length === 1 ? 'Secret' : 'Secrets'} in RAM
+        <div className="py-2.5 rounded-xl bg-white/[0.02] border border-white/5 flex items-start gap-2.5">
+          <div className="flex flex-col px-2.5 max-w-[100%]">
+            <div className="flex gap-2.5">
+              <div className="p-1.5 rounded-lg bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 shadow-[0_0_10px_rgba(6,182,212,0.15)] shrink-0 mt-0.5">
+                <Database className="w-3.5 h-3.5" />
+              </div>
+              <div className="flex flex-col gap-0.5 min-w-0 flex-1">
+                <div className="text-slate-400 text-[10px] font-mono truncate">SQLite Storage</div>
+                <div className="text-xs font-semibold text-slate-200 truncate">Encrypted DB</div>
+              </div>
             </div>
-            <span className="text-[9px] text-slate-400 font-mono truncate">
-              {secrets.length === 0 ? 'Zero lingering credentials' : 'Blinded in volatile memory'}
-            </span>
+            <div className="flex items-center gap-1.5 mt-1 truncate">
+              <span className="text-[9px] text-emerald-400 font-mono flex items-center gap-1 truncate">
+                <Lock className="w-2.5 h-2.5 shrink-0" />
+                <span className="truncate">transgentic_memory.db</span>
+              </span>
+            </div>
           </div>
         </div>
 
-        <div className="p-2.5 rounded-xl bg-white/[0.02] border border-white/5 flex items-start gap-2.5">
-          <div className="p-1.5 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-400 shadow-[0_0_10px_rgba(245,158,11,0.15)] shrink-0 mt-0.5">
-            <Zap className="w-3.5 h-3.5" />
+        <div className="py-2.5 rounded-xl bg-white/[0.02] border border-white/5 flex items-start gap-2.5">
+          <div className="flex flex-col px-2.5 max-w-[100%]">
+            <div className="flex gap-2.5">
+              <div className="p-1.5 h-[28px] rounded-lg bg-purple-500/10 border border-purple-500/30 text-purple-400 shadow-[0_0_10px_rgba(168,85,247,0.15)] shrink-0 mt-0.5">
+                <Shield className="w-3.5 h-3.5" />
+              </div>
+              <div className="flex flex-col gap-0.5 min-w-0 flex-1">
+                <div className="text-slate-400 text-[10px] font-mono truncate">Active Secrets</div>
+                <div className="text-xs font-semibold text-slate-200 truncate">
+                  {secrets.length} {secrets.length === 1 ? 'Secret' : 'Secrets'}
+                </div>
+              </div>
+            </div>
+            <div className="flex items-center gap-1.5 mt-1 truncate">
+              <span className="text-[9px] text-slate-400 font-mono truncate">
+                {secrets.length === 0 ? 'Zero lingering credentials' : 'Blinded in memory'}
+              </span>
+            </div>
           </div>
-          <div className="flex flex-col gap-0.5 min-w-0 flex-1">
-            <div className="text-slate-400 text-[10px] font-mono truncate">Auto-Purge</div>
-            <div className="text-xs font-semibold text-emerald-300 truncate">Auto-Wipe Active</div>
-            <span className="text-[9px] text-slate-400 font-mono truncate">Purged upon response return</span>
+        </div>
+
+        <div className="py-2.5 rounded-xl bg-white/[0.02] border border-white/5 flex items-start gap-2.5">
+          <div className="flex flex-col px-2.5 max-w-[100%]">
+            <div className="flex gap-2.5">
+              <div className="p-1.5 h-[28px] rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-400 shadow-[0_0_10px_rgba(245,158,11,0.15)] shrink-0 mt-0.5">
+                <Zap className="w-3.5 h-3.5" />
+              </div>
+              <div className="flex flex-col gap-0.5 min-w-0 flex-1">
+                <div className="text-slate-400 text-[10px] font-mono truncate">Auto-Purge</div>
+                <div className="text-xs font-semibold text-emerald-300 truncate">Active</div>
+              </div>
+            </div>
+            <div className="flex items-center gap-1.5 mt-1 truncate">
+              <span className="text-[9px] text-slate-400 font-mono truncate">Purged upon response return</span>
+            </div>
           </div>
         </div>
       </div>

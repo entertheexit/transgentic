@@ -1164,9 +1164,9 @@ function setupIpcHandlers() {
   ipcMain.handle('auth:download-extension-zip', async () => {
     const { shell, dialog } = await import('electron');
     const candidates = [
-      path.join(process.resourcesPath || '', 'extensions', 'transgentic-sync.zip'),
-      path.join(app.getAppPath(), 'extensions', 'transgentic-sync.zip'),
-      path.join(process.cwd(), 'extensions', 'transgentic-sync.zip'),
+      path.join(process.resourcesPath || '', 'extensions', 'transgentic-sync-v1.2.0.zip'),
+      path.join(app.getAppPath(), 'extensions', 'transgentic-sync-v1.2.0.zip'),
+      path.join(process.cwd(), 'extensions', 'transgentic-sync-v1.2.0.zip'),
     ];
 
     let foundZip: string | null = null;
@@ -1183,7 +1183,7 @@ function setupIpcHandlers() {
       return { success: true, externalDownload: true, downloadUrl };
     }
 
-    const defaultFilename = 'transgentic-sync.zip';
+    const defaultFilename = 'transgentic-sync-v1.2.0.zip';
     const win = globalWindowManager.getMainWindow();
     const result = await dialog.showSaveDialog(win!, {
       title: 'Save Transgentic Chrome Sync Extension',

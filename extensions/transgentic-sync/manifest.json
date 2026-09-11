@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Transgentic Sync",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Securely synchronize authenticated AI browser sessions & custom recipes to Transgentic.",
   "permissions": [
     "cookies",
