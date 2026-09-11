@@ -1,5 +1,6 @@
 import { WebContents } from 'electron';
 import { ProviderId } from '../../shared/types.js';
+import type { RecipeAttachmentInput } from '../../shared/types/recipe.js';
 
 export interface LandmarkInspection {
   found: boolean;
@@ -21,7 +22,8 @@ export interface DomInspectionReport {
     stopButton: LandmarkInspection;
     modelDropdownTrigger: LandmarkInspection;
   };
-  missingLandmarks: ('inputPrompt' | 'submitButton' | 'stopButton' | 'modelDropdownTrigger')[];
+  attachmentLandmarks?: Record<string, LandmarkInspection>;
+  missingLandmarks: string[];
   htmlSnippet?: string;
 }
 
@@ -99,7 +101,8 @@ export class DomWatchdog {
   public static getAuditScript(
     providerId: ProviderId,
     options: WatchdogOptions = { checkModelSelector: true },
-    customSelectors?: Partial<Record<'inputPrompt' | 'submitButton' | 'stopButton' | 'modelDropdownTrigger', string>>
+    customSelectors?: Partial<Record<'inputPrompt' | 'submitButton' | 'stopButton' | 'modelDropdownTrigger', string>>,
+    attachmentConfigs?: Partial<Record<string, RecipeAttachmentInput>>
   ): string {
     const checkModel = options.checkModelSelector ?? true;
     return `
@@ -136,6 +139,7 @@ export class DomWatchdog {
           const modelCandidates = ${JSON.stringify(DomWatchdog.DEFAULT_SELECTORS.modelDropdownTrigger)};
 
           const custom = ${JSON.stringify(customSelectors || {})};
+          const attachmentConfigs = ${JSON.stringify(attachmentConfigs || {})};
 
           // Allow SPAs (Grok, ChatGPT, Claude) up to 3500ms to mount their React composer elements
           let inputRes = checkCandidate(inputCandidates, custom.inputPrompt);
@@ -216,20 +220,103 @@ export class DomWatchdog {
           if (!stopRes.found) missing.push('stopButton');
           if (${checkModel} && !modelRes.found) missing.push('modelDropdownTrigger');
 
+          const attachmentLandmarks = {};
+          const normalizeText = value => String(value || '').replace(/\\s+/g, ' ').trim().toLocaleLowerCase();
+          const selectorList = value => Array.isArray(value) ? value : value ? [value] : [];
+          const findUnique = selectors => {
+            let ambiguous = false;
+            let invalid = false;
+            for (const selector of selectorList(selectors)) {
+              try {
+                const nodes = Array.from(document.querySelectorAll(selector));
+                if (nodes.length === 1) return { element: nodes[0], selector };
+                if (nodes.length > 1) ambiguous = true;
+              } catch (error) { invalid = true; }
+            }
+            return { ambiguous, invalid };
+          };
+          const implicitRole = el => el?.getAttribute?.('role')?.toLowerCase() || (el?.tagName === 'BUTTON' ? 'button' : el?.tagName === 'A' && el.hasAttribute('href') ? 'link' : '');
+          const accessibleNames = el => {
+            const labelledBy = (el?.getAttribute?.('aria-labelledby') || '').split(/\\s+/).filter(Boolean).map(id => document.getElementById(id)?.textContent || '');
+            return [el?.getAttribute?.('aria-label'), el?.getAttribute?.('title'), ...labelledBy, el?.textContent].filter(Boolean).map(normalizeText);
+          };
+          const findLocator = locator => {
+            const names = selectorList(locator?.name).map(normalizeText);
+            const selectors = selectorList(locator?.selectors);
+            const pools = selectors.length
+              ? selectors.map(selector => { try { return { selector, nodes: Array.from(document.querySelectorAll(selector)) }; } catch { return { selector, nodes: [] }; } })
+              : [{ selector: '', nodes: Array.from(document.querySelectorAll(locator?.role === 'button' ? 'button,[role="button"]' : '[role="' + CSS.escape(locator?.role || '') + '"]')) }];
+            let ambiguous = false;
+            for (const pool of pools) {
+              const nodes = pool.nodes.filter(el => (!locator?.role || implicitRole(el) === String(locator.role).toLowerCase()) && (!names.length || accessibleNames(el).some(name => names.includes(name))));
+              if (nodes.length === 1) return { element: nodes[0], selector: pool.selector };
+              if (nodes.length > 1) ambiguous = true;
+            }
+            return { ambiguous };
+          };
+
+          for (const [mode, upload] of Object.entries(attachmentConfigs)) {
+            const inputKey = 'attachment.' + mode + '.fileInput';
+            let inputResult = findUnique(upload.fileInput);
+            if (inputResult.element) {
+              attachmentLandmarks[inputKey] = { found: true, exists: true, selector: inputResult.selector, activeSelector: inputResult.selector, tagName: inputResult.element.tagName.toLowerCase(), details: 'Direct native input available; reveal steps are optional.' };
+              for (let index = 0; index < (upload.revealSteps || []).length; index++) {
+                const key = 'attachment.' + mode + '.revealSteps.' + index + '.selectors';
+                attachmentLandmarks[key] = { found: true, exists: true, details: 'Standby (not required while direct input is available)' };
+              }
+            } else {
+              const revealSteps = upload.revealSteps?.length ? upload.revealSteps : upload.trigger ? [{ action: 'click', target: { selectors: upload.trigger } }] : [];
+              for (let index = 0; index < revealSteps.length; index++) {
+                const key = 'attachment.' + mode + '.revealSteps.' + index + '.selectors';
+                const found = findLocator(revealSteps[index].target);
+                if (!found.element) {
+                  attachmentLandmarks[key] = { found: false, exists: false, details: found.ambiguous ? 'Ambiguous locator' : 'Locator not found' };
+                  missing.push(key);
+                  break;
+                }
+                attachmentLandmarks[key] = { found: true, exists: true, selector: found.selector, activeSelector: found.selector, tagName: found.element.tagName.toLowerCase() };
+                found.element.click();
+                await new Promise(resolve => setTimeout(resolve, 120));
+              }
+              inputResult = findUnique(upload.fileInput);
+              if (inputResult.element) {
+                attachmentLandmarks[inputKey] = { found: true, exists: true, selector: inputResult.selector, activeSelector: inputResult.selector, tagName: inputResult.element.tagName.toLowerCase() };
+              } else {
+                attachmentLandmarks[inputKey] = { found: false, exists: false, details: inputResult.ambiguous ? 'Ambiguous native inputs' : 'Native input not found after reveal flow' };
+                missing.push(inputKey);
+              }
+            }
+            for (const optionalKey of ['ready', 'cleanup']) {
+              if (!upload[optionalKey]) continue;
+              const key = 'attachment.' + mode + '.' + optionalKey;
+              const found = findUnique(upload[optionalKey]);
+              if (found.element) {
+                attachmentLandmarks[key] = { found: true, exists: true, selector: found.selector, activeSelector: found.selector, tagName: found.element.tagName.toLowerCase() };
+              } else if (found.invalid) {
+                attachmentLandmarks[key] = { found: false, exists: false, selector: selectorList(upload[optionalKey])[0], details: 'Invalid selector' };
+                missing.push(key);
+              } else {
+                attachmentLandmarks[key] = { found: true, exists: false, selector: selectorList(upload[optionalKey])[0], details: 'Standby (may only appear after files are attached)' };
+              }
+            }
+          }
+
           const isCoreReady = inputRes.found && submitRes.found;
+          const allReady = isCoreReady && missing.length === 0;
 
           return {
             providerId: '${providerId}',
             timestamp: Date.now(),
-            healthy: isCoreReady,
-            allLandmarksHealthy: isCoreReady,
+            healthy: allReady,
+            allLandmarksHealthy: allReady,
             landmarks: {
               inputPrompt: inputRes,
               submitButton: submitRes,
               stopButton: stopRes,
               modelDropdownTrigger: modelRes
             },
-            missingLandmarks: missing,
+            attachmentLandmarks,
+            missingLandmarks: Array.from(new Set(missing)),
             htmlSnippet: snippet
           };
         } catch (err) {
@@ -259,7 +346,8 @@ export class DomWatchdog {
     providerId: ProviderId,
     webContents: WebContents,
     options: WatchdogOptions = { checkModelSelector: true },
-    customSelectors?: Partial<Record<'inputPrompt' | 'submitButton' | 'stopButton' | 'modelDropdownTrigger', string>>
+    customSelectors?: Partial<Record<'inputPrompt' | 'submitButton' | 'stopButton' | 'modelDropdownTrigger', string>>,
+    attachmentConfigs?: Partial<Record<string, RecipeAttachmentInput>>
   ): Promise<DomInspectionReport> {
     if (!webContents || webContents.isDestroyed()) {
       return {
@@ -278,7 +366,7 @@ export class DomWatchdog {
     }
 
     try {
-      const script = this.getAuditScript(providerId, options, customSelectors);
+      const script = this.getAuditScript(providerId, options, customSelectors, attachmentConfigs);
       const result: DomInspectionReport = await webContents.executeJavaScript(script, true);
       return {
         ...result,
@@ -319,6 +407,9 @@ Analyze the HTML snippet below and produce CSS selectors to find these missing c
 - submitButton: send or submit button to generate response.
 - stopButton: abort/stop button or streaming indicator element.
 - modelDropdownTrigger: button, dropdown trigger, or chevron to switch AI models.
+- attachment.<mode>.revealSteps.<index>.selectors: the named button/menu item at that upload-flow position.
+- attachment.<mode>.fileInput: the native input[type="file"] used by that mode.
+- attachment.<mode>.ready or cleanup: the corresponding upload chip/readiness or removal control.
 
 HTML SNIPPET:
 \`\`\`html
@@ -331,8 +422,8 @@ Example format:
 {
   "inputPrompt": "#prompt-textarea",
   "submitButton": "button[type='submit']",
-  "stopButton": "button[aria-label*='Stop']",
-  "modelDropdownTrigger": "button[data-testid='model-selector']"
+  "attachment.text.revealSteps.0.selectors": "button[aria-label='Add attachment']",
+  "attachment.text.fileInput": "input[type='file']"
 }
 `.trim();
   }

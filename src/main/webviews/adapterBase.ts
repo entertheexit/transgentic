@@ -6,6 +6,7 @@ import { InputSimulator, InputSimulatorOptions } from '../security/inputSimulato
 import { GhostCursor, GhostCursorOptions } from '../security/ghostCursor.js';
 import { DomObserver, DomInspectionResult } from './domObserver.js';
 import { TimeoutManager } from '../config/timeouts.js';
+import type { StagedAttachment } from '../../shared/attachments.js';
 
 export interface ProviderAdapterResult {
   text: string;
@@ -555,6 +556,7 @@ export abstract class BaseProviderAdapter {
     mode: TaskMode,
     metadata?: ProjectMetadata,
     onChunk?: (chunk: string) => void,
-    abortSignal?: AbortSignal
+    abortSignal?: AbortSignal,
+    attachments?: readonly StagedAttachment[]
   ): Promise<ProviderAdapterResult>;
 }

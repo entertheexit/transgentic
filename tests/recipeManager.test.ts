@@ -166,6 +166,51 @@ describe('Custom Recipe System Unit Tests', () => {
       expect(result.recipe?.response.container).toHaveLength(3);
     });
 
+    it('normalizes semantic attachment reveal steps and preserves legacy triggers', () => {
+      const recipe = structuredClone(sampleValidRecipe) as any;
+      recipe.response.modes.text.inputAttachments = {
+        fileInput: [' input[type="file"] ', 'input[data-upload]'],
+        trigger: ' button.legacy-attach ',
+        revealSteps: [
+          { action: 'click', target: { selectors: [' button.attach ', 'button[aria-haspopup="menu"]'], role: 'BUTTON', name: [' Add attachment ', 'เพิ่มไฟล์', 'Add attachment'] } },
+          { action: 'click', target: { role: 'menuitem', name: ' อัปโหลดไฟล์หรือรูป ' } },
+        ],
+        acceptedKinds: ['image', 'document'],
+        multiple: true,
+      };
+
+      const result = validateCustomRecipe(recipe);
+      expect(result.valid).toBe(true);
+      expect(result.recipe?.response.modes.text.inputAttachments).toEqual({
+        fileInput: ['input[type="file"]', 'input[data-upload]'],
+        trigger: 'button.legacy-attach',
+        revealSteps: [
+          { action: 'click', target: { selectors: ['button.attach', 'button[aria-haspopup="menu"]'], role: 'button', name: ['Add attachment', 'เพิ่มไฟล์'] } },
+          { action: 'click', target: { role: 'menuitem', name: 'อัปโหลดไฟล์หรือรูป' } },
+        ],
+        acceptedKinds: ['image', 'document'],
+        multiple: true,
+      });
+    });
+
+    it('rejects malformed attachment reveal actions and targets', () => {
+      const invalidAction = structuredClone(sampleValidRecipe) as any;
+      invalidAction.response.modes.text.inputAttachments = {
+        fileInput: 'input[type="file"]',
+        revealSteps: [{ action: 'navigate', target: { selectors: 'a' } }],
+        acceptedKinds: ['image'],
+      };
+      expect(validateCustomRecipe(invalidAction).errors).toContain('response.modes.text.inputAttachments.revealSteps[0].action must be "click".');
+
+      const missingTarget = structuredClone(sampleValidRecipe) as any;
+      missingTarget.response.modes.text.inputAttachments = {
+        fileInput: 'input[type="file"]',
+        revealSteps: [{ action: 'click', target: { name: 'Upload' } }],
+        acceptedKinds: ['image'],
+      };
+      expect(validateCustomRecipe(missingTarget).errors).toContain('response.modes.text.inputAttachments.revealSteps[0].target requires selectors or role.');
+    });
+
     it('should support dedicated mode pageUrl and selector overrides (e.g. Grok Imagine)', () => {
       const studioRecipe = {
         id: 'studio_ai',

@@ -61,6 +61,10 @@ The field reference below covers commonly used fields, not a complete validation
 * **`video`**: `{ enabled: true, contentSelector: "video source, video[src]", downloadSelector?: "...", mediaKind: "video" }` — Video generation.
 * **`music`**: `{ enabled: true, contentSelector: "audio source, audio[src]", downloadSelector?: "...", mediaKind: "audio" }` — Music generation. The media kind remains `audio` because it describes the file format.
 
+Any mode may opt into uploads with `inputAttachments`. It declares `fileInput`, optional `revealSteps`, legacy `trigger`, `ready`, and `cleanup` selectors, `acceptedKinds` (`image`, `document`, `video`), optional `acceptedMimeTypes`, and `multiple`. Each reveal step is an upload-scoped `{ "action": "click", "target": { "selectors"?, "role"?, "name"? } }`; `name` is an exact accessible-name value or localized fallback list. Recipes without this block remain text-only.
+
+Transgentic first uses an already available native file input. Only when no unambiguous usable input exists does it replay the minimum reveal steps, preferring semantic role/name matching with ordered CSS fallbacks. It intercepts the native chooser, attaches every file, verifies the input and provider readiness UI, then types and submits exactly once. Missing or ambiguous controls fail before prompt entry. A pre-submit failure invokes cleanup, clears the input, and closes transient menus before the composer can be reused. Existing `trigger` recipes remain compatible as a one-step reveal flow.
+
 ---
 
 ## Examples
@@ -181,7 +185,7 @@ The field reference below covers commonly used fields, not a complete validation
 
 1. Open the target AI web portal in Google Chrome.
 2. Open the **Transgentic Sync** extension and click **"Visual Inspector"** (<img src="../extensions/transgentic-sync/icons/ui/target.svg" width="12" height="12" />).
-3. Hover and click the composer input, send button, and response container. The extension highlights DOM landmarks and builds a recipe draft. Review the selectors before use.
+3. Hover and click the composer input, send button, and response container. In the optional attachment stage, use the provider's upload UI normally; the inspector records the minimum clicks, rejects unstable framework IDs, and detects the native file input. Cancel the browser picker if it appears because recording never reads a local file.
 4. Click **"Export Recipe"** and install it directly into Transgentic.
 
 ---

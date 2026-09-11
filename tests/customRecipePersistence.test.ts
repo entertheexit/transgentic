@@ -6,6 +6,7 @@ import { ServiceManifestManager } from '../src/main/registry/serviceManifest.js'
 import { AccountRegistryManager } from '../src/main/registry/accountRegistry.js';
 import { globalSessionManager } from '../src/main/webviews/sessionManager.js';
 import { CustomRecipeAdapter } from '../src/main/webviews/customRecipeAdapter.js';
+import { BUILTIN_RECIPES, validateCustomRecipe } from '../src/shared/types/recipe.js';
 
 describe('Custom Recipe Session Persistence & Startup Tests', () => {
   let recipeManager: RecipeManager;
@@ -189,5 +190,130 @@ describe('Custom Recipe Session Persistence & Startup Tests', () => {
       const script = typeof call[0] === 'string' ? call[0] : '';
       expect(script).not.toContain('btn.click()');
     }
+  });
+
+  it('preserves declared upload controls and attaches every file before typing and submitting once', async () => {
+    const validated = validateCustomRecipe(structuredClone(BUILTIN_RECIPES.chatgpt));
+    expect(validated.recipe?.response.modes.text.inputAttachments).toMatchObject({ acceptedKinds: ['image', 'document'], multiple: true });
+    const adapter = new CustomRecipeAdapter(validated.recipe!);
+    const debuggerApi = {
+      isAttached: vi.fn().mockReturnValue(false),
+      attach: vi.fn(),
+      detach: vi.fn(),
+      on: vi.fn(),
+      removeListener: vi.fn(),
+      sendCommand: vi.fn(async (method: string) => {
+        if (method === 'DOM.getDocument') return { root: { nodeId: 1 } };
+        if (method === 'DOM.querySelectorAll') return { nodeIds: [2] };
+        if (method === 'DOM.describeNode') return { node: { nodeName: 'INPUT', attributes: ['type', 'file'] } };
+        return {};
+      }),
+    };
+    (adapter as any).webContents = { isDestroyed: () => false, getURL: () => 'https://chatgpt.com', loadURL: vi.fn(), debugger: debuggerApi };
+    vi.spyOn(adapter, 'checkAuthStatus').mockResolvedValue(true);
+    vi.spyOn(adapter, 'checkRateLimit').mockResolvedValue({ isRateLimited: false });
+    const ready = vi.spyOn(adapter as any, 'executeScript').mockResolvedValue(true);
+    const input = vi.spyOn(adapter as any, 'dispatchRealisticInput').mockResolvedValue({ success: true });
+    const submit = vi.spyOn(adapter as any, 'dispatchRealisticSubmit').mockResolvedValue({ success: true });
+    vi.spyOn(adapter as any, 'pollGeneration').mockResolvedValue({ text: 'done' });
+    const files: any[] = [
+      { path: '/private/staged/a.png', name: 'a.png', mimeType: 'image/png', kind: 'image', size: 1, sha256: 'a' },
+      { path: '/private/staged/b.pdf', name: 'b.pdf', mimeType: 'application/pdf', kind: 'document', size: 1, sha256: 'b' },
+    ];
+    await adapter.executePrompt('inspect', 'general', undefined, undefined, undefined, files);
+    expect(debuggerApi.sendCommand).toHaveBeenCalledWith('DOM.setFileInputFiles', { nodeId: 2, files: files.map(file => file.path) });
+    const setFilesCall = debuggerApi.sendCommand.mock.calls.findIndex(([method]) => method === 'DOM.setFileInputFiles');
+    expect(debuggerApi.sendCommand.mock.invocationCallOrder[setFilesCall]).toBeLessThan(input.mock.invocationCallOrder[0]);
+    expect(input.mock.invocationCallOrder[0]).toBeLessThan(submit.mock.invocationCallOrder[0]);
+    expect(submit).toHaveBeenCalledTimes(1);
+    expect(ready).toHaveBeenCalled();
+  });
+
+  it('clears attachment state after a pre-submit upload failure', async () => {
+    const adapter = new CustomRecipeAdapter(BUILTIN_RECIPES.chatgpt);
+    const debuggerApi = {
+      isAttached: vi.fn().mockReturnValue(false), attach: vi.fn(), detach: vi.fn(),
+      on: vi.fn(), removeListener: vi.fn(),
+      sendCommand: vi.fn(async (method: string) => method === 'DOM.getDocument' ? { root: { nodeId: 1 } } : method === 'DOM.querySelectorAll' ? { nodeIds: [] } : {}),
+    };
+    (adapter as any).webContents = { isDestroyed: () => false, getURL: () => 'https://chatgpt.com', debugger: debuggerApi };
+    vi.spyOn(adapter, 'checkAuthStatus').mockResolvedValue(true);
+    vi.spyOn(adapter, 'checkRateLimit').mockResolvedValue({ isRateLimited: false });
+    const cleanup = vi.spyOn(adapter as any, 'executeScript').mockResolvedValue(undefined);
+    const input = vi.spyOn(adapter as any, 'dispatchRealisticInput');
+    await expect(adapter.executePrompt('inspect', 'general', undefined, undefined, undefined, [{ path: '/staged/a.png', name: 'a.png', mimeType: 'image/png', kind: 'image', size: 1, sha256: 'a' }])).rejects.toThrow('file input was not found');
+    expect(cleanup).toHaveBeenCalledWith(expect.stringContaining("input.value=''"));
+    expect(input).not.toHaveBeenCalled();
+  });
+
+  it('reveals a dynamic native input with semantic clicks before attaching', async () => {
+    const recipe = structuredClone(BUILTIN_RECIPES.chatgpt);
+    recipe.response.modes.text.inputAttachments = {
+      fileInput: 'input[type="file"]',
+      revealSteps: [
+        { action: 'click', target: { selectors: 'button.attach', role: 'button', name: ['Add attachment'] } },
+        { action: 'click', target: { selectors: '[role="menuitem"]', role: 'menuitem', name: ['อัปโหลดไฟล์หรือรูป'] } },
+      ],
+      acceptedKinds: ['image'],
+      multiple: true,
+    };
+    const adapter = new CustomRecipeAdapter(recipe);
+    let chooserListener: ((event: unknown, method: string, params: any) => void) | undefined;
+    const debuggerApi = {
+      isAttached: vi.fn().mockReturnValue(false), attach: vi.fn(), detach: vi.fn(),
+      on: vi.fn((_event: string, listener: typeof chooserListener) => { chooserListener = listener; }),
+      removeListener: vi.fn(),
+      sendCommand: vi.fn(async (method: string) => {
+        if (method === 'DOM.getDocument') return { root: { nodeId: 1 } };
+        if (method === 'DOM.querySelectorAll') return { nodeIds: [] };
+        if (method === 'DOM.resolveNode') return { object: { objectId: 'chooser-input' } };
+        if (method === 'Runtime.callFunctionOn') return { result: { value: true } };
+        return {};
+      }),
+    };
+    (adapter as any).webContents = { isDestroyed: () => false, getURL: () => 'https://chatgpt.com', debugger: debuggerApi };
+    vi.spyOn(adapter, 'checkAuthStatus').mockResolvedValue(true);
+    vi.spyOn(adapter, 'checkRateLimit').mockResolvedValue({ isRateLimited: false });
+    let revealCount = 0;
+    const scripts = vi.spyOn(adapter as any, 'executeScript').mockImplementation(async (script: string) => {
+      if (script.includes('const locator')) {
+        revealCount += 1;
+        if (revealCount === 2) chooserListener?.({}, 'Page.fileChooserOpened', { backendNodeId: 7 });
+        return { success: true };
+      }
+      return true;
+    });
+    const input = vi.spyOn(adapter as any, 'dispatchRealisticInput').mockResolvedValue({ success: true });
+    vi.spyOn(adapter as any, 'dispatchRealisticSubmit').mockResolvedValue({ success: true });
+    vi.spyOn(adapter as any, 'pollGeneration').mockResolvedValue({ text: 'done' });
+
+    await adapter.executePrompt('edit this', 'general', undefined, undefined, undefined, [{ path: '/staged/a.png', name: 'a.png', mimeType: 'image/png', kind: 'image', size: 1, sha256: 'a' } as any]);
+
+    expect(scripts.mock.calls.filter(([script]) => String(script).includes('const locator'))).toHaveLength(2);
+    expect(debuggerApi.sendCommand).toHaveBeenCalledWith('Page.setInterceptFileChooserDialog', { enabled: true });
+    expect(debuggerApi.sendCommand).toHaveBeenCalledWith('DOM.setFileInputFiles', { backendNodeId: 7, files: ['/staged/a.png'] });
+    expect(input).toHaveBeenCalledTimes(1);
+  });
+
+  it('fails before prompt entry when a reveal target is ambiguous', async () => {
+    const recipe = structuredClone(BUILTIN_RECIPES.chatgpt);
+    recipe.response.modes.text.inputAttachments = {
+      fileInput: 'input[type="file"]',
+      revealSteps: [{ action: 'click', target: { role: 'button', name: 'Add attachment' } }],
+      acceptedKinds: ['image'],
+    };
+    const adapter = new CustomRecipeAdapter(recipe);
+    const debuggerApi = {
+      isAttached: vi.fn().mockReturnValue(false), attach: vi.fn(), detach: vi.fn(), on: vi.fn(), removeListener: vi.fn(),
+      sendCommand: vi.fn(async (method: string) => method === 'DOM.getDocument' ? { root: { nodeId: 1 } } : method === 'DOM.querySelectorAll' ? { nodeIds: [] } : {}),
+    };
+    (adapter as any).webContents = { isDestroyed: () => false, getURL: () => 'https://chatgpt.com', debugger: debuggerApi };
+    vi.spyOn(adapter, 'checkAuthStatus').mockResolvedValue(true);
+    vi.spyOn(adapter, 'checkRateLimit').mockResolvedValue({ isRateLimited: false });
+    vi.spyOn(adapter as any, 'executeScript').mockResolvedValue({ success: false, ambiguous: true });
+    const input = vi.spyOn(adapter as any, 'dispatchRealisticInput');
+
+    await expect(adapter.executePrompt('do not submit', 'general', undefined, undefined, undefined, [{ path: '/staged/a.png', name: 'a.png', mimeType: 'image/png', kind: 'image', size: 1, sha256: 'a' } as any])).rejects.toThrow('ambiguous');
+    expect(input).not.toHaveBeenCalled();
   });
 });

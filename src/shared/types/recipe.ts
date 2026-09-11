@@ -67,6 +67,38 @@ export interface RecipeModeResponse {
   downloadSelector?: SelectorCandidate;
   /** Expected media kind */
   mediaKind?: 'text' | 'image' | 'video' | 'audio';
+  /** Declared upload controls. Recipes without this remain text-only. */
+  inputAttachments?: RecipeAttachmentInput;
+}
+
+export interface RecipeElementLocator {
+  /** Ordered CSS selector fallbacks. */
+  selectors?: SelectorCandidate;
+  /** Explicit or implicit ARIA role (for example `button` or `menuitem`). */
+  role?: string;
+  /** Exact normalized accessible-name alternatives, including localized labels. */
+  name?: SelectorCandidate;
+}
+
+export interface RecipeAttachmentRevealStep {
+  action: 'click';
+  target: RecipeElementLocator;
+}
+
+export interface RecipeAttachmentInput {
+  /** Native file input element populated through Electron's DevTools protocol. */
+  fileInput: SelectorCandidate;
+  /** Optional button that reveals or creates the native file input. */
+  trigger?: SelectorCandidate;
+  /** Ordered UI clicks used only when the native file input is not already usable. */
+  revealSteps?: RecipeAttachmentRevealStep[];
+  /** Optional selector whose visible element/chip proves upload readiness. */
+  ready?: SelectorCandidate;
+  /** Optional button used to clear uploaded chips after a pre-submit failure. */
+  cleanup?: SelectorCandidate;
+  acceptedKinds: Array<'image' | 'document' | 'video'>;
+  acceptedMimeTypes?: string[];
+  multiple?: boolean;
 }
 
 export interface RecipeModes {
@@ -230,6 +262,56 @@ export function bumpSemanticVersion(version: string | undefined): string {
  */
 export function validateCustomRecipe(raw: any): { valid: boolean; errors: string[]; recipe?: CustomRecipe } {
   const errors: string[] = [];
+
+  const normalizeTextCandidate = (value: unknown): SelectorCandidate | undefined => {
+    if (typeof value === 'string') {
+      const normalized = value.trim();
+      return normalized || undefined;
+    }
+    if (!Array.isArray(value)) return undefined;
+    const normalized = Array.from(new Set(value.map(item => String(item).trim()).filter(Boolean)));
+    if (!normalized.length) return undefined;
+    return normalized.length === 1 ? normalized[0] : normalized;
+  };
+
+  const sanitizeElementLocator = (value: any): RecipeElementLocator | undefined => {
+    if (!value || typeof value !== 'object') return undefined;
+    const selectors = normalizeSelectorCandidate(value.selectors);
+    const role = typeof value.role === 'string' ? value.role.trim().toLowerCase() : '';
+    const name = normalizeTextCandidate(value.name);
+    if (!selectors && !role) return undefined;
+    return {
+      ...(selectors ? { selectors } : {}),
+      ...(role ? { role } : {}),
+      ...(name ? { name } : {}),
+    };
+  };
+
+  const sanitizeAttachmentInput = (value: any): RecipeAttachmentInput | undefined => {
+    if (!value || typeof value !== 'object') return undefined;
+    const fileInput = normalizeSelectorCandidate(value.fileInput);
+    if (!fileInput) return undefined;
+    const acceptedKinds = Array.isArray(value.acceptedKinds)
+      ? Array.from(new Set(value.acceptedKinds.filter((kind: unknown) => ['image', 'document', 'video'].includes(String(kind))))) as RecipeAttachmentInput['acceptedKinds']
+      : [];
+    if (!acceptedKinds.length) return undefined;
+    const revealSteps = Array.isArray(value.revealSteps)
+      ? value.revealSteps.flatMap((step: any) => {
+          const target = step?.action === 'click' ? sanitizeElementLocator(step.target) : undefined;
+          return target ? [{ action: 'click' as const, target }] : [];
+        })
+      : [];
+    return {
+      fileInput,
+      ...(normalizeSelectorCandidate(value.trigger) ? { trigger: normalizeSelectorCandidate(value.trigger) } : {}),
+      ...(revealSteps.length ? { revealSteps } : {}),
+      ...(normalizeSelectorCandidate(value.ready) ? { ready: normalizeSelectorCandidate(value.ready) } : {}),
+      ...(normalizeSelectorCandidate(value.cleanup) ? { cleanup: normalizeSelectorCandidate(value.cleanup) } : {}),
+      acceptedKinds,
+      ...(Array.isArray(value.acceptedMimeTypes) ? { acceptedMimeTypes: value.acceptedMimeTypes.map(String).map((mime: string) => mime.trim().toLowerCase()).filter(Boolean) } : {}),
+      multiple: value.multiple === true,
+    };
+  };
 
   if (!raw || typeof raw !== 'object') {
     return { valid: false, errors: ['Recipe payload must be a non-null object.'] };
@@ -457,6 +539,30 @@ export function validateCustomRecipe(raw: any): { valid: boolean; errors: string
       if (typeof raw.response.modes.text?.enabled !== 'boolean') {
         errors.push('response.modes.text.enabled boolean is required.');
       }
+      for (const [modeName, modeValue] of Object.entries(raw.response.modes)) {
+        const attachmentInput = (modeValue as any)?.inputAttachments;
+        if (!attachmentInput) continue;
+        if (!normalizeSelectorCandidate(attachmentInput.fileInput)) {
+          errors.push(`response.modes.${modeName}.inputAttachments.fileInput selector is required.`);
+        }
+        if (!Array.isArray(attachmentInput.acceptedKinds) || !attachmentInput.acceptedKinds.some((kind: unknown) => ['image', 'document', 'video'].includes(String(kind)))) {
+          errors.push(`response.modes.${modeName}.inputAttachments.acceptedKinds must include image, document, or video.`);
+        }
+        if (attachmentInput.revealSteps !== undefined) {
+          if (!Array.isArray(attachmentInput.revealSteps)) {
+            errors.push(`response.modes.${modeName}.inputAttachments.revealSteps must be an array.`);
+          } else {
+            attachmentInput.revealSteps.forEach((step: any, index: number) => {
+              if (step?.action !== 'click') {
+                errors.push(`response.modes.${modeName}.inputAttachments.revealSteps[${index}].action must be "click".`);
+              }
+              if (!sanitizeElementLocator(step?.target)) {
+                errors.push(`response.modes.${modeName}.inputAttachments.revealSteps[${index}].target requires selectors or role.`);
+              }
+            });
+          }
+        }
+      }
     }
   }
 
@@ -504,6 +610,7 @@ export function validateCustomRecipe(raw: any): { valid: boolean; errors: string
           enabled: Boolean(raw.response.modes.text?.enabled ?? true),
           contentSelector: normalizeSelectorCandidate(raw.response.modes.text?.contentSelector),
           mediaKind: 'text',
+          ...(sanitizeAttachmentInput(raw.response.modes.text?.inputAttachments) ? { inputAttachments: sanitizeAttachmentInput(raw.response.modes.text.inputAttachments) } : {}),
         },
         ...(raw.response.modes.image
           ? {
@@ -515,6 +622,7 @@ export function validateCustomRecipe(raw: any): { valid: boolean; errors: string
                 contentSelector: normalizeSelectorCandidate(raw.response.modes.image.contentSelector),
                 downloadSelector: normalizeSelectorCandidate(raw.response.modes.image.downloadSelector),
                 mediaKind: 'image' as const,
+                ...(sanitizeAttachmentInput(raw.response.modes.image.inputAttachments) ? { inputAttachments: sanitizeAttachmentInput(raw.response.modes.image.inputAttachments) } : {}),
               },
             }
           : {}),
@@ -528,6 +636,7 @@ export function validateCustomRecipe(raw: any): { valid: boolean; errors: string
                 contentSelector: normalizeSelectorCandidate(raw.response.modes.video.contentSelector),
                 downloadSelector: normalizeSelectorCandidate(raw.response.modes.video.downloadSelector),
                 mediaKind: 'video' as const,
+                ...(sanitizeAttachmentInput(raw.response.modes.video.inputAttachments) ? { inputAttachments: sanitizeAttachmentInput(raw.response.modes.video.inputAttachments) } : {}),
               },
             }
           : {}),
@@ -541,6 +650,7 @@ export function validateCustomRecipe(raw: any): { valid: boolean; errors: string
                 contentSelector: normalizeSelectorCandidate(raw.response.modes.music.contentSelector),
                 downloadSelector: normalizeSelectorCandidate(raw.response.modes.music.downloadSelector),
                 mediaKind: 'audio' as const,
+                ...(sanitizeAttachmentInput(raw.response.modes.music.inputAttachments) ? { inputAttachments: sanitizeAttachmentInput(raw.response.modes.music.inputAttachments) } : {}),
               },
             }
           : {}),
@@ -633,11 +743,13 @@ export const BUILTIN_RECIPES: Record<'chatgpt' | 'claude' | 'gemini' | 'grok', C
           enabled: true,
           contentSelector: '.response-content-markdown, .markdown, .prose',
           mediaKind: 'text',
+          inputAttachments: { fileInput: 'input[type="file"]', acceptedKinds: ['image', 'document'], multiple: true },
         },
         image: {
           enabled: true,
           contentSelector: 'img[src*="backend-api/estuary/content"], img[src*="estuary/content"], img[alt*="Generated image" i], div[class*="imagegen"] img, div[id^="image-"] img, img[src*="dall-e"], img[src*="oaiusercontent"], img.dall-e-image',
           mediaKind: 'image',
+          inputAttachments: { fileInput: 'input[type="file"]', acceptedKinds: ['image'], multiple: true },
         },
         video: {
           enabled: true,
@@ -703,6 +815,7 @@ export const BUILTIN_RECIPES: Record<'chatgpt' | 'claude' | 'gemini' | 'grok', C
           enabled: true,
           contentSelector: '.font-claude-message, .prose',
           mediaKind: 'text',
+          inputAttachments: { fileInput: 'input[type="file"]', acceptedKinds: ['image', 'document'], multiple: true },
         },
       },
     },
@@ -749,18 +862,21 @@ export const BUILTIN_RECIPES: Record<'chatgpt' | 'claude' | 'gemini' | 'grok', C
           enabled: true,
           contentSelector: '.response-content-markdown, .markdown, .prose',
           mediaKind: 'text',
+          inputAttachments: { fileInput: 'input[type="file"]', acceptedKinds: ['image', 'document'], multiple: true },
         },
         image: {
           enabled: true,
           contentSelector: 'single-image img.loaded, single-image img[src], generated-image img.loaded, generated-image img[src], .generated-images img',
           downloadSelector: '[data-test-id="download-generated-image-button"]',
           mediaKind: 'image',
+          inputAttachments: { fileInput: 'input[type="file"]', acceptedKinds: ['image'], multiple: true },
         },
         video: {
           enabled: true,
           contentSelector: 'generated-video video, video-player video, video',
           downloadSelector: 'button[aria-label*="Download video" i]',
           mediaKind: 'video',
+          inputAttachments: { fileInput: 'input[type="file"]', acceptedKinds: ['image', 'video'], multiple: true },
         },
         music: {
           enabled: true,
@@ -815,16 +931,19 @@ export const BUILTIN_RECIPES: Record<'chatgpt' | 'claude' | 'gemini' | 'grok', C
           enabled: true,
           contentSelector: '.response-content-markdown, .streamdown-chat-md, main .prose',
           mediaKind: 'text',
+          inputAttachments: { fileInput: 'input[type="file"]', acceptedKinds: ['image', 'document'], multiple: true },
         },
         image: {
           enabled: true,
           contentSelector: 'img[alt*="Generated image" i], img[src*="grok"], img.media-attachment',
           mediaKind: 'image',
+          inputAttachments: { fileInput: 'input[type="file"]', acceptedKinds: ['image'], multiple: true },
         },
         video: {
           enabled: true,
           contentSelector: 'video source, video[src], video',
           mediaKind: 'video',
+          inputAttachments: { fileInput: 'input[type="file"]', acceptedKinds: ['image', 'video'], multiple: true },
         },
       },
     },

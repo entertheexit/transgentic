@@ -24,6 +24,7 @@ import {
   ModePipelineConfig,
   DoubleAgentConfig,
 } from '../../shared/types.js';
+import type { AttachmentInput, DesktopAttachmentSelection } from '../../shared/attachments.js';
 
 // Extend window definition for TypeScript
 declare global {
@@ -794,11 +795,16 @@ export function useTransgentic() {
     return nextVal;
   }, [api, config.agentHaltGuard]);
 
-  const executePrompt = useCallback(async (prompt: string, mode?: TaskMode, preferredProvider?: ProviderId, model?: string, cliRequest?: import('../../shared/cli.js').CliRequestOptions) => {
+  const executePrompt = useCallback(async (prompt: string, mode?: TaskMode, preferredProvider?: ProviderId, model?: string, cliRequest?: import('../../shared/cli.js').CliRequestOptions, files?: AttachmentInput[]) => {
     if (api?.executePrompt) {
-      return await api.executePrompt(prompt, mode, preferredProvider, model, cliRequest);
+      return await api.executePrompt(prompt, mode, preferredProvider, model, cliRequest, files);
     }
     throw new Error('API not available');
+  }, [api]);
+
+  const selectQuickPromptFiles = useCallback(async (mode?: TaskMode): Promise<DesktopAttachmentSelection[]> => {
+    if (api?.selectQuickPromptFiles) return await api.selectQuickPromptFiles(mode);
+    throw new Error('File picker is not available');
   }, [api]);
 
   const setCompactMode = useCallback(async (compact: boolean) => {
@@ -959,7 +965,7 @@ export function useTransgentic() {
     }
   }, [api]);
 
-  const addCustomApiProvider = useCallback(async (params: { name: string; baseUrl: string; apiKey?: string; defaultModelId?: string }) => {
+  const addCustomApiProvider = useCallback(async (params: { name: string; baseUrl: string; apiKey?: string; defaultModelId?: string; attachmentKinds?: import('../../shared/attachments.js').AttachmentKind[] }) => {
     if (api?.addCustomApiProvider) {
       const updated = await api.addCustomApiProvider(params);
       if (updated) setServicesManifest(updated);
@@ -967,7 +973,7 @@ export function useTransgentic() {
     }
   }, [api]);
 
-  const updateCustomApiProvider = useCallback(async (providerId: ProviderId, updates: { name?: string; baseUrl?: string; apiKey?: string; defaultModelId?: string }) => {
+  const updateCustomApiProvider = useCallback(async (providerId: ProviderId, updates: { name?: string; baseUrl?: string; apiKey?: string; defaultModelId?: string; attachmentKinds?: import('../../shared/attachments.js').AttachmentKind[] }) => {
     if (api?.updateCustomApiProvider) {
       const updated = await api.updateCustomApiProvider(providerId, updates);
       if (updated) setServicesManifest(updated);
@@ -1065,6 +1071,7 @@ export function useTransgentic() {
     terminateAllPendingRequests,
     fetchMoreLogs,
     executePrompt,
+    selectQuickPromptFiles,
     healingReports,
     fetchLocalLlmModels,
     testLocalLlmConnection,

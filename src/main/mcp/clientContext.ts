@@ -5,6 +5,8 @@ export interface CallerContext {
   profile: ResponseProfile;
   sessionId: string;
   reportProgress?: (message: string) => void;
+  /** Authentication is handled before this context is created; this only gates host-path descriptors. */
+  isLoopback?: boolean;
 }
 
 export function parseResponseProfile(value: unknown): ResponseProfile | undefined {

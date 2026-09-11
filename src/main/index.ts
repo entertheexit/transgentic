@@ -47,6 +47,7 @@ import {
   normalizeTaskMode,
 } from '../shared/types.js';
 import { getExtensionDownloadUrl } from '../shared/release.js';
+import { ATTACHMENT_LIMITS, type AttachmentInput, type DesktopAttachmentSelection } from '../shared/attachments.js';
 
 // Register custom protocol for local media streaming
 protocol.registerSchemesAsPrivileged([
@@ -154,6 +155,7 @@ function loadPersistedConfig(): TransgenticConfig {
       temperature: 0.2,
       contextLength: 8192,
       completionCompact: false,
+      attachmentKinds: [],
     },
     healing: {
       autoHealingEnabled: true,
@@ -981,6 +983,7 @@ function setupIpcHandlers() {
           localZeroLeak: false,
           localCompact: false,
           compactThresholdChars: 4000,
+          attachmentKinds: [],
         }),
         ...updates,
       },
@@ -1364,7 +1367,40 @@ function setupIpcHandlers() {
     }
   });
 
-  ipcMain.handle('execute-prompt', async (event, { prompt, mode, provider, model, cliRequest }) => {
+  ipcMain.handle('quick-prompt:select-files', async (event, { mode }: { mode?: TaskMode } = {}) => {
+    if (event.sender !== globalWindowManager.getMainWindow()?.webContents || event.senderFrame !== event.sender.mainFrame) {
+      throw new Error('Quick Prompt attachments are available only in the main window.');
+    }
+    if (mode === 'music') throw new Error('Music mode does not accept file attachments.');
+    const win = globalWindowManager.getMainWindow();
+    const supportedExtensions = ['png', 'jpg', 'jpeg', 'webp', 'gif', 'pdf', 'txt', 'md', 'markdown', 'csv', 'tsv', 'json', 'jsonl', 'xml', 'yaml', 'yml', 'toml', 'ini', 'log', 'js', 'jsx', 'mjs', 'cjs', 'ts', 'tsx', 'css', 'scss', 'html', 'htm', 'py', 'rb', 'php', 'java', 'kt', 'kts', 'swift', 'go', 'rs', 'c', 'h', 'cpp', 'hpp', 'cs', 'sh', 'zsh', 'fish', 'sql', 'graphql'];
+    if (mode === 'video') supportedExtensions.push('mp4', 'webm', 'mov');
+    const filters = [{ name: mode === 'video' ? 'Supported images, documents, and videos' : 'Supported images and documents', extensions: supportedExtensions }];
+    const result = await dialog.showOpenDialog(win!, {
+      properties: ['openFile', 'multiSelections'],
+      title: 'Attach files to Quick Prompt',
+      filters,
+    });
+    if (result.canceled) return [];
+    if (result.filePaths.length > ATTACHMENT_LIMITS.maxFiles) {
+      throw new Error(`Select at most ${ATTACHMENT_LIMITS.maxFiles} files.`);
+    }
+    const selections: DesktopAttachmentSelection[] = [];
+    let totalBytes = 0;
+    for (const selectedPath of result.filePaths) {
+      const realPath = await fs.promises.realpath(selectedPath);
+      const stat = await fs.promises.stat(realPath);
+      if (!stat.isFile()) throw new Error('Each attachment must be a readable regular file.');
+      await fs.promises.access(realPath, fs.constants.R_OK);
+      if (stat.size > ATTACHMENT_LIMITS.maxFileBytes) throw new Error(`Attachment "${path.basename(selectedPath)}" exceeds the 50 MB limit.`);
+      totalBytes += stat.size;
+      if (totalBytes > ATTACHMENT_LIMITS.maxTotalBytes) throw new Error('Selected attachments exceed the 100 MB total limit.');
+      selections.push({ path: selectedPath, name: path.basename(selectedPath), size: stat.size });
+    }
+    return selections;
+  });
+
+  ipcMain.handle('execute-prompt', async (event, { prompt, mode, provider, model, cliRequest, files }: { prompt: string; mode?: TaskMode; provider?: ProviderId; model?: string; cliRequest?: unknown; files?: AttachmentInput[] }) => {
     if (event.sender !== globalWindowManager.getMainWindow()?.webContents || event.senderFrame !== event.sender.mainFrame) throw new Error('Desktop prompts are available only in the main window.');
     const result = await globalMcpServer.orchestratePrompt(
       prompt,
@@ -1377,7 +1413,8 @@ function setupIpcHandlers() {
       false,
       true,
       undefined,
-      { profile: 'plain', sessionId: `desktop_${event.sender.id}`, cliRequest }
+      { profile: 'plain', sessionId: `desktop_${event.sender.id}`, cliRequest: cliRequest as any, isLoopback: true },
+      files
     );
     if (result.isError) throw new Error(result.content?.[0]?.text || 'Request failed');
     return result;
@@ -1459,7 +1496,7 @@ function setupIpcHandlers() {
     return ServiceManifestManager.checkRouteConflicts(DynamicRouter.getAllRouteConfigs());
   });
 
-  ipcMain.handle('services:add-api-provider', (_, entry: { name: string; baseUrl: string; apiKey?: string; defaultModelId?: string }) => {
+  ipcMain.handle('services:add-api-provider', (_, entry: { name: string; baseUrl: string; apiKey?: string; defaultModelId?: string; attachmentKinds?: import('../shared/attachments.js').AttachmentKind[] }) => {
     const updated = ServiceManifestManager.addCustomApiProvider(entry);
     const win = globalWindowManager.getMainWindow();
     if (win && !win.isDestroyed()) {

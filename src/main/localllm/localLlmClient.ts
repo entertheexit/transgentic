@@ -1,4 +1,6 @@
 import { LocalLLMConfig } from '../../shared/types.js';
+import fs from 'node:fs';
+import type { StagedAttachment } from '../../shared/attachments.js';
 
 export class LocalLlmClient {
   public static normalizeBaseUrl(baseUrl: string): string {
@@ -167,16 +169,27 @@ export class LocalLlmClient {
   public static async generateCompletion(
     promptOrMessages: string | Array<{ role: string; content: string }>,
     config: LocalLLMConfig,
-    options?: { temperature?: number; maxTokens?: number; abortSignal?: AbortSignal }
+    options?: { temperature?: number; maxTokens?: number; abortSignal?: AbortSignal; attachments?: readonly StagedAttachment[] }
   ): Promise<{ text: string }> {
     const normUrl = this.normalizeBaseUrl(config.baseUrl);
 
-    const messages: Array<{ role: string; content: string }> =
+    let messages: Array<{ role: string; content: any }> =
       typeof promptOrMessages === 'string'
         ? [{ role: 'user', content: promptOrMessages }]
         : Array.isArray(promptOrMessages) && promptOrMessages.length > 0
         ? promptOrMessages
         : [{ role: 'user', content: String(promptOrMessages || '') }];
+
+    const encodedAttachments = await Promise.all((options?.attachments || []).map(async file => ({ ...file, base64: (await fs.promises.readFile(file.path)).toString('base64') })));
+    if (encodedAttachments.length) {
+      const lastUser = [...messages].reverse().find(message => message.role === 'user');
+      if (lastUser) lastUser.content = [
+        { type: 'text', text: String(lastUser.content || '') },
+        ...encodedAttachments.map(file => file.kind === 'image'
+          ? { type: 'image_url', image_url: { url: `data:${file.mimeType};base64,${file.base64}` } }
+          : { type: 'file', file: { filename: file.name, file_data: `data:${file.mimeType};base64,${file.base64}` } }),
+      ];
+    }
 
     let targetModel = config.selectedModel;
     if (!targetModel || targetModel === 'default') {
@@ -254,6 +267,7 @@ export class LocalLlmClient {
         const runtimeName = config.preset === 'lmstudio' ? 'LM Studio' : 'Custom Local LLM';
         throw new Error(`${runtimeName} execution failed on ${normUrl}: ${err?.message || err}`);
       }
+      if (encodedAttachments.some(file => file.kind !== 'image')) throw new Error('Ollama native fallback supports image attachments only; the OpenAI-compatible endpoint rejected the document input.');
     } finally {
       clearTimeout(timeout);
       if (options?.abortSignal) {
@@ -275,12 +289,15 @@ export class LocalLlmClient {
 
       try {
         // Try /api/chat with full multi-turn messages
+        const ollamaMessages = messages.map(message => Array.isArray(message.content)
+          ? { role: message.role, content: String(message.content.find((part: any) => part?.type === 'text')?.text || ''), ...(message.role === 'user' && encodedAttachments.length ? { images: encodedAttachments.map(file => file.base64) } : {}) }
+          : message);
         const chatRes = await fetch(`${normUrl}/api/chat`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             model: config.selectedModel,
-            messages,
+            messages: ollamaMessages,
             stream: false,
             options: {
               temperature: options?.temperature ?? config.temperature ?? 0.2,
@@ -297,13 +314,14 @@ export class LocalLlmClient {
         }
 
         // If /api/chat fails (e.g. older Ollama), fallback to /api/generate
-        const lastUserPrompt = messages.filter((m) => m.role === 'user').pop()?.content || '';
+        const lastUserPrompt = ollamaMessages.filter((m) => m.role === 'user').pop()?.content || '';
         const genRes = await fetch(`${normUrl}/api/generate`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             model: config.selectedModel,
             prompt: lastUserPrompt,
+            ...(encodedAttachments.length ? { images: encodedAttachments.map(file => file.base64) } : {}),
             stream: false,
             options: {
               temperature: options?.temperature ?? config.temperature ?? 0.2,

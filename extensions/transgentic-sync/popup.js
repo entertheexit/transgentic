@@ -711,13 +711,26 @@ Generate a valid Transgentic Custom Recipe JSON conforming to this schema:
     "modelSwitcher": "CSS selector (optional)",
     "stopButton": "CSS selector (optional)"
   },
-  "responseStructure": {
-    "textSelector": "CSS selector for text"
+  "response": {
+    "container": "CSS selector for response container",
+    "textSelector": "CSS selector for response text",
+    "modes": {
+      "text": {
+        "enabled": true,
+        "mediaKind": "text",
+        "inputAttachments": {
+          "fileInput": "Observed input[type=file] selector",
+          "revealSteps": [{ "action": "click", "target": { "selectors": "Stable CSS fallback", "role": "button", "name": ["Exact accessible label"] } }],
+          "acceptedKinds": ["image", "document"],
+          "multiple": true
+        }
+      }
+    }
   },
-  "modes": ["general", "coding"],
   "author": "Agentic Assistant"
 }
 
+Only include inputAttachments when upload controls or a native file input are present in the supplied DOM. Store only the minimum reveal clicks and avoid generated framework IDs.
 Respond ONLY with valid JSON.`;
 
       await navigator.clipboard.writeText(prompt);

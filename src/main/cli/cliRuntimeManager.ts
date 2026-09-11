@@ -9,6 +9,7 @@ import { CLI_IDS, CLI_DEFINITIONS, defaultCliService, isCliProvider, type CliCon
 import { cliEnvironment, resolvePolicy, sandboxAvailable, sandboxInvocation, validatedMacUserKeychainPaths } from './executionPolicy.js';
 import { CliProcess } from './processRunner.js';
 import { adapterArgs, executeAdapter, type CliResult } from './adapters.js';
+import type { StagedAttachment } from '../../shared/attachments.js';
 import { throwIfCancelled } from '../mcp/clientContext.js';
 import { AccountQueueManager } from '../queue/accountQueue.js';
 
@@ -219,7 +220,7 @@ export class CliRuntimeManager {
     await Promise.allSettled(Array.from(new Set(ids)).map(id => this.testConnection(id)));
   }
   async execute(id: CliProviderId, prompt: string, options: {
-    reqId: string; conversationKey: string; newThread?: boolean; model?: string; request?: CliRequestOptions; desktop?: boolean; reviewer?: boolean; signal?: AbortSignal; progress?: (message: string) => void; beforeStart?: (signal: AbortSignal) => Promise<void>;
+    reqId: string; conversationKey: string; newThread?: boolean; model?: string; request?: CliRequestOptions; desktop?: boolean; reviewer?: boolean; signal?: AbortSignal; progress?: (message: string) => void; beforeStart?: (signal: AbortSignal) => Promise<void>; attachments?: readonly StagedAttachment[];
   }): Promise<CliResult> {
     throwIfCancelled(options.signal);
     const controller = new AbortController();
@@ -248,7 +249,18 @@ export class CliRuntimeManager {
           if (options.newThread) this.sessions.delete(key);
           const previous = this.sessions.get(key);
           const model = options.model && options.model !== 'default' ? options.model : config.services[id]?.model || undefined;
-          const input = { prompt, model, sessionId: previous?.id, policy, progress: options.progress };
+          const attachmentDir = path.join(scratch, 'attachments');
+          const attachments: StagedAttachment[] = [];
+          if (options.attachments?.length) {
+            fs.mkdirSync(attachmentDir, { recursive: true, mode: 0o700 });
+            for (const [index, file] of options.attachments.entries()) {
+              const destination = path.join(attachmentDir, `${String(index + 1).padStart(2, '0')}-${path.basename(file.path)}`);
+              fs.copyFileSync(file.path, destination);
+              fs.chmodSync(destination, 0o400);
+              attachments.push({ ...file, path: destination });
+            }
+          }
+          const input = { prompt, model, sessionId: previous?.id, policy, progress: options.progress, attachments };
           // Antigravity reads its cached Google login through the macOS Keychain
           // client. This fixed helper is distinct from provider-requested project
           // commands, which remain denied by the outer sandbox.

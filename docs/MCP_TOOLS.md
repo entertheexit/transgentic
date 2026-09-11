@@ -22,6 +22,8 @@ The connected server's `tools/list` response is the reference for the tools and 
 | `ask_chatgpt`, `ask_claude`, `ask_gemini`, `ask_grok` | Request a specific built-in provider |
 | `generate_image` | Request image mode |
 | `generate_video` | Request video mode |
+| `edit_image` | Edit one or more attached images in Image mode |
+| `edit_video` | Edit attached image/video media in Video mode |
 | `generate_music` | Request Music mode |
 | `get_status` | Inspect server health, provider state, limits, and model registry |
 
@@ -41,10 +43,13 @@ Use an explicit mode for media requests. Public task modes are `general`, `writi
 | `new_thread` | Start a fresh conversation |
 | `project_name` | Project grouping used when a thread identifier is absent |
 | `response_profile` | `agentic` or `plain`; overrides the connection's response style |
+| `files` | Up to 10 request-scoped image/document inputs (and video in Video mode), 50 MB each and 100 MB decoded total |
 
 Camel-case aliases `threadId`, `newThread`, and `projectName` are accepted. Use one spelling consistently.
 
-Local LLM and custom-provider selection are configured through routing; do not assume the public `provider` enum accepts every internal provider ID.
+Each `files` entry contains exactly one source: `{ "path": "/absolute/file", "name"?: "...", "mimeType"?: "..." }`, `{ "data": "BASE64", "name": "...", "mimeType": "..." }`, or `{ "url": "https://...", "name"?: "...", "mimeType"?: "..." }`. Host paths require an authenticated loopback request. Remote clients must use inline bytes, a base64 `data:` URL, or a public HTTPS URL. URLs are checked against private/link-local destinations and redirect escapes. Supported inputs are PNG, JPEG, WebP, GIF, PDF, UTF-8 text/code, plus MP4, WebM, or MOV in Video mode.
+
+Attachments are explicit per request and are never inherited by later turns. `generate_image` and `generate_video` remain text-only; use `edit_image` or `edit_video` for source media. Auto-routing skips providers that do not declare every required input kind, while a forced incapable provider returns an error. Local LLM and custom-provider selection are configured through routing.
 
 ## Multi-turn example
 

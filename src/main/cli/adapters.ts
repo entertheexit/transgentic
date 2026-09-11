@@ -1,20 +1,28 @@
 import type { CliProviderId } from '../../shared/cli.js';
 import type { ExecutionPolicy } from './executionPolicy.js';
 import { CliProcess } from './processRunner.js';
+import fs from 'node:fs';
+import type { StagedAttachment } from '../../shared/attachments.js';
 
 export interface CliResult { wasNewChat?: boolean; text: string; sessionId?: string; modelUsed?: string; usage?: Record<string, number>; permissionDenied?: boolean; actions?: { commands: number; fileChanges: number } }
-export interface AdapterInput { prompt: string; model?: string; sessionId?: string; policy: ExecutionPolicy; progress?: (message: string) => void }
+export interface AdapterInput { prompt: string; model?: string; sessionId?: string; policy: ExecutionPolicy; progress?: (message: string) => void; attachments?: readonly StagedAttachment[] }
+
+function promptWithAttachmentManifest(input: AdapterInput): string {
+  if (!input.attachments?.length) return input.prompt;
+  const lines = input.attachments.map(file => `- ${file.name} (${file.mimeType}): ${file.path}`);
+  return `${input.prompt}\n\nAttached files are request-scoped, read-only inputs. Inspect their contents when relevant; do not modify them:\n${lines.join('\n')}`;
+}
 export function adapterArgs(id: CliProviderId, input: AdapterInput): string[] {
   // The mandatory outer OS sandbox enforces permissions. A nested macOS sandbox cannot initialize;
   // Codex must delegate confinement to that boundary for its native patch helper to work.
   if (id === 'cli_codex') return ['exec', '--ignore-user-config', '--ignore-rules', '--json', '--skip-git-repo-check', '--sandbox', 'danger-full-access',
     '-c', 'features.plugins=false', '-c', `features.shell_tool=${input.policy.allowCommands}`, '-c', `features.unified_exec=${input.policy.allowCommands}`,
-    ...(input.model ? ['--model', input.model] : []), ...(input.sessionId ? ['resume', input.sessionId] : []), '-'];
+    ...(input.model ? ['--model', input.model] : []), ...(input.attachments || []).filter(file => file.kind === 'image').map(file => `--image=${file.path}`), ...(input.sessionId ? ['resume', input.sessionId] : []), '-'];
   if (id === 'cli_grok') return ['--no-auto-update', 'agent', 'stdio'];
   if (id === 'cli_claude_code') return ['--safe-mode', '-p', '--verbose', '--output-format', 'stream-json', '--permission-mode', 'dontAsk', '--tools', [
     'Read', 'Glob', 'Grep', ...(input.policy.allowProjectEditing ? ['Edit', 'Write'] : []), ...(input.policy.allowCommands ? ['Bash'] : []),
   ].join(','), '--allowedTools', ['Read', 'Glob', 'Grep', ...(input.policy.allowProjectEditing ? ['Edit', 'Write'] : []), ...(input.policy.allowCommands ? ['Bash'] : [])].join(','), '--disallowedTools', 'mcp__*', ...(input.model ? ['--model', input.model] : []), ...(input.sessionId ? ['--resume', input.sessionId] : [])];
-  return ['-p', input.prompt, '--output-format', 'stream-json', '--disable-slash-commands', ...(input.model ? ['--model', input.model] : []), ...(input.sessionId ? ['--conversation', input.sessionId] : [])];
+  return ['-p', promptWithAttachmentManifest(input), '--output-format', 'stream-json', '--disable-slash-commands', ...(input.model ? ['--model', input.model] : []), ...(input.sessionId ? ['--conversation', input.sessionId] : [])];
 }
 
 function boundedText(text: string) { if (Buffer.byteLength(text) > 16 * 1024 * 1024) throw new Error('CLI answer exceeds the output limit.'); return text; }
@@ -55,7 +63,7 @@ export async function executeAdapter(id: CliProviderId, proc: CliProcess, input:
     });
     let offFailure: () => void = () => {};
     offFailure = proc.onFailure(error => stop(undefined, error));
-    if (id === 'cli_claude_code' || id === 'cli_codex') proc.child.stdin.end(input.prompt);
+    if (id === 'cli_claude_code' || id === 'cli_codex') proc.child.stdin.end(promptWithAttachmentManifest(input));
     else proc.child.stdin.end();
   });
 }
@@ -70,7 +78,7 @@ async function executeGrok(proc: CliProcess, input: AdapterInput): Promise<CliRe
     if (!option) { denied = true; return { outcome: { outcome: 'cancelled' } }; }
     return { outcome: { outcome: 'selected', optionId: option.optionId } };
   };
-  const initialized = await proc.request('initialize', { protocolVersion: 1, clientCapabilities: {}, clientInfo: { name: 'transgentic', version: '1.0.1' } });
+  const initialized = await proc.request('initialize', { protocolVersion: 1, clientCapabilities: { fs: { readTextFile: true } }, clientInfo: { name: 'transgentic', version: '1.0.1' } });
   const auth = initialized.authMethods?.find((m: any) => m.id === 'cached_token');
   if (auth) await proc.request('authenticate', { methodId: auth.id, _meta: { headless: true } });
   const session = await proc.request(input.sessionId ? 'session/load' : 'session/new', { cwd: input.policy.cwd, mcpServers: [], ...(input.sessionId ? { sessionId: input.sessionId } : {}) });
@@ -85,7 +93,18 @@ async function executeGrok(proc: CliProcess, input: AdapterInput): Promise<CliRe
     else input.progress?.('Grok is processing the request');
   });
   try {
-    const result = await proc.request('session/prompt', { sessionId, prompt: [{ type: 'text', text: input.prompt }] });
+    const promptCapabilities = initialized.agentCapabilities?.promptCapabilities || initialized.promptCapabilities || {};
+    const blocks: any[] = [{ type: 'text', text: promptWithAttachmentManifest(input) }];
+    for (const file of input.attachments || []) {
+      if (file.kind === 'image') {
+        if (promptCapabilities.image !== true) throw new Error('Grok ACP did not advertise image prompt capability.');
+        blocks.push({ type: 'image', mimeType: file.mimeType, data: fs.readFileSync(file.path).toString('base64') });
+      } else {
+        if (promptCapabilities.embeddedContext !== true) throw new Error('Grok ACP did not advertise embedded-resource prompt capability.');
+        blocks.push({ type: 'resource', resource: { uri: `file://${file.path}`, name: file.name, mimeType: file.mimeType, blob: fs.readFileSync(file.path).toString('base64') } });
+      }
+    }
+    const result = await proc.request('session/prompt', { sessionId, prompt: blocks });
     if (result.stopReason !== 'end_turn') throw new Error(`Grok stopped without completing (${result.stopReason || 'unknown'}).`);
     return { text, sessionId, permissionDenied: denied };
   } finally { off(); }

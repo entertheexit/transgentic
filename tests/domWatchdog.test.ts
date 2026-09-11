@@ -15,6 +15,24 @@ describe('DomWatchdog Engine Unit Tests', () => {
     expect(script).toContain('missingLandmarks');
   });
 
+  it('includes adaptive attachment landmarks and semantic reveal locators in an audit', () => {
+    const script = DomWatchdog.getAuditScript('custom_portal', undefined, undefined, {
+      text: {
+        fileInput: 'input[type="file"]',
+        revealSteps: [{ action: 'click', target: { role: 'button', name: ['Add attachment'] } }],
+        ready: '.attachment-chip',
+        cleanup: 'button.remove-attachment',
+        acceptedKinds: ['image'],
+      },
+    });
+
+    expect(script).toContain('const inputKey');
+    expect(script).toContain(String.raw`input[type=\"file\"]`);
+    expect(script).toContain('revealSteps');
+    expect(script).toContain('Add attachment');
+    expect(script).toContain('attachmentLandmarks');
+  });
+
   it('should inspect mock WebContents and return structured DomInspectionReport', async () => {
     const mockReport = {
       providerId: 'claude',
@@ -64,5 +82,25 @@ describe('DomWatchdog Engine Unit Tests', () => {
     expect(prompt).toContain('new-editor');
     expect(prompt).toContain('model-switcher-v2');
     expect(prompt).toContain('CSS selector');
+  });
+
+  it('asks healing to repair a nested attachment selector without broad recipe changes', () => {
+    const report = {
+      providerId: 'custom_portal' as const,
+      timestamp: Date.now(),
+      healthy: false,
+      allLandmarksHealthy: false,
+      landmarks: {
+        inputPrompt: { found: true, exists: true },
+        submitButton: { found: true, exists: true },
+        stopButton: { found: true, exists: true },
+        modelDropdownTrigger: { found: true, exists: true },
+      },
+      missingLandmarks: ['attachment.text.revealSteps.1.selectors'],
+      htmlSnippet: '<div role="menuitem"><span>Upload file or image</span></div>',
+    };
+    const prompt = DomWatchdog.buildHealingPrompt(report);
+    expect(prompt).toContain('attachment.text.revealSteps.1.selectors');
+    expect(prompt).toContain('input[type="file"]');
   });
 });

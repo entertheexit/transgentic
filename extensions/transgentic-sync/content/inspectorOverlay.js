@@ -36,6 +36,13 @@
       category: 'action'
     },
     {
+      key: 'attachmentFlow',
+      title: 'Attachment Upload Flow (Optional)',
+      desc: 'Use the provider normally: click only the controls needed to reveal file upload. The inspector records the shortest usable sequence and detects the native file input.',
+      required: false,
+      category: 'upload'
+    },
+    {
       key: 'responseContainer',
       title: 'AI Response Container',
       desc: 'Click on a message bubble or wrapper containing an AI response.',
@@ -90,6 +97,7 @@
   // recordedSelectors: Record<stepKey, string[]>
   const recordedSelectors = {};
   const recordedModeUrls = {};
+  const attachmentFlow = { steps: [], fileInput: null, inputCandidates: [] };
   let hoveredElement = null;
   let isPaused = false;
   let isAddingFallback = false;
@@ -103,6 +111,7 @@
         currentStepIndex,
         recordedSelectors,
         recordedModeUrls,
+        attachmentFlow,
         domain: window.location.hostname,
         targetUrl: window.location.href,
         timestamp: Date.now()
@@ -132,6 +141,10 @@
         currentStepIndex = typeof saved.currentStepIndex === 'number' ? saved.currentStepIndex : 0;
         if (saved.recordedSelectors) Object.assign(recordedSelectors, saved.recordedSelectors);
         if (saved.recordedModeUrls) Object.assign(recordedModeUrls, saved.recordedModeUrls);
+        if (saved.attachmentFlow) {
+          attachmentFlow.steps = Array.isArray(saved.attachmentFlow.steps) ? saved.attachmentFlow.steps : [];
+          attachmentFlow.fileInput = saved.attachmentFlow.fileInput || null;
+        }
         // On cross-page navigation, start in paused state so newly loaded page can be freely browsed
         isPaused = true;
       }
@@ -158,12 +171,17 @@
     } catch {}
   }
 
+  function escapeHtml(value) {
+    return String(value ?? '').replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
+  }
+
   // Generate robust CSS selector
   function computeSelector(el) {
     if (!el || el.nodeType !== Node.ELEMENT_NODE) return '';
 
     // 1. Check ID
-    if (el.id && typeof el.id === 'string' && !el.id.match(/\d{5,}|:r[a-z0-9]+:|svelte-|jsx-|css-/i)) {
+    const unstableId = value => /\d{5,}|:r[a-z0-9]+:|svelte-|jsx-|css-|^base-ui-|_[rR]_[a-z0-9_]{6,}/i.test(String(value || ''));
+    if (el.id && typeof el.id === 'string' && !unstableId(el.id)) {
       const idSel = `#${CSS.escape(el.id)}`;
       try {
         if (document.querySelectorAll(idSel).length === 1) {
@@ -225,7 +243,7 @@
       let segment = curr.tagName.toLowerCase();
 
       // Check if current node has id
-      if (curr.id && !curr.id.match(/\d{5,}|:r[a-z0-9]+:|svelte-|jsx-|css-/i)) {
+      if (curr.id && !unstableId(curr.id)) {
         segment = `#${CSS.escape(curr.id)}`;
         path.unshift(segment);
         break;
@@ -917,6 +935,91 @@
     const step = STEPS[currentStepIndex];
     if (!step) return;
 
+    if (step.key === 'attachmentFlow') {
+      const detectInputs = () => {
+        const candidates = Array.from(document.querySelectorAll('input[type="file"]')).map((input) => ({
+          selector: computeSelector(input),
+          accept: input.getAttribute('accept') || '',
+          multiple: input.multiple === true,
+          nearbyLabel: (input.labels && input.labels[0]?.textContent || input.parentElement?.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 80)
+        })).filter((candidate) => candidate.selector);
+        attachmentFlow.inputCandidates = candidates;
+        if (!attachmentFlow.fileInput && candidates.length === 1) attachmentFlow.fileInput = candidates[0];
+      };
+      detectInputs();
+
+      attachmentFlow.steps.forEach((recorded, idx) => {
+        const card = document.createElement('div');
+        card.className = 'candidate-pill';
+        const label = Array.isArray(recorded.target.name) ? recorded.target.name[0] : recorded.target.name;
+        const selector = Array.isArray(recorded.target.selectors) ? recorded.target.selectors[0] : recorded.target.selectors;
+        card.innerHTML = `<span class="candidate-badge">Click ${idx + 1}</span><span>${escapeHtml(label || selector || recorded.target.role || 'control')}</span><button type="button" data-move="up" data-idx="${idx}" title="Move earlier">↑</button><button type="button" data-move="down" data-idx="${idx}" title="Move later">↓</button><span class="candidate-remove" data-idx="${idx}" title="Remove step">✕</span>`;
+        candidatesContainer.appendChild(card);
+      });
+
+      if (attachmentFlow.fileInput) {
+        const selected = document.createElement('div');
+        selected.className = 'candidate-pill fallback';
+        selected.innerHTML = `<span class="candidate-badge">File input</span><span>${escapeHtml(attachmentFlow.fileInput.selector)}${attachmentFlow.fileInput.accept ? ` · ${escapeHtml(attachmentFlow.fileInput.accept)}` : ''}</span><span class="candidate-remove" data-file-input="true" title="Choose again">✕</span>`;
+        candidatesContainer.appendChild(selected);
+      } else if (attachmentFlow.inputCandidates.length > 1) {
+        attachmentFlow.inputCandidates.forEach((candidate, idx) => {
+          const option = document.createElement('button');
+          option.type = 'button';
+          option.className = 'candidate-pill';
+          option.dataset.inputCandidate = String(idx);
+          option.innerHTML = `<span class="candidate-badge">Choose input</span><span>${escapeHtml(candidate.accept || 'all files')}${candidate.multiple ? ' · multiple' : ''}${candidate.nearbyLabel ? ` · ${escapeHtml(candidate.nearbyLabel)}` : ''}</span>`;
+          candidatesContainer.appendChild(option);
+        });
+      }
+
+      const tools = document.createElement('div');
+      tools.style.cssText = 'display:flex;gap:6px;margin-top:4px;';
+      tools.innerHTML = `<button type="button" class="btn-add-fallback" data-upload-action="undo">Undo</button><button type="button" class="btn-add-fallback" data-upload-action="clear">Re-record</button><button type="button" class="btn-add-fallback" data-upload-action="test">Test without submitting</button>`;
+      candidatesContainer.appendChild(tools);
+
+      candidatesContainer.querySelectorAll('[data-move]').forEach((button) => button.addEventListener('click', (event) => {
+        event.stopPropagation();
+        const index = Number(button.dataset.idx);
+        const next = button.dataset.move === 'up' ? index - 1 : index + 1;
+        if (next < 0 || next >= attachmentFlow.steps.length) return;
+        [attachmentFlow.steps[index], attachmentFlow.steps[next]] = [attachmentFlow.steps[next], attachmentFlow.steps[index]];
+        saveSessionState(); renderCandidates();
+      }));
+      candidatesContainer.querySelectorAll('.candidate-remove').forEach((button) => button.addEventListener('click', (event) => {
+        event.stopPropagation();
+        if (button.dataset.fileInput) attachmentFlow.fileInput = null;
+        else attachmentFlow.steps.splice(Number(button.dataset.idx), 1);
+        saveSessionState(); renderCandidates();
+      }));
+      candidatesContainer.querySelectorAll('[data-input-candidate]').forEach((button) => button.addEventListener('click', (event) => {
+        event.stopPropagation();
+        attachmentFlow.fileInput = attachmentFlow.inputCandidates[Number(button.dataset.inputCandidate)] || null;
+        saveSessionState(); renderCandidates(); updateStepUI();
+      }));
+      candidatesContainer.querySelectorAll('[data-upload-action]').forEach((button) => button.addEventListener('click', (event) => {
+        event.stopPropagation();
+        const action = button.dataset.uploadAction;
+        if (action === 'undo') attachmentFlow.steps.pop();
+        if (action === 'clear') { attachmentFlow.steps = []; attachmentFlow.fileInput = null; }
+        if (action === 'test') {
+          const validSteps = attachmentFlow.steps.every((recorded) => {
+            const selectors = Array.isArray(recorded.target.selectors) ? recorded.target.selectors : recorded.target.selectors ? [recorded.target.selectors] : [];
+            return selectors.some((selector) => { try { return document.querySelector(selector); } catch { return false; } });
+          });
+          const inputValid = !attachmentFlow.fileInput || (() => { try { return document.querySelector(attachmentFlow.fileInput.selector); } catch { return false; } })();
+          updateStepUI();
+          stepDescEl.textContent = validSteps && inputValid ? 'Upload controls currently resolve. No prompt was submitted.' : 'Some upload controls are not present in the current UI state; open the menu or re-record them.';
+          return;
+        }
+        saveSessionState(); renderCandidates(); updateStepUI();
+      }));
+
+      btnAddFallback.style.display = 'none';
+      btnNext.style.display = attachmentFlow.fileInput ? 'inline-flex' : 'none';
+      return;
+    }
+
     const list = recordedSelectors[step.key] || [];
     if (list.length === 0) {
       btnAddFallback.style.display = 'none';
@@ -964,7 +1067,11 @@
     stepCounterEl.textContent = `STEP ${currentStepIndex + 1} OF ${STEPS.length} ${step.required ? '(REQUIRED)' : '(OPTIONAL)'}`;
     stepTitleEl.textContent = step.title;
 
-    if (isAddingFallback) {
+    if (step.key === 'attachmentFlow') {
+      stepDescEl.textContent = attachmentFlow.fileInput
+        ? 'Native file input detected. The recorded clicks will only run when that input is not already available.'
+        : 'Click the provider controls needed to expose file upload. Cancel the browser file picker if it appears; Transgentic never reads a file during recipe recording.';
+    } else if (isAddingFallback) {
       stepDescEl.textContent = `[CAPTURE FALLBACK] Click another element for "${step.title}" (or click 'Pause' to switch to another page/view first, then click 'Resume' and pick).`;
       btnAddFallback.classList.add('active');
       btnAddFallback.textContent = 'Cancel Fallback';
@@ -981,7 +1088,7 @@
     dots.forEach((dot, idx) => {
       dot.className = 'step-dot';
       const stepKey = STEPS[idx]?.key;
-      const stepHasVal = (recordedSelectors[stepKey] || []).length > 0;
+      const stepHasVal = stepKey === 'attachmentFlow' ? Boolean(attachmentFlow.fileInput) : (recordedSelectors[stepKey] || []).length > 0;
       if (stepHasVal) dot.classList.add('completed');
       if (idx === currentStepIndex) dot.classList.add('active');
     });
@@ -1047,13 +1154,44 @@
     const target = e.target;
     if (!target || root.contains(target)) return;
 
+    const step = STEPS[currentStepIndex];
+    if (!step) return;
+
+    if (step.key === 'attachmentFlow') {
+      const interactive = target.closest?.('button,[role="button"],[role="menuitem"],a[href],label,input[type="file"]') || target;
+      if (interactive.matches?.('input[type="file"]')) {
+        e.preventDefault();
+        e.stopPropagation();
+        attachmentFlow.fileInput = {
+          selector: computeSelector(interactive),
+          accept: interactive.getAttribute('accept') || '',
+          multiple: interactive.multiple === true,
+          nearbyLabel: (interactive.labels && interactive.labels[0]?.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 80)
+        };
+      } else {
+        const ariaLabel = interactive.getAttribute?.('aria-label') || interactive.getAttribute?.('title') || '';
+        const textLabel = (ariaLabel || interactive.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 100);
+        const explicitRole = interactive.getAttribute?.('role');
+        const implicitRole = explicitRole || (interactive.tagName === 'BUTTON' ? 'button' : interactive.tagName === 'A' ? 'link' : undefined);
+        const locator = {
+          selectors: computeSelector(interactive),
+          ...(implicitRole ? { role: implicitRole } : {}),
+          ...(textLabel ? { name: textLabel } : {})
+        };
+        attachmentFlow.steps.push({ action: 'click', target: locator });
+        setTimeout(() => { renderCandidates(); updateStepUI(); saveSessionState(); }, 250);
+      }
+      saveSessionState();
+      renderCandidates();
+      updateStepUI();
+      return;
+    }
+
     e.preventDefault();
     e.stopPropagation();
     e.stopImmediatePropagation();
 
     const selector = computeSelector(target);
-    const step = STEPS[currentStepIndex];
-    if (!step) return;
 
     if (!recordedSelectors[step.key]) {
       recordedSelectors[step.key] = [];
@@ -1202,6 +1340,23 @@
     const submitButtonVal = formatCandidate(recordedSelectors.submitButton, 'button[type="submit"]');
     const containerVal = formatCandidate(recordedSelectors.responseContainer, '.response');
     const textSelectorVal = formatCandidate(recordedSelectors.textResponse, '.response');
+    const selectedAttachment = attachmentFlow.fileInput;
+    const acceptedKinds = (() => {
+      if (!selectedAttachment?.accept) return ['image', 'document', 'video'];
+      const accept = selectedAttachment.accept.toLowerCase();
+      const kinds = [];
+      if (accept.includes('image') || /png|jpe?g|webp|gif/.test(accept)) kinds.push('image');
+      if (accept.includes('video') || /mp4|webm|quicktime|mov/.test(accept)) kinds.push('video');
+      if (accept.includes('pdf') || accept.includes('text') || /json|csv|document/.test(accept)) kinds.push('document');
+      return kinds.length ? kinds : ['image', 'document', 'video'];
+    })();
+    const inputAttachments = selectedAttachment ? {
+      fileInput: selectedAttachment.selector,
+      ...(attachmentFlow.steps.length ? { revealSteps: attachmentFlow.steps } : {}),
+      acceptedKinds,
+      ...(selectedAttachment.accept ? { acceptedMimeTypes: selectedAttachment.accept.split(',').map(value => value.trim()).filter(value => value.includes('/')) } : {}),
+      multiple: selectedAttachment.multiple === true
+    } : null;
 
     const recipe = {
       version: '1.0',
@@ -1226,13 +1381,15 @@
           text: {
             enabled: true,
             mediaKind: 'text',
-            contentSelector: formatCandidate(recordedSelectors.textResponse)
+            contentSelector: formatCandidate(recordedSelectors.textResponse),
+            ...(inputAttachments ? { inputAttachments } : {})
           },
           ...(recordedSelectors.imageResult?.length > 0 ? {
             image: {
               enabled: true,
               mediaKind: 'image',
               contentSelector: formatCandidate(recordedSelectors.imageResult),
+              ...(inputAttachments ? { inputAttachments } : {}),
               ...(recordedModeUrls.imageResult ? { pageUrl: recordedModeUrls.imageResult } : {})
             }
           } : {}),
@@ -1241,6 +1398,7 @@
               enabled: true,
               mediaKind: 'video',
               contentSelector: formatCandidate(recordedSelectors.videoResult),
+              ...(inputAttachments ? { inputAttachments } : {}),
               ...(recordedModeUrls.videoResult ? { pageUrl: recordedModeUrls.videoResult } : {})
             }
           } : {}),

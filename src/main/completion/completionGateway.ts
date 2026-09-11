@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import fs from 'node:fs';
 import { isCliProvider, CLI_DEFINITIONS } from '../../shared/cli.js';
 import type { CompletionMessage, CompletionModel, CompletionRequest, CompletionResult, CompletionTool, CompletionToolCall } from '../../shared/completion.js';
 import type { ProviderId, TaskMode, TransgenticConfig } from '../../shared/types.js';
@@ -7,6 +8,9 @@ import { ServiceManifestManager } from '../registry/serviceManifest.js';
 import { ModelRegistryManager } from '../registry/modelRegistry.js';
 import { DynamicRouter } from '../mcp/router.js';
 import { globalLocalCompactManager } from '../localllm/localCompact.js';
+import type { StagedAttachment } from '../../shared/attachments.js';
+import { AttachmentManager } from '../attachments/attachmentManager.js';
+import type { AttachmentInput } from '../../shared/attachments.js';
 
 const ROUTE_MODELS: Array<{ id: string; mode: TaskMode; name: string }> = [
   { id: 'transgentic/general', mode: 'general', name: 'Transgentic General' },
@@ -74,6 +78,40 @@ function validateRequest(input: any): CompletionRequest {
   return input as CompletionRequest;
 }
 
+function completionAttachmentInputs(request: CompletionRequest): AttachmentInput[] {
+  const files: AttachmentInput[] = [];
+  for (const message of request.messages) {
+    if (!Array.isArray(message.content)) continue;
+    for (const part of message.content as any[]) {
+      if (part?.type === 'image_url') {
+        const url = typeof part.image_url === 'string' ? part.image_url : part.image_url?.url;
+        if (typeof url !== 'string') throw new Error('image_url content parts require a URL.');
+        files.push({ url, name: typeof part.name === 'string' ? part.name : undefined, mimeType: typeof part.mime_type === 'string' ? part.mime_type : undefined });
+      } else if (part?.type === 'file') {
+        const file = part.file;
+        if (file?.file_id || part.file_id) throw new Error('file_id content parts cannot be routed because Transgentic does not own the provider file store. Supply inline file_data instead.');
+        const data = file?.file_data || part.file_data;
+        const name = file?.filename || part.filename;
+        const mimeType = file?.mime_type || part.mime_type;
+        if (typeof data !== 'string' || typeof name !== 'string') throw new Error('Inline file parts require filename and file_data.');
+        if (data.startsWith('data:')) files.push({ url: data, name, mimeType: typeof mimeType === 'string' ? mimeType : undefined });
+        else {
+          if (typeof mimeType !== 'string') throw new Error('Raw base64 file_data requires mime_type.');
+          files.push({ data, name, mimeType });
+        }
+      }
+    }
+  }
+  return files;
+}
+
+function messagesWithoutBinaryParts(messages: CompletionMessage[]): CompletionMessage[] {
+  return messages.map(message => !Array.isArray(message.content) ? message : {
+    ...message,
+    content: message.content.filter((part: any) => part?.type !== 'image_url' && part?.type !== 'file'),
+  });
+}
+
 export class CompletionGateway {
   constructor(private getConfig: () => TransgenticConfig | null, private getPort: () => number) {}
 
@@ -116,9 +154,24 @@ export class CompletionGateway {
     return { mode: route.mode, candidates };
   }
 
-  async complete(raw: unknown, signal?: AbortSignal): Promise<CompletionResult> {
+  async complete(raw: unknown, signal?: AbortSignal, caller?: { loopback?: boolean }): Promise<CompletionResult> {
     let request = validateRequest(raw);
+    const attachmentInputs = completionAttachmentInputs(request);
     const { mode, candidates } = this.resolveTarget(request.model);
+    const staged = await AttachmentManager.stage(attachmentInputs, { loopback: caller?.loopback === true, mode, signal });
+    const attachments = staged.envelope.files;
+    const eligibleCandidates = attachments.length ? candidates.filter(provider => {
+      if (isCliProvider(provider)) return provider !== 'cli_grok' || attachments.every(file => file.kind === 'image' || file.kind === 'document');
+      if (provider === 'localllm') {
+        const kinds = new Set(this.getConfig()?.localLLM?.attachmentKinds || []);
+        return attachments.every(file => kinds.has(file.kind));
+      }
+      const service = ServiceManifestManager.getManifest().services[provider];
+      const kinds = new Set(service?.attachmentKinds || []);
+      return attachments.every(file => kinds.has(file.kind));
+    }) : candidates;
+    if (!eligibleCandidates.length) { await staged.cleanup(); throw new Error('No eligible completion provider declares support for all supplied attachments.'); }
+    try {
     const hasToolContext = Boolean(request.tools?.length || request.messages.some(message => message.role === 'tool' || message.tool_calls?.length));
     const config = this.getConfig();
     const extras = hasToolContext ? undefined : {
@@ -149,9 +202,9 @@ export class CompletionGateway {
       }
     }
     let lastError: Error | undefined;
-    for (const provider of candidates) {
+    for (const provider of eligibleCandidates) {
       try {
-        const primary = await this.dispatch(provider, mode, request, signal);
+        const primary = await this.dispatch(provider, mode, request, signal, undefined, attachments);
         if (!extras?.multiModelReview || primary.message.tool_calls?.length) return primary;
         const coRule = DynamicRouter.getRule(mode, 'co');
         const reviewers = [coRule.defaultService || coRule.primary, ...(coRule.fallbackChain || coRule.fallbacks || [])]
@@ -168,7 +221,7 @@ export class CompletionGateway {
               { role: 'assistant', content: primary.message.content },
               { role: 'user', content: 'Review the proposed answer for correctness and completeness. Return the corrected final answer only.' },
             ],
-          }, signal);
+          }, signal, undefined, attachments);
         } catch {
           return primary;
         }
@@ -179,16 +232,33 @@ export class CompletionGateway {
       }
     }
     throw lastError || new Error('No completion provider was available.');
+    } finally {
+      await staged.cleanup();
+    }
   }
 
-  private async dispatch(provider: ProviderId, mode: TaskMode, request: CompletionRequest, signal?: AbortSignal): Promise<CompletionResult> {
+  async completeProviderPrompt(provider: ProviderId, mode: TaskMode, prompt: string, attachments: readonly StagedAttachment[], signal?: AbortSignal, requestedModel?: string, pipeline: 'main' | 'co' = 'main'): Promise<CompletionResult> {
+    const content: Array<Record<string, unknown>> = [{ type: 'text', text: prompt }];
+    for (const file of attachments) {
+      const dataUrl = `data:${file.mimeType};base64,${(await fs.promises.readFile(file.path)).toString('base64')}`;
+      if (file.kind === 'image') content.push({ type: 'image_url', image_url: { url: dataUrl } });
+      else content.push({ type: 'file', file: { filename: file.name, file_data: dataUrl } });
+    }
+    return this.dispatch(provider, mode, {
+      model: `transgentic/provider/${provider}`,
+      messages: [{ role: 'user', content: attachments.length ? content : prompt }],
+      stream: false,
+    }, signal, requestedModel || DynamicRouter.resolveTargetModel(provider, mode, undefined, pipeline) || undefined);
+  }
+
+  private async dispatch(provider: ProviderId, mode: TaskMode, request: CompletionRequest, signal?: AbortSignal, requestedModel?: string, attachments: readonly StagedAttachment[] = []): Promise<CompletionResult> {
     if (isCliProvider(provider)) {
-      const prompt = serializeCompletionForProvider(request.messages, request.tools);
+      const prompt = serializeCompletionForProvider(messagesWithoutBinaryParts(request.messages), request.tools);
       const id = `completion_${crypto.randomUUID()}`;
       const configuredModel = DynamicRouter.resolveTargetModel(provider, mode, undefined, 'main') || undefined;
       const result = await globalCliRuntime.execute(provider, prompt, {
         reqId: id, conversationKey: id, newThread: true, model: configuredModel || undefined,
-        request: {}, signal,
+        request: {}, signal, attachments,
       });
       const message = request.tools?.length
         ? { role: 'assistant' as const, ...parseProviderToolEnvelope(result.text, request.tools) }
@@ -206,9 +276,9 @@ export class CompletionGateway {
     if (ownHosts.has(parsed.hostname) && Number(parsed.port || (parsed.protocol === 'https:' ? 443 : 80)) === this.getPort()) {
       throw new Error('A completion provider cannot point back to the Transgentic gateway.');
     }
-    const model = provider === 'localllm'
+    const model = requestedModel || (provider === 'localllm'
       ? config?.localLLM?.selectedModel || 'default'
-      : DynamicRouter.resolveTargetModel(provider, mode, undefined, 'main') || service?.defaultModelId || 'default';
+      : DynamicRouter.resolveTargetModel(provider, mode, undefined, 'main') || service?.defaultModelId || 'default');
     const body: Record<string, unknown> = { ...request, model, stream: false };
     const response = await fetch(endpoint, {
       method: 'POST', signal,

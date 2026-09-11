@@ -1,8 +1,9 @@
 import { session } from 'electron';
 import { BaseProviderAdapter, ProviderAdapterResult } from './adapterBase.js';
 import { ProviderId, TaskMode } from '../../shared/types.js';
-import { CustomRecipe, toCombinedCssSelector, RecipeModes } from '../../shared/types/recipe.js';
+import { CustomRecipe, normalizeSelectorList, toCombinedCssSelector, RecipeModes, RecipeAttachmentRevealStep, SelectorCandidate } from '../../shared/types/recipe.js';
 import { ProjectMetadata } from '../storage/projectManager.js';
+import type { StagedAttachment } from '../../shared/attachments.js';
 
 /**
  * CustomRecipeAdapter
@@ -214,7 +215,8 @@ export class CustomRecipeAdapter extends BaseProviderAdapter {
     mode: TaskMode,
     project?: ProjectMetadata,
     onChunk?: (chunk: string) => void,
-    abortSignal?: AbortSignal
+    abortSignal?: AbortSignal,
+    attachments: readonly StagedAttachment[] = []
   ): Promise<ProviderAdapterResult> {
     // 1. Ensure WebContents is active
     if (!this.webContents || this.webContents.isDestroyed()) {
@@ -222,7 +224,7 @@ export class CustomRecipeAdapter extends BaseProviderAdapter {
       this.webContents = await globalSessionManager.ensureWebContents(this.providerId);
     }
 
-    const modeKey = mode as keyof RecipeModes;
+    const modeKey = (mode === 'general' || mode === 'writing' || mode === 'coding' ? 'text' : mode) as keyof RecipeModes;
     const modeConfig = this.recipe.response?.modes?.[modeKey];
 
     // 2. Ensure page is loaded (navigating to mode-specific pageUrl if present)
@@ -277,22 +279,37 @@ export class CustomRecipeAdapter extends BaseProviderAdapter {
       } catch {}
     }
 
-    // 4. Dispatch prompt into the recipe's inputPrompt selector (or mode override)
-    const rawInput = modeConfig?.inputSelector || this.recipe.selectors.inputPrompt;
-    const inputSelector = toCombinedCssSelector(rawInput);
-    const inputResult = await this.dispatchRealisticInput(inputSelector, prompt);
+    const upload = modeConfig?.inputAttachments;
+    let attached = false;
+    let submitted = false;
+    try {
+      if (attachments.length) {
+        if (!upload) throw new Error(`Provider "${this.name}" does not declare attachment upload support for ${mode} mode.`);
+        const unsupported = attachments.find(file => {
+          const mimeAccepted = !upload.acceptedMimeTypes?.length || upload.acceptedMimeTypes.some(pattern => pattern === file.mimeType || (pattern.endsWith('/*') && file.mimeType.startsWith(pattern.slice(0, -1))));
+          return !upload.acceptedKinds.includes(file.kind) || !mimeAccepted;
+        });
+        if (unsupported) throw new Error(`Provider "${this.name}" does not accept ${unsupported.mimeType} attachments in ${mode} mode.`);
+        if (!upload.multiple && attachments.length > 1) throw new Error(`Provider "${this.name}" accepts only one attachment in ${mode} mode.`);
+        attached = true;
+        await this.attachFiles(upload, attachments, abortSignal);
+      }
 
-    if (!inputResult?.success) {
-      throw new Error(`Failed to inject prompt into "${this.name}": ${inputResult?.error || 'Target input not found'}`);
+      // Dispatch only after every attachment is present and ready.
+      const rawInput = modeConfig?.inputSelector || this.recipe.selectors.inputPrompt;
+      const inputSelector = toCombinedCssSelector(rawInput);
+      const inputResult = await this.dispatchRealisticInput(inputSelector, prompt);
+      if (!inputResult?.success) throw new Error(`Failed to inject prompt into "${this.name}": ${inputResult?.error || 'Target input not found'}`);
+      await new Promise((r) => setTimeout(r, 250));
+
+      const rawSubmit = modeConfig?.submitSelector || this.recipe.selectors.submitButton;
+      const submitSelector = toCombinedCssSelector(rawSubmit);
+      await this.dispatchRealisticSubmit(submitSelector, inputSelector);
+      submitted = true;
+    } catch (error) {
+      if (attached && !submitted) await this.clearAttachedFiles(upload).catch(() => {});
+      throw error;
     }
-
-    // 4. Humanized delay before submitting to ensure editor updates state
-    await new Promise((r) => setTimeout(r, 250));
-
-    // 5. Submit prompt via single-action idempotent dispatcher
-    const rawSubmit = modeConfig?.submitSelector || this.recipe.selectors.submitButton;
-    const submitSelector = toCombinedCssSelector(rawSubmit);
-    await this.dispatchRealisticSubmit(submitSelector, inputSelector);
 
     // Short buffer for page to register submission and begin streaming
     await new Promise((r) => setTimeout(r, 600));
@@ -304,5 +321,179 @@ export class CustomRecipeAdapter extends BaseProviderAdapter {
       onChunk,
       abortSignal,
     });
+  }
+
+  private async attachFiles(upload: NonNullable<RecipeModes[keyof RecipeModes]>['inputAttachments'], attachments: readonly StagedAttachment[], abortSignal?: AbortSignal): Promise<void> {
+    if (!upload || !this.webContents) throw new Error('Attachment upload controls are unavailable.');
+    if (abortSignal?.aborted) { const error = new Error('Request cancelled.'); error.name = 'AbortError'; throw error; }
+    const debuggerApi = this.webContents.debugger;
+    const attachedHere = !debuggerApi.isAttached();
+    let chooserBackendNodeId: number | undefined;
+    const chooserListener = (_event: unknown, method: string, params: any) => {
+      if (method === 'Page.fileChooserOpened' && typeof params?.backendNodeId === 'number') {
+        chooserBackendNodeId = params.backendNodeId;
+      }
+    };
+    try {
+      if (attachedHere) debuggerApi.attach('1.3');
+      if (typeof debuggerApi.on === 'function') debuggerApi.on('message', chooserListener);
+      await debuggerApi.sendCommand('Page.enable').catch(() => {});
+      await debuggerApi.sendCommand('Page.setInterceptFileChooserDialog', { enabled: true }).catch(() => {});
+
+      let input = await this.findDeclaredFileInput(debuggerApi, upload.fileInput);
+      if (!input.nodeId) {
+        const revealSteps: RecipeAttachmentRevealStep[] = upload.revealSteps?.length
+          ? upload.revealSteps
+          : upload.trigger
+            ? [{ action: 'click', target: { selectors: upload.trigger } }]
+            : [];
+        for (const step of revealSteps) {
+          await this.executeAttachmentRevealStep(step, abortSignal);
+        }
+        if (revealSteps.length && !chooserBackendNodeId) input = await this.waitForDeclaredFileInput(debuggerApi, upload.fileInput, abortSignal);
+      }
+
+      let setFileParams: Record<string, unknown> | undefined;
+      if (chooserBackendNodeId) {
+        const chooserMatches = await this.backendNodeMatchesFileInput(debuggerApi, chooserBackendNodeId, upload.fileInput);
+        if (!chooserMatches) throw new Error(`The file chooser opened by "${this.name}" did not match the declared attachment input.`);
+        setFileParams = { backendNodeId: chooserBackendNodeId };
+      } else if (input.nodeId) {
+        setFileParams = { nodeId: input.nodeId };
+      }
+      if (!setFileParams) {
+        const suffix = input.ambiguous ? ' matched multiple inputs' : ' was not found';
+        throw new Error(`Attachment file input${suffix} for "${this.name}".`);
+      }
+      await debuggerApi.sendCommand('DOM.setFileInputFiles', { ...setFileParams, files: attachments.map(file => file.path) });
+    } finally {
+      await debuggerApi.sendCommand('Page.setInterceptFileChooserDialog', { enabled: false }).catch(() => {});
+      if (typeof debuggerApi.removeListener === 'function') debuggerApi.removeListener('message', chooserListener);
+      if (attachedHere && debuggerApi.isAttached()) debuggerApi.detach();
+    }
+
+    const selector = toCombinedCssSelector(upload.fileInput);
+    const readySelector = toCombinedCssSelector(upload.ready);
+    const deadline = Date.now() + 15_000;
+    while (Date.now() < deadline) {
+      if (abortSignal?.aborted) { const error = new Error('Request cancelled.'); error.name = 'AbortError'; throw error; }
+      const ready = await this.executeScript<boolean>(`(function(){const input=document.querySelector(${JSON.stringify(selector)});if(!input||!input.files||input.files.length!==${attachments.length})return false;const readySel=${JSON.stringify(readySelector)};if(!readySel)return true;const nodes=[...document.querySelectorAll(readySel)];return nodes.length>=${attachments.length}&&nodes.every(el=>{const s=getComputedStyle(el);return s.display!=='none'&&s.visibility!=='hidden'})})()`).catch(() => false);
+      if (ready) return;
+      await new Promise(resolve => setTimeout(resolve, 150));
+    }
+    throw new Error(`Provider "${this.name}" did not confirm attachment readiness before submission.`);
+  }
+
+  private async findDeclaredFileInput(debuggerApi: any, candidate: SelectorCandidate): Promise<{ nodeId?: number; ambiguous?: boolean }> {
+    const documentNode: any = await debuggerApi.sendCommand('DOM.getDocument', { depth: 0, pierce: true });
+    let ambiguous = false;
+    for (const selector of normalizeSelectorList(candidate)) {
+      let queried: any;
+      try {
+        queried = await debuggerApi.sendCommand('DOM.querySelectorAll', { nodeId: documentNode.root.nodeId, selector });
+      } catch {
+        const single = await debuggerApi.sendCommand('DOM.querySelector', { nodeId: documentNode.root.nodeId, selector }).catch(() => ({}));
+        queried = { nodeIds: single?.nodeId ? [single.nodeId] : [] };
+      }
+      const usable: number[] = [];
+      for (const nodeId of queried?.nodeIds || []) {
+        const described: any = await debuggerApi.sendCommand('DOM.describeNode', { nodeId }).catch(() => null);
+        const node = described?.node;
+        const attrs = Array.isArray(node?.attributes) ? node.attributes : [];
+        const attrMap = new Map<string, string>();
+        for (let index = 0; index < attrs.length; index += 2) attrMap.set(String(attrs[index]).toLowerCase(), String(attrs[index + 1] ?? ''));
+        if (String(node?.nodeName || '').toLowerCase() === 'input' && attrMap.get('type')?.toLowerCase() === 'file' && !attrMap.has('disabled')) usable.push(nodeId);
+      }
+      if (usable.length === 1) return { nodeId: usable[0] };
+      if (usable.length > 1) ambiguous = true;
+    }
+    return { ambiguous };
+  }
+
+  private async waitForDeclaredFileInput(debuggerApi: any, candidate: SelectorCandidate, abortSignal?: AbortSignal): Promise<{ nodeId?: number; ambiguous?: boolean }> {
+    const deadline = Date.now() + 5_000;
+    let last: { nodeId?: number; ambiguous?: boolean } = {};
+    while (Date.now() < deadline) {
+      if (abortSignal?.aborted) { const error = new Error('Request cancelled.'); error.name = 'AbortError'; throw error; }
+      last = await this.findDeclaredFileInput(debuggerApi, candidate);
+      if (last.nodeId || last.ambiguous) return last;
+      await new Promise(resolve => setTimeout(resolve, 125));
+    }
+    return last;
+  }
+
+  private async backendNodeMatchesFileInput(debuggerApi: any, backendNodeId: number, candidate: SelectorCandidate): Promise<boolean> {
+    try {
+      const resolved: any = await debuggerApi.sendCommand('DOM.resolveNode', { backendNodeId });
+      if (!resolved?.object?.objectId) return false;
+      const checked: any = await debuggerApi.sendCommand('Runtime.callFunctionOn', {
+        objectId: resolved.object.objectId,
+        functionDeclaration: `function(selectors){return this instanceof HTMLInputElement&&this.type==='file'&&!this.disabled&&selectors.some(selector=>{try{return this.matches(selector)}catch{return false}})}`,
+        arguments: [{ value: normalizeSelectorList(candidate) }],
+        returnByValue: true,
+      });
+      return checked?.result?.value === true;
+    } catch {
+      return false;
+    }
+  }
+
+  private async executeAttachmentRevealStep(step: RecipeAttachmentRevealStep, abortSignal?: AbortSignal): Promise<void> {
+    const deadline = Date.now() + 5_000;
+    while (Date.now() < deadline) {
+      if (abortSignal?.aborted) { const error = new Error('Request cancelled.'); error.name = 'AbortError'; throw error; }
+      const result = await this.executeScript<{ success: boolean; missing?: boolean; ambiguous?: boolean }>(`
+        (function() {
+          const locator = ${JSON.stringify(step.target)};
+          const normalize = value => String(value || '').replace(/\\s+/g, ' ').trim().toLocaleLowerCase();
+          const names = (Array.isArray(locator.name) ? locator.name : locator.name ? [locator.name] : []).map(normalize);
+          const implicitRole = el => {
+            const explicit = el.getAttribute('role');
+            if (explicit) return explicit.toLowerCase();
+            if (el.tagName === 'BUTTON') return 'button';
+            if (el.tagName === 'A' && el.hasAttribute('href')) return 'link';
+            if (el.tagName === 'INPUT' && ['button', 'submit', 'reset'].includes((el.type || '').toLowerCase())) return 'button';
+            return '';
+          };
+          const accessibleNames = el => {
+            const labelledBy = (el.getAttribute('aria-labelledby') || '').split(/\\s+/).filter(Boolean).map(id => document.getElementById(id)?.textContent || '');
+            const associated = el.labels ? Array.from(el.labels).map(label => label.textContent || '') : [];
+            return [el.getAttribute('aria-label'), el.getAttribute('title'), ...labelledBy, ...associated, el.textContent].filter(Boolean).map(normalize);
+          };
+          const visible = el => {
+            const style = getComputedStyle(el);
+            const rect = el.getBoundingClientRect();
+            return style.display !== 'none' && style.visibility !== 'hidden' && Number(style.opacity || 1) !== 0 && rect.width > 0 && rect.height > 0;
+          };
+          const selectorCandidates = Array.isArray(locator.selectors) ? locator.selectors : locator.selectors ? [locator.selectors] : [];
+          const pools = selectorCandidates.length ? selectorCandidates.map(selector => { try { return Array.from(document.querySelectorAll(selector)); } catch { return []; } }) : [Array.from(document.querySelectorAll(locator.role === 'button' ? 'button,[role="button"]' : '[role="' + CSS.escape(locator.role || '') + '"]'))];
+          for (const pool of pools) {
+            const matches = pool.filter(el => {
+              if (locator.role && implicitRole(el) !== String(locator.role).toLowerCase()) return false;
+              if (names.length && !accessibleNames(el).some(value => names.includes(value))) return false;
+              return visible(el) && !el.disabled && el.getAttribute('aria-disabled') !== 'true';
+            });
+            if (matches.length > 1) return { success: false, ambiguous: true };
+            if (matches.length === 1) {
+              matches[0].scrollIntoView({ block: 'nearest', inline: 'nearest' });
+              matches[0].click();
+              return { success: true };
+            }
+          }
+          return { success: false, missing: true };
+        })()
+      `).catch(() => ({ success: false, missing: true } as { success: boolean; missing?: boolean; ambiguous?: boolean }));
+      if (result.success) return;
+      if (result.ambiguous) throw new Error(`Attachment reveal control was ambiguous for "${this.name}".`);
+      await new Promise(resolve => setTimeout(resolve, 125));
+    }
+    throw new Error(`Attachment reveal control was not found for "${this.name}".`);
+  }
+
+  private async clearAttachedFiles(upload?: NonNullable<RecipeModes[keyof RecipeModes]>['inputAttachments']): Promise<void> {
+    if (!upload) return;
+    const cleanup = toCombinedCssSelector(upload.cleanup);
+    const input = toCombinedCssSelector(upload.fileInput);
+    await this.executeScript(`(function(){const cleanup=${JSON.stringify(cleanup)};if(cleanup){for(const el of document.querySelectorAll(cleanup))el.click()}const input=document.querySelector(${JSON.stringify(input)});if(input){try{input.value='';input.dispatchEvent(new Event('input',{bubbles:true}));input.dispatchEvent(new Event('change',{bubbles:true}))}catch{}}try{document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',code:'Escape',bubbles:true}));document.dispatchEvent(new KeyboardEvent('keyup',{key:'Escape',code:'Escape',bubbles:true}))}catch{}})()`);
   }
 }

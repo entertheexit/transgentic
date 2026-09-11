@@ -13,6 +13,7 @@ import {
   ModeRouteConfig,
   normalizeRouteMode,
 } from '../../shared/types.js';
+import type { AttachmentInput, DesktopAttachmentSelection } from '../../shared/attachments.js';
 import {
   Bot,
   Sparkles,
@@ -63,7 +64,8 @@ interface RadialHubProps {
   onSettingsClick?: () => void;
   onLocalLLMClick?: () => void;
   localLLMEnabled?: boolean;
-  onSendPrompt?: (prompt: string) => Promise<any>;
+  onSendPrompt?: (prompt: string, files?: AttachmentInput[]) => Promise<any>;
+  onSelectFiles?: (mode?: TaskMode) => Promise<DesktopAttachmentSelection[]>;
   hasActiveSession?: boolean;
   onClearSession?: () => Promise<void>;
   servicesManifest?: ServicesManifest | null;
@@ -81,43 +83,43 @@ const PROVIDERS_CONFIG: Array<{
   accentColor: string;
   iconColor: string;
 }> = [
-  {
-    id: 'chatgpt',
-    name: 'ChatGPT',
-    providerCompany: 'OpenAI',
-    defaultModel: 'GPT-4o & Reasoning',
-    icon: Bot,
-    accentColor: 'emerald',
-    iconColor: 'text-emerald-400',
-  },
-  {
-    id: 'claude',
-    name: 'Claude',
-    providerCompany: 'Anthropic',
-    defaultModel: 'Claude 3.5 Sonnet',
-    icon: Brain,
-    accentColor: 'amber',
-    iconColor: 'text-amber-400',
-  },
-  {
-    id: 'gemini',
-    name: 'Gemini',
-    providerCompany: 'Google',
-    defaultModel: 'Gemini 2.0 Flash / Pro',
-    icon: Sparkles,
-    accentColor: 'blue',
-    iconColor: 'text-blue-400',
-  },
-  {
-    id: 'grok',
-    name: 'Grok',
-    providerCompany: 'xAI',
-    defaultModel: 'Grok 3 & Vision',
-    icon: Cpu,
-    accentColor: 'purple',
-    iconColor: 'text-purple-400',
-  },
-];
+    {
+      id: 'chatgpt',
+      name: 'ChatGPT',
+      providerCompany: 'OpenAI',
+      defaultModel: 'GPT-4o & Reasoning',
+      icon: Bot,
+      accentColor: 'emerald',
+      iconColor: 'text-emerald-400',
+    },
+    {
+      id: 'claude',
+      name: 'Claude',
+      providerCompany: 'Anthropic',
+      defaultModel: 'Claude 3.5 Sonnet',
+      icon: Brain,
+      accentColor: 'amber',
+      iconColor: 'text-amber-400',
+    },
+    {
+      id: 'gemini',
+      name: 'Gemini',
+      providerCompany: 'Google',
+      defaultModel: 'Gemini 2.0 Flash / Pro',
+      icon: Sparkles,
+      accentColor: 'blue',
+      iconColor: 'text-blue-400',
+    },
+    {
+      id: 'grok',
+      name: 'Grok',
+      providerCompany: 'xAI',
+      defaultModel: 'Grok 3 & Vision',
+      icon: Cpu,
+      accentColor: 'purple',
+      iconColor: 'text-purple-400',
+    },
+  ];
 
 const SAMPLE_PROMPTS = [
   {
@@ -166,6 +168,7 @@ export const RadialHub: React.FC<RadialHubProps> = ({
   onLocalLLMClick,
   localLLMEnabled,
   onSendPrompt,
+  onSelectFiles,
   hasActiveSession,
   onClearSession,
   servicesManifest,
@@ -257,9 +260,9 @@ export const RadialHub: React.FC<RadialHubProps> = ({
   const isBalancedMode = config?.balancedMode ?? config?.coding?.balancedMode ?? true;
   const isAgentGuard = isAgentHaltGuardEnabled(config, coreStatus.activeMode);
 
-  const handleSend = async (prompt: string) => {
+  const handleSend = async (prompt: string, files: AttachmentInput[]) => {
     if (onSendPrompt) {
-      const res = await onSendPrompt(prompt);
+      const res = await onSendPrompt(prompt, files);
       const answerText = typeof res === 'string'
         ? res
         : res?.text || res?.content?.[0]?.text || res?.content?.find((c: any) => c.type === 'text')?.text;
@@ -280,7 +283,7 @@ export const RadialHub: React.FC<RadialHubProps> = ({
         setLatestAnswer(ansObj);
         try {
           localStorage.setItem('transgentic_latest_quick_answer', JSON.stringify(ansObj));
-        } catch {}
+        } catch { }
       }
       return res;
     }
@@ -292,7 +295,7 @@ export const RadialHub: React.FC<RadialHubProps> = ({
       setLatestAnswer(null);
       try {
         localStorage.removeItem('transgentic_latest_quick_answer');
-      } catch {}
+      } catch { }
     }
   };
 
@@ -330,9 +333,10 @@ export const RadialHub: React.FC<RadialHubProps> = ({
   };
 
   return (
-    <div className="flex flex-col h-full justify-between p-4 overflow-y-auto relative w-full max-w-2xl mx-auto">
+    <div className="flex flex-col h-full justify-between py-4 overflow-y-auto relative w-full mx-auto">
       {/* 1. Top Section: MAIN Status Header Card with Dual Toggles & Routes */}
-      <div>
+      <div className="px-4">
+
         <div className="tactile-core-card w-full rounded-xl p-3.5 flex items-center justify-between text-left mb-2 relative">
           <div className="flex-1 min-w-0 pr-2">
             {/* Header Row: MAIN :port Balanced Toggle Agent Guard Toggle */}
@@ -389,9 +393,8 @@ export const RadialHub: React.FC<RadialHubProps> = ({
                       <div className="w-6 h-3.5 bg-slate-700/80 peer-checked:bg-cyan-500 rounded-full transition-colors border border-white/10 shadow-inner"></div>
                       <div className="absolute left-[2px] top-[2px] w-2.5 h-2.5 bg-white rounded-full transition-transform peer-checked:translate-x-2.5 pointer-events-none shadow-sm"></div>
                     </div>
-                    <span className={`text-[10px] font-mono font-semibold tracking-tight transition-colors ${
-                      isBalancedMode ? 'text-cyan-300' : 'text-slate-400 hover:text-slate-300'
-                    }`}>
+                    <span className={`text-[10px] font-mono font-semibold tracking-tight transition-colors ${isBalancedMode ? 'text-cyan-300' : 'text-slate-400 hover:text-slate-300'
+                      }`}>
                       Balanced
                     </span>
                   </label>
@@ -428,9 +431,8 @@ export const RadialHub: React.FC<RadialHubProps> = ({
                       <div className="w-6 h-3.5 bg-slate-700/80 peer-checked:bg-emerald-500 rounded-full transition-colors border border-white/10 shadow-inner"></div>
                       <div className="absolute left-[2px] top-[2px] w-2.5 h-2.5 bg-white rounded-full transition-transform peer-checked:translate-x-2.5 pointer-events-none shadow-sm"></div>
                     </div>
-                    <span className={`text-[10px] font-mono font-semibold tracking-tight transition-colors ${
-                      isAgentGuard ? 'text-emerald-300' : 'text-slate-400 hover:text-slate-300'
-                    }`}>
+                    <span className={`text-[10px] font-mono font-semibold tracking-tight transition-colors ${isAgentGuard ? 'text-emerald-300' : 'text-slate-400 hover:text-slate-300'
+                      }`}>
                       Agent Guard
                     </span>
                   </label>
@@ -495,11 +497,10 @@ export const RadialHub: React.FC<RadialHubProps> = ({
                   onLocalLLMClick();
                 }}
                 title="Local LLM Configuration Hub (Ollama / LM Studio / Custom)"
-                className={`p-2 rounded-xl border transition-all cursor-pointer flex items-center justify-center ${
-                  localLLMEnabled
-                    ? 'bg-blue-500/20 text-blue-300 border-blue-500/40 shadow-[0_0_12px_rgba(59,130,246,0.25)]'
-                    : 'bg-white/5 hover:bg-white/10 text-slate-400 hover:text-slate-200 border-white/10'
-                }`}
+                className={`p-2 rounded-xl border transition-all cursor-pointer flex items-center justify-center ${localLLMEnabled
+                  ? 'bg-blue-500/20 text-blue-300 border-blue-500/40 shadow-[0_0_12px_rgba(59,130,246,0.25)]'
+                  : 'bg-white/5 hover:bg-white/10 text-slate-400 hover:text-slate-200 border-white/10'
+                  }`}
               >
                 <Cpu className={`w-3.5 h-3.5 ${localLLMEnabled ? 'text-blue-300' : 'text-slate-400'}`} />
               </button>
@@ -538,26 +539,32 @@ export const RadialHub: React.FC<RadialHubProps> = ({
           </div>
         </div>
 
-        {/* 2. Middle Section: Quick Task Modes & Prompt Composer (ABOVE Example Prompts) */}
-        <div className="mt-2 space-y-2">
+      </div>
+
+      {/* 2. Middle Section: Quick Task Modes & Prompt Composer (ABOVE Example Prompts) */}
+      <div className="mt-2 space-y-2">
+        <div className="px-4">
           <ModeSelector
             activeMode={coreStatus.activeMode}
             onChange={onModeChange}
           />
-
-          <QuickPromptBar
-            onSendPrompt={handleSend}
-            isProcessing={coreStatus.state === 'processing'}
-            hasActiveSession={hasActiveSession}
-            onClearSession={handleClear}
-            hasAnswer={!!currentAnswer}
-            onViewAnswer={() => setShowAnswerModal(true)}
-            isServiceDeselected={!isModeServiceSelected}
-            activeMode={coreStatus.activeMode}
-          />
         </div>
 
-        {/* 3. Sample Prompt Shortcuts / Guidance for External Agents */}
+        <QuickPromptBar
+          onSendPrompt={handleSend}
+          onSelectFiles={onSelectFiles}
+          isProcessing={coreStatus.state === 'processing'}
+          hasActiveSession={hasActiveSession}
+          onClearSession={handleClear}
+          hasAnswer={!!currentAnswer}
+          onViewAnswer={() => setShowAnswerModal(true)}
+          isServiceDeselected={!isModeServiceSelected}
+          activeMode={coreStatus.activeMode}
+        />
+      </div>
+
+      {/* 3. Sample Prompt Shortcuts / Guidance for External Agents */}
+      <div className="px-4">
         <div className="bg-black/30 border border-white/5 rounded-xl p-2 space-y-1.5 mt-2">
           <div className="flex items-center justify-between">
             <span className="text-[9px] font-mono uppercase tracking-wider text-slate-400 font-semibold flex items-center gap-1">
@@ -604,7 +611,7 @@ export const RadialHub: React.FC<RadialHubProps> = ({
       </div>
 
       {/* 3. Bottom Section: Clean Stack of AI Service Listed Buttons */}
-      <div className="flex-1 flex flex-col gap-2 justify-start my-2">
+      <div className="flex-1 flex flex-col px-4 gap-2 justify-start my-2">
         {visibleProviders.map(({ id, name, defaultModel }) => {
           const sEntry = servicesManifest?.services?.[id];
           const isApiProvider = sEntry?.providerType === 'api' || id.startsWith('api_');
@@ -638,27 +645,24 @@ export const RadialHub: React.FC<RadialHubProps> = ({
                 soundFx.playDrawerSlide();
                 onProviderClick(id);
               }}
-              className={`provider-list-card w-full p-2.5 rounded-xl flex items-center justify-between transition-all ${
-                isApiProvider
-                  ? 'cursor-default'
-                  : 'cursor-pointer group'
-              } ${
-                isDevDisabled
+              className={`provider-list-card w-full p-2.5 rounded-xl flex items-center justify-between transition-all ${isApiProvider
+                ? 'cursor-default'
+                : 'cursor-pointer group'
+                } ${isDevDisabled
                   ? 'border-rose-500/20 bg-rose-500/[0.02] opacity-60'
                   : isAuthed
-                  ? `border-white/10 ${theme.hoverBorderClass}`
-                  : 'border-white/5 opacity-80'
-              }`}
+                    ? `border-white/10 ${theme.hoverBorderClass}`
+                    : 'border-white/5 opacity-80'
+                }`}
             >
               {/* Left Column: Icon + Service Name + Status subtitle */}
               <div className="flex items-center gap-3">
-                <div className={`w-8 h-8 rounded-xl service-icon-box flex items-center justify-center ${
-                  isDevDisabled
-                    ? 'bg-rose-500/10 border-rose-500/30'
-                    : isAuthed
+                <div className={`w-8 h-8 rounded-xl service-icon-box flex items-center justify-center ${isDevDisabled
+                  ? 'bg-rose-500/10 border-rose-500/30'
+                  : isAuthed
                     ? `${theme.bgClass} ${theme.borderClass} border`
                     : ''
-                }`}>
+                  }`}>
                   <Icon className={`w-4 h-4 ${isDevDisabled ? 'text-rose-400' : isAuthed ? theme.textClass : 'text-slate-200'}`} />
                 </div>
                 <div>
@@ -757,209 +761,29 @@ export const RadialHub: React.FC<RadialHubProps> = ({
       </div>
 
       {/* 4. Balanced Agentic Mode Info Modal (Centered Vertically & Horizontally) */}
-      {showInfoModal && (
-        <div
-          onClick={() => {
-            soundFx.playClick();
-            setShowInfoModal(false);
-          }}
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-150"
-        >
+      {
+        showInfoModal && (
           <div
-            onClick={(e) => e.stopPropagation()}
-            className="relative w-full max-w-sm bg-[#0c1017] border border-cyan-500/40 rounded-xl shadow-[0_20px_50px_rgba(0,0,0,0.95)] p-5 space-y-3.5 animate-in zoom-in-95 duration-150 text-left"
+            onClick={() => {
+              soundFx.playClick();
+              setShowInfoModal(false);
+            }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-150"
           >
-            {/* Modal Header */}
-            <div className="flex items-center justify-between border-b border-white/10 pb-2.5">
-              <div className="flex items-center gap-2 text-cyan-300 font-mono font-bold text-xs uppercase tracking-wider">
-                <Zap className="w-4 h-4 text-cyan-400" />
-                <span>Balanced Agentic Mode</span>
-              </div>
-              <button
-                onClick={() => {
-                  soundFx.playClick();
-                  setShowInfoModal(false);
-                }}
-                className="p-1 rounded-lg text-slate-400 hover:text-slate-100 hover:bg-white/10 transition-colors cursor-pointer"
-                title="Close"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            {/* Modal Body */}
-            <div className="space-y-2.5 text-slate-200 text-xs leading-relaxed font-sans">
-              <p>
-                <strong className="text-cyan-300 font-mono">Balanced Agentic Mode</strong> establishes an optimal division of labor between your local developer agent (<span className="text-cyan-300 font-mono font-semibold">Codex</span>, <span className="text-purple-300 font-mono font-semibold">Antigravity</span>, <span className="text-amber-300 font-mono font-semibold">Cursor</span>), <strong className="text-teal-300 font-mono">Web AI Services</strong>, and <strong className="text-emerald-300 font-mono">Local LLMs</strong>.
-              </p>
-              <div className="p-2.5 rounded-lg bg-white/5 border border-white/10 space-y-1.5 text-[11px]">
-                <div className="font-semibold text-cyan-300 font-mono uppercase tracking-wider text-[10px]">
-                  Web AI Services (Claude, ChatGPT, Gemini, Grok)
+            <div
+              onClick={(e) => e.stopPropagation()}
+              className="relative w-full max-w-sm bg-[#0c1017] border border-cyan-500/40 rounded-xl shadow-[0_20px_50px_rgba(0,0,0,0.95)] p-5 space-y-3.5 animate-in zoom-in-95 duration-150 text-left"
+            >
+              {/* Modal Header */}
+              <div className="flex items-center justify-between border-b border-white/10 pb-2.5">
+                <div className="flex items-center gap-2 text-cyan-300 font-mono font-bold text-xs uppercase tracking-wider">
+                  <Zap className="w-4 h-4 text-cyan-400" />
+                  <span>Balanced Agentic Mode</span>
                 </div>
-                <p className="text-slate-300">
-                  Agentic IDEs handle heavy continuous execution (file edits, builds, test suites). Transgentic MCP handles strategic architectural planning, deep reasoning, and memory recall, minimizing webview spam and protecting cloud rate limits.
-                </p>
-              </div>
-              <div className="p-2.5 rounded-lg bg-white/5 border border-emerald-500/20 space-y-1.5 text-[11px]">
-                <div className="font-semibold text-emerald-300 font-mono uppercase tracking-wider text-[10px]">
-                  Local LLM Micro-Tasks (Ollama, LM Studio)
-                </div>
-                <p className="text-slate-300">
-                  Local LLMs assist in fast, zero-quota <strong>micro-tasks</strong> (regex generation, TypeScript types from JSON, docstrings, unit test stubs) completely bypassing webview DOM manipulation. Complex planning and deep reasoning are retained directly by your agentic IDE.
-                </p>
-              </div>
-            </div>
-
-            {/* Modal Footer */}
-            <div className="pt-2 flex justify-end">
-              <button
-                onClick={() => {
-                  soundFx.playClick();
-                  setShowInfoModal(false);
-                }}
-                className="px-4 py-1.5 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-500/40 font-mono text-xs font-semibold transition-all cursor-pointer shadow-[0_0_12px_rgba(6,182,212,0.2)]"
-              >
-                Got it
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* 5. Agent Halt Guard Info Modal */}
-      {showAgentGuardModal && (
-        <div
-          onClick={() => {
-            soundFx.playClick();
-            setShowAgentGuardModal(false);
-          }}
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-150"
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            className="relative w-full max-w-sm bg-[#0c1017] border border-emerald-500/40 rounded-xl shadow-[0_20px_50px_rgba(0,0,0,0.95)] p-5 space-y-3.5 animate-in zoom-in-95 duration-150 text-left"
-          >
-            {/* Modal Header */}
-            <div className="flex items-center justify-between border-b border-white/10 pb-2.5">
-              <div className="flex items-center gap-2 text-emerald-300 font-mono font-bold text-xs uppercase tracking-wider">
-                <ShieldCheck className="w-4 h-4 text-emerald-400" />
-                <span>Agent Halt Guard</span>
-              </div>
-              <button
-                onClick={() => {
-                  soundFx.playClick();
-                  setShowAgentGuardModal(false);
-                }}
-                className="p-1 rounded-lg text-slate-400 hover:text-slate-100 hover:bg-white/10 transition-colors cursor-pointer"
-                title="Close"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            {/* Modal Body */}
-            <div className="space-y-2.5 text-slate-200 text-xs leading-relaxed font-sans">
-              <p>
-                <strong className="text-emerald-300 font-mono">Agent Halt Guard</strong> stops autonomous agents (<span className="text-cyan-300 font-mono font-semibold">Codex</span>, <span className="text-purple-300 font-mono font-semibold">Antigravity</span>, <span className="text-amber-300 font-mono font-semibold">Claude Code</span>) from burning LLM context tokens on rate-limited providers.
-              </p>
-              <div className="p-2.5 rounded-lg bg-white/5 border border-white/5 space-y-1.5 text-[11.5px]">
-                <div className="flex flex-col gap-0.5 text-emerald-300">
-                  <span className="font-bold font-mono text-[11px] text-emerald-400">• Enabled (Default):</span>
-                  <span className="text-slate-300">Proceeds through fallback chains. If all fallbacks fail due to rate limits, it immediately halts tool execution and directs the agent to stop and consult the human user.</span>
-                </div>
-                <div className="flex flex-col gap-0.5 text-slate-400 mt-1">
-                  <span className="font-bold font-mono text-[11px] text-slate-300">• Disabled:</span>
-                  <span className="text-slate-300">Permits the agent to continue its autonomous retry loop according to its standard client policies.</span>
-                </div>
-              </div>
-              <p className="text-[10.5px] text-slate-400 font-mono">
-                Current mode: <strong className="text-slate-200 font-semibold">{coreStatus.activeMode.toUpperCase()}</strong> ({isAgentGuard ? 'Active' : 'Disabled'})
-              </p>
-            </div>
-
-            {/* Modal Footer */}
-            <div className="pt-2 flex justify-end">
-              <button
-                onClick={() => {
-                  soundFx.playClick();
-                  setShowAgentGuardModal(false);
-                }}
-                className="px-4 py-1.5 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 font-mono text-xs font-semibold transition-all cursor-pointer shadow-[0_0_12px_rgba(16,185,129,0.2)]"
-              >
-                Got it
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* 5. Quick Prompt AI Response Modal */}
-      {showAnswerModal && currentAnswer && (
-        <div
-          onClick={() => {
-            soundFx.playClick();
-            setShowAnswerModal(false);
-          }}
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-150"
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            className="relative w-full max-w-lg max-h-[85vh] bg-[#0c1017] border border-cyan-500/40 rounded-xl shadow-[0_20px_50px_rgba(0,0,0,0.95)] flex flex-col overflow-hidden animate-in zoom-in-95 duration-150 text-left"
-          >
-            {/* Modal Header */}
-            <div className="flex items-center justify-between px-5 py-3 border-b border-white/10 bg-black/40 shrink-0 gap-2">
-              <div className="flex items-center gap-2">
-                <div className="w-6 h-6 rounded-lg bg-cyan-500/20 border border-cyan-500/40 flex items-center justify-center text-cyan-400">
-                  <MessageSquareText className="w-3.5 h-3.5" />
-                </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-cyan-300 font-mono font-bold text-xs uppercase tracking-wider">
-                      Answer
-                    </span>
-                    {currentAnswer.provider && (
-                      <span className="text-[9.5px] font-mono text-slate-300 bg-white/10 px-1.5 py-0.5 rounded border border-white/10">
-                        {getProviderDisplayName(currentAnswer.provider, servicesManifest, providers)}
-                      </span>
-                    )}
-                    {currentAnswer.model && (
-                      <span className="text-[9.5px] font-mono text-purple-300 bg-purple-500/20 px-1.5 py-0.5 rounded border border-purple-500/30 flex items-center gap-1">
-                        <Sparkles className="w-2.5 h-2.5" />
-                        <span>{currentAnswer.model}</span>
-                      </span>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-1.5">
                 <button
                   onClick={() => {
                     soundFx.playClick();
-                    navigator.clipboard.writeText(currentAnswer.response);
-                    setCopiedAnswer(true);
-                    setTimeout(() => setCopiedAnswer(false), 2500);
-                  }}
-                  className="flex items-center gap-1 px-2 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 text-[10px] font-mono border border-white/10 transition-all cursor-pointer"
-                  title="Copy full response to clipboard"
-                >
-                  {copiedAnswer ? (
-                    <>
-                      <Check className="w-3 h-3 text-emerald-400" />
-                      <span className="text-emerald-400">Copied</span>
-                    </>
-                  ) : (
-                    <>
-                      <Copy className="w-3 h-3 text-slate-400" />
-                      <span>Copy</span>
-                    </>
-                  )}
-                </button>
-
-                <button
-                  onClick={() => {
-                    soundFx.playClick();
-                    setShowAnswerModal(false);
+                    setShowInfoModal(false);
                   }}
                   className="p-1 rounded-lg text-slate-400 hover:text-slate-100 hover:bg-white/10 transition-colors cursor-pointer"
                   title="Close"
@@ -967,74 +791,260 @@ export const RadialHub: React.FC<RadialHubProps> = ({
                   <X className="w-4 h-4" />
                 </button>
               </div>
-            </div>
 
-            {/* Modal Body: Scrollable */}
-            <div className="flex-1 overflow-y-auto p-5 space-y-3.5 font-sans select-text">
-              {/* User Prompt Box */}
-              {currentAnswer.prompt && (
-                <div className="space-y-1">
-                  <div className="text-[9px] font-mono uppercase tracking-wider text-slate-500 font-semibold">
-                    Prompt
+              {/* Modal Body */}
+              <div className="space-y-2.5 text-slate-200 text-xs leading-relaxed font-sans">
+                <p>
+                  <strong className="text-cyan-300 font-mono">Balanced Agentic Mode</strong> establishes an optimal division of labor between your local developer agent (<span className="text-cyan-300 font-mono font-semibold">Codex</span>, <span className="text-purple-300 font-mono font-semibold">Antigravity</span>, <span className="text-amber-300 font-mono font-semibold">Cursor</span>), <strong className="text-teal-300 font-mono">Web AI Services</strong>, and <strong className="text-emerald-300 font-mono">Local LLMs</strong>.
+                </p>
+                <div className="p-2.5 rounded-lg bg-white/5 border border-white/10 space-y-1.5 text-[11px]">
+                  <div className="font-semibold text-cyan-300 font-mono uppercase tracking-wider text-[10px]">
+                    Web AI Services (Claude, ChatGPT, Gemini, Grok)
                   </div>
-                  <div className="text-xs text-slate-300 font-mono bg-black/60 px-3 py-2 rounded-xl border border-white/10 break-words select-text">
-                    {currentAnswer.prompt}
+                  <p className="text-slate-300">
+                    Agentic IDEs handle heavy continuous execution (file edits, builds, test suites). Transgentic MCP handles strategic architectural planning, deep reasoning, and memory recall, minimizing webview spam and protecting cloud rate limits.
+                  </p>
+                </div>
+                <div className="p-2.5 rounded-lg bg-white/5 border border-emerald-500/20 space-y-1.5 text-[11px]">
+                  <div className="font-semibold text-emerald-300 font-mono uppercase tracking-wider text-[10px]">
+                    Local LLM Micro-Tasks (Ollama, LM Studio)
                   </div>
-                </div>
-              )}
-
-              {/* AI Answer Text */}
-              <div className="space-y-1">
-                <div className="text-[9px] font-mono uppercase tracking-wider text-cyan-400 font-semibold flex items-center justify-between">
-                  <span>Response</span>
-                  {currentAnswer.timestamp && (
-                    <span className="text-[9px] font-mono text-slate-500 font-normal">
-                      {new Date(currentAnswer.timestamp).toLocaleTimeString()}
-                    </span>
-                  )}
-                </div>
-                <div className="text-xs text-slate-100 font-mono leading-relaxed bg-black/40 p-3.5 rounded-xl border border-cyan-500/20 break-words whitespace-pre-wrap select-text selection:bg-cyan-500 selection:text-black">
-                  {currentAnswer.response}
+                  <p className="text-slate-300">
+                    Local LLMs assist in fast, zero-quota <strong>micro-tasks</strong> (regex generation, TypeScript types from JSON, docstrings, unit test stubs) completely bypassing webview DOM manipulation. Complex planning and deep reasoning are retained directly by your agentic IDE.
+                  </p>
                 </div>
               </div>
 
-              {/* Media Preview if currentAnswer has mediaPath or local path in text */}
-              {(() => {
-                const effectiveMediaPath = extractMediaPath(currentAnswer.mediaPath, currentAnswer.response);
-                if (!effectiveMediaPath) return null;
-                return (
-                  <div className="space-y-1.5 pt-1">
-                    <div className="text-[9px] font-mono uppercase tracking-wider text-purple-400 font-semibold flex items-center gap-1">
-                      <ImageIcon className="w-3 h-3" />
-                      <span>Generated Media Asset</span>
-                    </div>
-                    <MediaPreview path={effectiveMediaPath} />
-                  </div>
-                );
-              })()}
-            </div>
-
-            {/* Modal Footer */}
-            <div className="px-5 py-2.5 border-t border-white/10 bg-black/30 flex items-center justify-between shrink-0">
-              <div className="text-[10px] font-mono text-slate-500">
-                {currentAnswer.response ? `${currentAnswer.response.length} characters` : ''}
-              </div>
-
-              <div className="flex items-center gap-2">
+              {/* Modal Footer */}
+              <div className="pt-2 flex justify-end">
                 <button
                   onClick={() => {
                     soundFx.playClick();
-                    setShowAnswerModal(false);
+                    setShowInfoModal(false);
                   }}
                   className="px-4 py-1.5 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-500/40 font-mono text-xs font-semibold transition-all cursor-pointer shadow-[0_0_12px_rgba(6,182,212,0.2)]"
                 >
-                  Close
+                  Got it
                 </button>
               </div>
             </div>
           </div>
-        </div>
-      )}
-    </div>
+        )
+      }
+
+      {/* 5. Agent Halt Guard Info Modal */}
+      {
+        showAgentGuardModal && (
+          <div
+            onClick={() => {
+              soundFx.playClick();
+              setShowAgentGuardModal(false);
+            }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-150"
+          >
+            <div
+              onClick={(e) => e.stopPropagation()}
+              className="relative w-full max-w-sm bg-[#0c1017] border border-emerald-500/40 rounded-xl shadow-[0_20px_50px_rgba(0,0,0,0.95)] p-5 space-y-3.5 animate-in zoom-in-95 duration-150 text-left"
+            >
+              {/* Modal Header */}
+              <div className="flex items-center justify-between border-b border-white/10 pb-2.5">
+                <div className="flex items-center gap-2 text-emerald-300 font-mono font-bold text-xs uppercase tracking-wider">
+                  <ShieldCheck className="w-4 h-4 text-emerald-400" />
+                  <span>Agent Halt Guard</span>
+                </div>
+                <button
+                  onClick={() => {
+                    soundFx.playClick();
+                    setShowAgentGuardModal(false);
+                  }}
+                  className="p-1 rounded-lg text-slate-400 hover:text-slate-100 hover:bg-white/10 transition-colors cursor-pointer"
+                  title="Close"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Modal Body */}
+              <div className="space-y-2.5 text-slate-200 text-xs leading-relaxed font-sans">
+                <p>
+                  <strong className="text-emerald-300 font-mono">Agent Halt Guard</strong> stops autonomous agents (<span className="text-cyan-300 font-mono font-semibold">Codex</span>, <span className="text-purple-300 font-mono font-semibold">Antigravity</span>, <span className="text-amber-300 font-mono font-semibold">Claude Code</span>) from burning LLM context tokens on rate-limited providers.
+                </p>
+                <div className="p-2.5 rounded-lg bg-white/5 border border-white/5 space-y-1.5 text-[11.5px]">
+                  <div className="flex flex-col gap-0.5 text-emerald-300">
+                    <span className="font-bold font-mono text-[11px] text-emerald-400">• Enabled (Default):</span>
+                    <span className="text-slate-300">Proceeds through fallback chains. If all fallbacks fail due to rate limits, it immediately halts tool execution and directs the agent to stop and consult the human user.</span>
+                  </div>
+                  <div className="flex flex-col gap-0.5 text-slate-400 mt-1">
+                    <span className="font-bold font-mono text-[11px] text-slate-300">• Disabled:</span>
+                    <span className="text-slate-300">Permits the agent to continue its autonomous retry loop according to its standard client policies.</span>
+                  </div>
+                </div>
+                <p className="text-[10.5px] text-slate-400 font-mono">
+                  Current mode: <strong className="text-slate-200 font-semibold">{coreStatus.activeMode.toUpperCase()}</strong> ({isAgentGuard ? 'Active' : 'Disabled'})
+                </p>
+              </div>
+
+              {/* Modal Footer */}
+              <div className="pt-2 flex justify-end">
+                <button
+                  onClick={() => {
+                    soundFx.playClick();
+                    setShowAgentGuardModal(false);
+                  }}
+                  className="px-4 py-1.5 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 font-mono text-xs font-semibold transition-all cursor-pointer shadow-[0_0_12px_rgba(16,185,129,0.2)]"
+                >
+                  Got it
+                </button>
+              </div>
+            </div>
+          </div>
+        )
+      }
+
+      {/* 5. Quick Prompt AI Response Modal */}
+      {
+        showAnswerModal && currentAnswer && (
+          <div
+            onClick={() => {
+              soundFx.playClick();
+              setShowAnswerModal(false);
+            }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-150"
+          >
+            <div
+              onClick={(e) => e.stopPropagation()}
+              className="relative w-full max-w-lg max-h-[85vh] bg-[#0c1017] border border-cyan-500/40 rounded-xl shadow-[0_20px_50px_rgba(0,0,0,0.95)] flex flex-col overflow-hidden animate-in zoom-in-95 duration-150 text-left"
+            >
+              {/* Modal Header */}
+              <div className="flex items-center justify-between px-5 py-3 border-b border-white/10 bg-black/40 shrink-0 gap-2">
+                <div className="flex items-center gap-2">
+                  <div className="w-6 h-6 rounded-lg bg-cyan-500/20 border border-cyan-500/40 flex items-center justify-center text-cyan-400">
+                    <MessageSquareText className="w-3.5 h-3.5" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-cyan-300 font-mono font-bold text-xs uppercase tracking-wider">
+                        Answer
+                      </span>
+                      {currentAnswer.provider && (
+                        <span className="text-[9.5px] font-mono text-slate-300 bg-white/10 px-1.5 py-0.5 rounded border border-white/10">
+                          {getProviderDisplayName(currentAnswer.provider, servicesManifest, providers)}
+                        </span>
+                      )}
+                      {currentAnswer.model && (
+                        <span className="text-[9.5px] font-mono text-purple-300 bg-purple-500/20 px-1.5 py-0.5 rounded border border-purple-500/30 flex items-center gap-1">
+                          <Sparkles className="w-2.5 h-2.5" />
+                          <span>{currentAnswer.model}</span>
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-1.5">
+                  <button
+                    onClick={() => {
+                      soundFx.playClick();
+                      navigator.clipboard.writeText(currentAnswer.response);
+                      setCopiedAnswer(true);
+                      setTimeout(() => setCopiedAnswer(false), 2500);
+                    }}
+                    className="flex items-center gap-1 px-2 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 text-[10px] font-mono border border-white/10 transition-all cursor-pointer"
+                    title="Copy full response to clipboard"
+                  >
+                    {copiedAnswer ? (
+                      <>
+                        <Check className="w-3 h-3 text-emerald-400" />
+                        <span className="text-emerald-400">Copied</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-3 h-3 text-slate-400" />
+                        <span>Copy</span>
+                      </>
+                    )}
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      soundFx.playClick();
+                      setShowAnswerModal(false);
+                    }}
+                    className="p-1 rounded-lg text-slate-400 hover:text-slate-100 hover:bg-white/10 transition-colors cursor-pointer"
+                    title="Close"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Modal Body: Scrollable */}
+              <div className="flex-1 overflow-y-auto p-5 space-y-3.5 font-sans select-text">
+                {/* User Prompt Box */}
+                {currentAnswer.prompt && (
+                  <div className="space-y-1">
+                    <div className="text-[9px] font-mono uppercase tracking-wider text-slate-500 font-semibold">
+                      Prompt
+                    </div>
+                    <div className="text-xs text-slate-300 font-mono bg-black/60 px-3 py-2 rounded-xl border border-white/10 break-words select-text">
+                      {currentAnswer.prompt}
+                    </div>
+                  </div>
+                )}
+
+                {/* AI Answer Text */}
+                <div className="space-y-1">
+                  <div className="text-[9px] font-mono uppercase tracking-wider text-cyan-400 font-semibold flex items-center justify-between">
+                    <span>Response</span>
+                    {currentAnswer.timestamp && (
+                      <span className="text-[9px] font-mono text-slate-500 font-normal">
+                        {new Date(currentAnswer.timestamp).toLocaleTimeString()}
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-xs text-slate-100 font-mono leading-relaxed bg-black/40 p-3.5 rounded-xl border border-cyan-500/20 break-words whitespace-pre-wrap select-text selection:bg-cyan-500 selection:text-black">
+                    {currentAnswer.response}
+                  </div>
+                </div>
+
+                {/* Media Preview if currentAnswer has mediaPath or local path in text */}
+                {(() => {
+                  const effectiveMediaPath = extractMediaPath(currentAnswer.mediaPath, currentAnswer.response);
+                  if (!effectiveMediaPath) return null;
+                  return (
+                    <div className="space-y-1.5 pt-1">
+                      <div className="text-[9px] font-mono uppercase tracking-wider text-purple-400 font-semibold flex items-center gap-1">
+                        <ImageIcon className="w-3 h-3" />
+                        <span>Generated Media Asset</span>
+                      </div>
+                      <MediaPreview path={effectiveMediaPath} />
+                    </div>
+                  );
+                })()}
+              </div>
+
+              {/* Modal Footer */}
+              <div className="px-5 py-2.5 border-t border-white/10 bg-black/30 flex items-center justify-between shrink-0">
+                <div className="text-[10px] font-mono text-slate-500">
+                  {currentAnswer.response ? `${currentAnswer.response.length} characters` : ''}
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => {
+                      soundFx.playClick();
+                      setShowAnswerModal(false);
+                    }}
+                    className="px-4 py-1.5 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-500/40 font-mono text-xs font-semibold transition-all cursor-pointer shadow-[0_0_12px_rgba(6,182,212,0.2)]"
+                  >
+                    Close
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )
+      }
+    </div >
   );
 };

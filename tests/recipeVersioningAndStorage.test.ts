@@ -186,6 +186,7 @@ describe('Recipe Versioning, Storage & Self-Healing Tests', () => {
       const newSelectors = {
         inputPrompt: 'div[contenteditable="true"].repaired-chat-input',
         submitButton: 'button[data-testid="repaired-send-button"]',
+        'attachment.text.fileInput': 'input[data-testid="repaired-file-input"]',
       };
 
       const healResult = await recipeManager.healRecipeSelectors('chatgpt', newSelectors, 'localllm');
@@ -201,6 +202,8 @@ describe('Recipe Versioning, Storage & Self-Healing Tests', () => {
       const inputSelector = healResult.recipe.selectors.inputPrompt;
       const primaryInput = Array.isArray(inputSelector) ? inputSelector[0] : inputSelector;
       expect(primaryInput).toBe(newSelectors.inputPrompt);
+      const fileInput = healResult.recipe.response.modes.text.inputAttachments?.fileInput;
+      expect(Array.isArray(fileInput) ? fileInput[0] : fileInput).toBe(newSelectors['attachment.text.fileInput']);
 
       // Verify file saved in Recipes/Healed/chatgpt.json
       const healedFilePath = path.join(tempBaseDir, 'Recipes', 'Healed', 'chatgpt.json');

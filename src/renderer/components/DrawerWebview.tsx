@@ -161,13 +161,26 @@ Generate a valid Transgentic Custom Recipe JSON conforming to this schema:
     "modelSwitcher": "CSS selector (optional)",
     "stopButton": "CSS selector (optional)"
   },
-  "responseStructure": {
-    "textSelector": "CSS selector"
+  "response": {
+    "container": "CSS selector for response container",
+    "textSelector": "CSS selector for response text",
+    "modes": {
+      "text": {
+        "enabled": true,
+        "mediaKind": "text",
+        "inputAttachments": {
+          "fileInput": "Observed input[type=file] selector",
+          "revealSteps": [{ "action": "click", "target": { "selectors": "Stable CSS fallback", "role": "button", "name": ["Exact accessible label"] } }],
+          "acceptedKinds": ["image", "document"],
+          "multiple": true
+        }
+      }
+    }
   },
-  "modes": ["general", "coding"],
   "author": "Transgentic Assistant"
 }
 
+Only include inputAttachments when upload controls or a native file input are present in the supplied DOM. Store only the minimum reveal clicks and avoid generated framework IDs.
 Respond ONLY with valid JSON.`;
 
       await navigator.clipboard.writeText(prompt);
@@ -694,6 +707,20 @@ Respond ONLY with valid JSON.`;
                         (healingReport?.landmarks?.modelDropdownTrigger?.found ?? healingReport?.landmarks?.modelDropdownTrigger?.exists) ? 'text-emerald-400 bg-emerald-500/10' : 'text-slate-500 bg-white/5'
                       }`}>
                         {(healingReport?.landmarks?.modelDropdownTrigger?.found ?? healingReport?.landmarks?.modelDropdownTrigger?.exists) ? 'HEALTHY' : 'NONE'}
+                      </span>
+                    </div>
+                    <div className="p-2 rounded-lg bg-black/50 border border-white/5 flex items-center justify-between col-span-2">
+                      <span className="text-slate-300">Attachment Upload Flow:</span>
+                      <span className={`px-1.5 py-0.2 rounded font-bold ${
+                        !healingReport?.attachmentLandmarks || Object.keys(healingReport.attachmentLandmarks).length === 0
+                          ? 'text-slate-500 bg-white/5'
+                          : Object.values(healingReport.attachmentLandmarks).every((item: any) => item?.found)
+                            ? 'text-emerald-400 bg-emerald-500/10'
+                            : 'text-rose-400 bg-rose-500/10'
+                      }`}>
+                        {!healingReport?.attachmentLandmarks || Object.keys(healingReport.attachmentLandmarks).length === 0
+                          ? 'NOT DECLARED'
+                          : Object.values(healingReport.attachmentLandmarks).every((item: any) => item?.found) ? 'HEALTHY' : 'REPAIR NEEDED'}
                       </span>
                     </div>
                   </div>

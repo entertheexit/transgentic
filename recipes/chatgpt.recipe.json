@@ -57,12 +57,14 @@
       "text": {
         "enabled": true,
         "contentSelector": ".response-content-markdown, .markdown, .prose",
-        "mediaKind": "text"
+        "mediaKind": "text",
+        "inputAttachments": { "fileInput": "input[type=\"file\"]", "acceptedKinds": ["image", "document"], "multiple": true }
       },
       "image": {
         "enabled": true,
         "contentSelector": "img[src*=\"backend-api/estuary/content\"], img[src*=\"estuary/content\"], img[alt*=\"Generated image\" i], div[class*=\"imagegen\"] img, div[id^=\"image-\"] img, img[src*=\"dall-e\"], img[src*=\"oaiusercontent\"], img.dall-e-image",
-        "mediaKind": "image"
+        "mediaKind": "image",
+        "inputAttachments": { "fileInput": "input[type=\"file\"]", "acceptedKinds": ["image"], "multiple": true }
       },
       "video": {
         "enabled": true,

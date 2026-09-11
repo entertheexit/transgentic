@@ -36,6 +36,7 @@ const api = {
   toggleService: (providerId: string, serviceEnabled: boolean) => ipcRenderer.invoke('models:toggle-service', { providerId, serviceEnabled }),
   resyncModels: (providerId?: string) => ipcRenderer.invoke('models:resync', providerId),
   selectDirectory: () => ipcRenderer.invoke('settings:select-directory'),
+  selectQuickPromptFiles: (mode?: string) => ipcRenderer.invoke('quick-prompt:select-files', { mode }),
   applyPort: (newPort: number) => ipcRenderer.invoke('settings:apply-port', newPort),
   getNetworkInterfaces: () => ipcRenderer.invoke('settings:get-network-interfaces'),
   applyNetworkAccess: (lanEnabled: boolean, advertisedAddress: string) => ipcRenderer.invoke('settings:apply-network-access', { lanEnabled, advertisedAddress }),
@@ -77,17 +78,17 @@ const api = {
   addCliWorkspace: () => ipcRenderer.invoke('cli:add-workspace'),
   updateCliWorkspace: (id: string, updates: any) => ipcRenderer.invoke('cli:update-workspace', id, updates),
   removeCliWorkspace: (id: string) => ipcRenderer.invoke('cli:remove-workspace', id),
-  executePrompt: (prompt: string, mode?: string, provider?: string, model?: string, cliRequest?: import('../../shared/cli.js').CliRequestOptions) =>
-    ipcRenderer.invoke('execute-prompt', { prompt, mode, provider, model, cliRequest }),
+  executePrompt: (prompt: string, mode?: string, provider?: string, model?: string, cliRequest?: import('../../shared/cli.js').CliRequestOptions, files?: import('../../shared/attachments.js').AttachmentInput[]) =>
+    ipcRenderer.invoke('execute-prompt', { prompt, mode, provider, model, cliRequest, files }),
   getThreadSessions: () => ipcRenderer.invoke('threads:get-sessions'),
   clearThreadSessions: (params?: any) => ipcRenderer.invoke('threads:clear-sessions', params),
   getServicesManifest: () => ipcRenderer.invoke('services:get-manifest'),
   toggleExperimentalService: (serviceId: string, enabled: boolean) => ipcRenderer.invoke('services:toggle-experimental', { serviceId, enabled }),
   updateServiceManifest: (serviceId: string, updates: any) => ipcRenderer.invoke('services:update-manifest', { serviceId, updates }),
   getServiceConflicts: () => ipcRenderer.invoke('services:get-conflicts'),
-  addCustomApiProvider: (entry: { name: string; baseUrl: string; apiKey?: string; defaultModelId?: string }) =>
+  addCustomApiProvider: (entry: { name: string; baseUrl: string; apiKey?: string; defaultModelId?: string; attachmentKinds?: import('../../shared/attachments.js').AttachmentKind[] }) =>
     ipcRenderer.invoke('services:add-api-provider', entry),
-  updateCustomApiProvider: (serviceId: string, entry: { name?: string; baseUrl?: string; apiKey?: string; defaultModelId?: string }) =>
+  updateCustomApiProvider: (serviceId: string, entry: { name?: string; baseUrl?: string; apiKey?: string; defaultModelId?: string; attachmentKinds?: import('../../shared/attachments.js').AttachmentKind[] }) =>
     ipcRenderer.invoke('services:update-api-provider', { serviceId, entry }),
   deleteProvider: (serviceId: string) => ipcRenderer.invoke('services:delete-provider', serviceId),
   updateServiceTitle: (serviceId: string, title: string) => ipcRenderer.invoke('services:update-title', { serviceId, title }),

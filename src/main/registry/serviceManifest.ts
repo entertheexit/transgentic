@@ -274,6 +274,7 @@ export class ServiceManifestManager {
                 const srv = { ...(srvData as any) };
                 if (Array.isArray(srv.models)) srv.models = srv.models.map(normalizeModelModes);
                 if (srv.providerType === 'api' || srvId.startsWith('api_')) {
+                  if (!Array.isArray(srv.attachmentKinds)) srv.attachmentKinds = [];
                   if (srv.iconName === 'Key' || srv.iconName === 'Server' || !srv.iconName) {
                     srv.iconName = 'Braces';
                     if (srv.theme) srv.theme.iconName = 'Braces';
@@ -291,6 +292,9 @@ export class ServiceManifestManager {
 
     for (const service of Object.values(baseManifest.services)) {
       if (Array.isArray(service.models)) service.models = service.models.map(normalizeModelModes);
+      if ((service.providerType === 'api' || service.id.startsWith('api_')) && service.id !== 'localllm' && !Array.isArray(service.attachmentKinds)) {
+        service.attachmentKinds = [];
+      }
     }
     baseManifest.modeSchemaVersion = MODE_SCHEMA_VERSION;
     this.currentManifest = baseManifest;
@@ -477,7 +481,7 @@ export class ServiceManifestManager {
   /**
    * Adds a custom API provider.
    */
-  public static addCustomApiProvider(data: { name: string; baseUrl: string; apiKey?: string; defaultModelId?: string }): ServicesManifest {
+  public static addCustomApiProvider(data: { name: string; baseUrl: string; apiKey?: string; defaultModelId?: string; attachmentKinds?: import('../../shared/attachments.js').AttachmentKind[] }): ServicesManifest {
     if (!this.isLoaded) this.loadManifest();
     const id = `api_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 6)}`;
     const modelId = data.defaultModelId?.trim() || "default";
@@ -489,6 +493,7 @@ export class ServiceManifestManager {
       hidden: false,
       experimental: false,
       providerType: "api",
+      attachmentKinds: Array.from(new Set((data.attachmentKinds || []).filter(kind => ['image', 'document', 'video'].includes(kind)))),
       apiKey: data.apiKey?.trim() || "",
       baseUrl: data.baseUrl.trim(),
       url: data.baseUrl.trim(),
@@ -514,6 +519,7 @@ export class ServiceManifestManager {
           userEnabled: true,
           mode: "general",
           modes: ["general", "coding"],
+          attachmentKinds: Array.from(new Set((data.attachmentKinds || []).filter(kind => ['image', 'document', 'video'].includes(kind)))),
         },
       ],
     };
@@ -525,7 +531,7 @@ export class ServiceManifestManager {
   /**
    * Updates an existing custom API provider.
    */
-  public static updateCustomApiProvider(id: ProviderId, data: { name?: string; baseUrl?: string; apiKey?: string; defaultModelId?: string }): ServicesManifest {
+  public static updateCustomApiProvider(id: ProviderId, data: { name?: string; baseUrl?: string; apiKey?: string; defaultModelId?: string; attachmentKinds?: import('../../shared/attachments.js').AttachmentKind[] }): ServicesManifest {
     if (!this.isLoaded) this.loadManifest();
     const existing = this.currentManifest.services[id];
     if (existing) {
@@ -535,6 +541,10 @@ export class ServiceManifestManager {
         existing.url = data.baseUrl.trim();
       }
       if (data.apiKey !== undefined) existing.apiKey = data.apiKey.trim();
+      if (data.attachmentKinds !== undefined) {
+        existing.attachmentKinds = Array.from(new Set(data.attachmentKinds.filter(kind => ['image', 'document', 'video'].includes(kind))));
+        for (const model of existing.models) model.attachmentKinds = [...existing.attachmentKinds];
+      }
       if (data.defaultModelId !== undefined) {
         const mId = data.defaultModelId.trim();
         existing.defaultModelId = mId;
@@ -547,6 +557,7 @@ export class ServiceManifestManager {
             userEnabled: true,
             mode: "general",
             modes: ["general", "coding"],
+            attachmentKinds: existing.attachmentKinds,
           });
         }
       }

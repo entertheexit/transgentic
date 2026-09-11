@@ -73,6 +73,8 @@ import {
 import { getExtensionDownloadUrl } from '../../shared/release.js';
 import { app as electronApp } from 'electron';
 import { CompletionGateway } from '../completion/completionGateway.js';
+import { AttachmentManager, attachmentLogSummary } from '../attachments/attachmentManager.js';
+import type { AttachmentKind, NormalizedRequestEnvelope, StagedAttachment } from '../../shared/attachments.js';
 
 interface SseClient {
   id: string;
@@ -111,7 +113,8 @@ export class TransgenticMcpServer {
         exposedHeaders: ['mcp-session-id', 'Mcp-Session-Id', 'Content-Type'],
       })
     );
-    this.app.use(express.json({ limit: '50mb' }));
+    // 100 MB decoded attachments can expand by ~4/3 when transported as base64 JSON.
+    this.app.use(express.json({ limit: '140mb' }));
     this.app.use((req, res, next) => {
       const localOnly = req.path.startsWith('/api/auth/') || req.path.startsWith('/api/recipes');
       const remote = req.socket.remoteAddress || '';
@@ -282,7 +285,8 @@ export class TransgenticMcpServer {
       req.once('aborted', abort);
       res.once('close', () => { if (!res.writableEnded) abort(); });
       try {
-        const result = await this.completionGateway.complete(req.body, controller.signal);
+        const remote = req.socket.remoteAddress || '';
+        const result = await this.completionGateway.complete(req.body, controller.signal, { loopback: remote === '127.0.0.1' || remote === '::1' || remote === '::ffff:127.0.0.1' });
         const id = `chatcmpl-${crypto.randomUUID()}`;
         const created = Math.floor(Date.now() / 1000);
         if (req.body?.stream === true) {
@@ -436,7 +440,8 @@ export class TransgenticMcpServer {
     let progress = 0;
     let lastProgress = '';
     const progressToken = params?._meta?.progressToken;
-    const caller: CallerContext = { profile, sessionId };
+    const remote = req.socket.remoteAddress || '';
+    const caller: CallerContext = { profile, sessionId, isLoopback: remote === '127.0.0.1' || remote === '::1' || remote === '::ffff:127.0.0.1' };
     if (progressSink && (typeof progressToken === 'string' || typeof progressToken === 'number')) {
       caller.reportProgress = (message) => {
         if (message === lastProgress || reqContext.abortController.signal.aborted || !BaseMcpHandler.getContext(reqContext.requestId, sessionId)) return;
@@ -762,6 +767,35 @@ export class TransgenticMcpServer {
     }
   }
 
+  private providerAttachmentKinds(providerId: ProviderId, mode: TaskMode, requestedModel?: string): AttachmentKind[] {
+    if (providerId === 'localllm') return [...(this.config?.localLLM?.attachmentKinds || [])];
+    if (isCliProvider(providerId)) {
+      if (providerId === 'cli_codex' || providerId === 'cli_claude_code' || providerId === 'cli_antigravity' || providerId === 'cli_grok') return ['image', 'document'];
+      return [];
+    }
+    const service = ServiceManifestManager.getManifest().services[providerId];
+    if (service?.providerType === 'api' || providerId.startsWith('api_')) {
+      const model = requestedModel ? service?.models?.find(item => item.id === requestedModel) : undefined;
+      return [...(model?.attachmentKinds || service?.attachmentKinds || [])];
+    }
+    const adapter: any = globalSessionManager.getAdapter(providerId);
+    const modeKey = mode === 'general' || mode === 'writing' || mode === 'coding' ? 'text' : mode;
+    return [...(adapter?.recipe?.response?.modes?.[modeKey]?.inputAttachments?.acceptedKinds || [])];
+  }
+
+  private filterAttachmentCapableProviders(providers: ProviderId[], files: readonly StagedAttachment[], mode: TaskMode, requestedModel?: string, forcedProvider?: ProviderId): ProviderId[] {
+    if (!files.length) return providers;
+    const required = new Set(files.map(file => file.kind));
+    const capable = providers.filter(provider => {
+      const kinds = new Set(this.providerAttachmentKinds(provider, mode, requestedModel));
+      return [...required].every(kind => kinds.has(kind));
+    });
+    if (forcedProvider && capable.length === 0) {
+      throw new Error(`Provider "${forcedProvider}" does not declare support for all attached ${[...required].join('/')} inputs in ${mode} mode.`);
+    }
+    return capable;
+  }
+
   private getToolDefinitions() {
     const chatgptModels = ModelRegistryManager.getUsableModels('chatgpt').map((m) => m.id);
     const claudeModels = ModelRegistryManager.getUsableModels('claude').map((m) => m.id);
@@ -787,8 +821,30 @@ export class TransgenticMcpServer {
       description: 'Optional task mode hint affecting routing and output structure. Writing is a backend mode with prose guidance that uses the General route configuration.',
     };
 
+    const filesProperty = {
+      type: 'array',
+      maxItems: 10,
+      description: 'Request-scoped attachments. Each item must contain exactly one source: path (authenticated loopback clients only), raw base64 data, or a public HTTPS/data URL.',
+      items: {
+        type: 'object',
+        properties: {
+          path: { type: 'string', description: 'Absolute readable host path; loopback clients only.' },
+          data: { type: 'string', description: 'Raw base64 bytes. Requires name and mimeType.' },
+          url: { type: 'string', description: 'A public HTTPS URL or base64 data: URL.' },
+          name: { type: 'string' },
+          mimeType: { type: 'string' },
+        },
+        oneOf: [
+          { required: ['path'], not: { anyOf: [{ required: ['data'] }, { required: ['url'] }] } },
+          { required: ['data', 'name', 'mimeType'], not: { anyOf: [{ required: ['path'] }, { required: ['url'] }] } },
+          { required: ['url'], not: { anyOf: [{ required: ['path'] }, { required: ['data'] }] } },
+        ],
+        additionalProperties: false,
+      },
+    };
+
     return [
-      ...CLI_IDS.map(id => ({ name: ({ cli_codex: 'ask_codex_cli', cli_claude_code: 'ask_claude_code_cli', cli_antigravity: 'ask_antigravity_cli', cli_grok: 'ask_grok_cli' })[id], description: `Query the configured ${CLI_DEFINITIONS[id].name}. Editing and commands require local grants.`, inputSchema: { type: 'object', properties: { prompt: { type: 'string' }, mode: { type: 'string', enum: ['general', 'coding', 'writing'] }, model: { type: 'string' }, ...sessionProperties }, required: ['prompt'] } })),
+      ...CLI_IDS.map(id => ({ name: ({ cli_codex: 'ask_codex_cli', cli_claude_code: 'ask_claude_code_cli', cli_antigravity: 'ask_antigravity_cli', cli_grok: 'ask_grok_cli' })[id], description: `Query the configured ${CLI_DEFINITIONS[id].name}. Editing and commands require local grants.`, inputSchema: { type: 'object', properties: { prompt: { type: 'string' }, mode: { type: 'string', enum: ['general', 'coding', 'writing'] }, model: { type: 'string' }, files: filesProperty, ...sessionProperties }, required: ['prompt'] } })),
       {
         name: 'prompt_model',
         description:
@@ -804,13 +860,13 @@ export class TransgenticMcpServer {
             },
             provider: {
               type: 'string',
-              enum: ['chatgpt', 'claude', 'gemini', 'grok', ...CLI_IDS],
-              description: 'Optional forced provider override. If omitted, uses intelligent auto-routing.',
+              description: 'Optional forced provider or configured custom API/webview service ID. If omitted, uses intelligent auto-routing.',
             },
             model: {
               type: 'string',
               description: 'Optional target model ID (e.g. gpt-4o, claude-3-5-sonnet, o1, grok-3). If allowMcpOverride is enabled, switches model in Webview.',
             },
+            files: filesProperty,
             ...sessionProperties,
           },
           required: ['prompt'],
@@ -826,6 +882,7 @@ export class TransgenticMcpServer {
             prompt: { type: 'string', description: 'Prompt to send to ChatGPT.' },
             mode: modeProperty,
             model: chatgptModels.length > 0 ? { type: 'string', enum: chatgptModels, description: 'Target ChatGPT model.' } : { type: 'string' },
+            files: filesProperty,
             ...sessionProperties,
           },
           required: ['prompt'],
@@ -841,6 +898,7 @@ export class TransgenticMcpServer {
             prompt: { type: 'string', description: 'Prompt to send to Claude.' },
             mode: modeProperty,
             model: claudeModels.length > 0 ? { type: 'string', enum: claudeModels, description: 'Target Claude model.' } : { type: 'string' },
+            files: filesProperty,
             ...sessionProperties,
           },
           required: ['prompt'],
@@ -856,6 +914,7 @@ export class TransgenticMcpServer {
             prompt: { type: 'string', description: 'Prompt to send to Gemini.' },
             mode: modeProperty,
             model: geminiModels.length > 0 ? { type: 'string', enum: geminiModels, description: 'Target Gemini model.' } : { type: 'string' },
+            files: filesProperty,
             ...sessionProperties,
           },
           required: ['prompt'],
@@ -871,6 +930,7 @@ export class TransgenticMcpServer {
             prompt: { type: 'string', description: 'Prompt to send to Grok.' },
             mode: modeProperty,
             model: grokModels.length > 0 ? { type: 'string', enum: grokModels, description: 'Target Grok model.' } : { type: 'string' },
+            files: filesProperty,
             ...sessionProperties,
           },
           required: ['prompt'],
@@ -918,6 +978,36 @@ export class TransgenticMcpServer {
             ...sessionProperties,
           },
           required: ['prompt'],
+        },
+      },
+      {
+        name: 'edit_image',
+        description: 'Edits or transforms one or more attached images using Image mode. At least one image attachment is required.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            prompt: { type: 'string', description: 'Image editing instructions.' },
+            files: filesProperty,
+            provider: { type: 'string', description: 'Optional provider or configured service ID.' },
+            model: { type: 'string' },
+            ...sessionProperties,
+          },
+          required: ['prompt', 'files'],
+        },
+      },
+      {
+        name: 'edit_video',
+        description: 'Edits or transforms attached image/video media using Video mode. At least one image or video attachment is required.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            prompt: { type: 'string', description: 'Video editing instructions.' },
+            files: filesProperty,
+            provider: { type: 'string', description: 'Optional provider or configured service ID.' },
+            model: { type: 'string' },
+            ...sessionProperties,
+          },
+          required: ['prompt', 'files'],
         },
       },
       {
@@ -1008,14 +1098,17 @@ export class TransgenticMcpServer {
     }
 
     if (name === 'generate_image') {
+      if (args.files !== undefined) throw new Error('generate_image is text-only. Use edit_image to provide source images.');
       mode = 'image';
       isStrictExplicitMode = true;
     }
     if (name === 'generate_video') {
+      if (args.files !== undefined) throw new Error('generate_video is text-only. Use edit_video to provide source media.');
       mode = 'video';
       isStrictExplicitMode = true;
     }
     if (name === 'generate_music') {
+      if (args.files !== undefined) throw new Error('generate_music does not accept attachments.');
       mode = 'music';
       isStrictExplicitMode = true;
     }
@@ -1024,7 +1117,12 @@ export class TransgenticMcpServer {
       isStrictExplicitMode = true;
     }
 
-    return await this.orchestratePrompt(prompt, mode, provider, projectName, requestedModel, abortSignal, threadId, newThread, undefined, isStrictExplicitMode, caller);
+    let attachmentRequirement: 'image-only' | 'image-or-video' | undefined;
+    if (name === 'edit_image') { mode = 'image'; isStrictExplicitMode = true; attachmentRequirement = 'image-only'; }
+    if (name === 'edit_video') { mode = 'video'; isStrictExplicitMode = true; attachmentRequirement = 'image-or-video'; }
+    if (attachmentRequirement && (!Array.isArray(args.files) || args.files.length === 0)) throw new Error(`${name} requires at least one attachment.`);
+
+    return await this.orchestratePrompt(prompt, mode, provider, projectName, requestedModel, abortSignal, threadId, newThread, undefined, isStrictExplicitMode, caller, args.files, attachmentRequirement);
   }
 
   private async executePipelineCandidateChain(params: {
@@ -1051,6 +1149,7 @@ export class TransgenticMcpServer {
     reportProgress?: (message: string) => void;
     isolateConversation?: boolean;
     cliRequest?: CliRequestOptions;
+    requestEnvelope?: NormalizedRequestEnvelope;
   }): Promise<{
     text: string;
     finalResponseWithLocalPath: string;
@@ -1082,6 +1181,8 @@ export class TransgenticMcpServer {
       reportProgress,
       isolateConversation,
     } = params;
+    const attachments = params.requestEnvelope?.attachments.files || [];
+    const attachmentIdentity = params.requestEnvelope?.attachments.identity || '';
 
     const activeLocalLlmConfig = this.config?.localLLM || DynamicRouter.getLocalLlmConfig();
     const isLocalMicroTaskEnabled = Boolean(activeLocalLlmConfig?.localMicroTask);
@@ -1105,7 +1206,7 @@ export class TransgenticMcpServer {
           : undefined;
         const cliRequest = { ...params.cliRequest, workspaceId: params.cliRequest?.workspaceId ?? routeWorkspace };
         try {
-          if (!cliSupportsMode(effectiveMode)) throw new Error('CLI services support General, Writing, and Coding text modes. Writing uses the General route configuration.');
+          if (!cliSupportsMode(effectiveMode)) throw new Error('CLI services support General, Writing, and Coding modes. Writing uses the General route configuration.');
           const cfg = ModelRegistryManager.getProviderConfig(providerId);
           if (!ServiceManifestManager.isServiceEnabled(providerId) || cfg?.serviceEnabled === false) throw new Error('CLI service is disabled. Enable it in Settings.');
           if (globalRateLimiter.isRateLimited(providerId)) throw new Error('[RATE_LIMIT] CLI service is cooling down.');
@@ -1127,7 +1228,7 @@ export class TransgenticMcpServer {
           reportProgress?.(`Queued for ${CLI_DEFINITIONS[providerId].name}`);
           this.updateCoreState('processing', providerId, `Processing on ${CLI_DEFINITIONS[providerId].name}`);
           executionResult = await globalCliRuntime.execute(providerId, prompt, { reqId, conversationKey: scopedThreadId, newThread: fresh,
-            model, signal: reqAbortController?.signal || abortSignal, progress: reportProgress, request: cliRequest, desktop: params.isQuickPrompt, reviewer: pipeline === 'co',
+            model, signal: reqAbortController?.signal || abortSignal, progress: reportProgress, request: cliRequest, desktop: params.isQuickPrompt, reviewer: pipeline === 'co', attachments,
             beforeStart: async signal => {
               await globalRateLimiter.applyCliCooldown(providerId, signal);
               if (globalRateLimiter.isRateLimited(providerId)) throw new Error('[RATE_LIMIT] CLI service is cooling down.');
@@ -1207,6 +1308,7 @@ export class TransgenticMcpServer {
           const completion = await LocalLlmClient.generateCompletion(chatMessages, localLlmConfig, {
             temperature: localLlmConfig.temperature,
             abortSignal: reqAbortController?.signal || abortSignal,
+            attachments,
           });
           throwIfCancelled(reqAbortController?.signal || abortSignal);
           if (!completion.text?.trim() || completion.text.trim() === '(Empty response returned by local model)') {
@@ -1242,6 +1344,39 @@ export class TransgenticMcpServer {
         console.warn(`[Transgentic] Provider ${providerId} is disabled in ServiceManifest. Skipping to next candidate.`);
         lastCandidateError = new Error(`Service "${providerId}" is disabled in Service Manifest.`);
         continue;
+      }
+
+      const serviceEntry = ServiceManifestManager.getManifest().services[providerId];
+      if (serviceEntry?.providerType === 'api' || providerId.startsWith('api_')) {
+        try {
+          if (globalRateLimiter.isRateLimited(providerId)) throw new Error('[RATE_LIMIT] API service is cooling down.');
+          reportProgress?.(`Generating response with ${getProviderDisplayName(providerId)}`);
+          this.updateCoreState('processing', providerId, `Processing on ${serviceEntry?.name || providerId}`);
+          globalRateLimiter.recordRequest(providerId);
+          const result = await this.completionGateway.completeProviderPrompt(
+            providerId,
+            effectiveMode,
+            maskedText,
+            attachments,
+            reqAbortController?.signal || abortSignal,
+            requestedModel,
+            pipeline,
+          );
+          if (!result.message.content?.trim()) throw new Error(`${serviceEntry?.name || providerId} returned an empty response.`);
+          executionResult = { text: result.message.content, provider: providerId, modelUsed: result.model };
+          successfulProvider = providerId;
+          successfulAccount = { id: `${providerId}_api`, alias: serviceEntry?.name || providerId };
+          globalRateLimiter.markSuccess(providerId);
+          wasNewChat = true;
+          break;
+        } catch (error) {
+          throwIfCancelled(reqAbortController?.signal || abortSignal);
+          const err = error as Error & { providerUsed?: ProviderId };
+          err.providerUsed = providerId;
+          lastCandidateError = err;
+          if (forcedProvider) throw err;
+          continue;
+        }
       }
 
       const activeAccount = AccountRegistryManager.getActiveAccount(providerId);
@@ -1291,7 +1426,7 @@ export class TransgenticMcpServer {
       // Different conversations/accounts and independently cancellable requests must
       // never share a provider result. Preserve byte-exact prompts in the key.
       const dedupScope = JSON.stringify([effectiveThreadId, activeAccount.id, isAgenticClient,
-        isBalanced, Boolean(newThread), abortSignal ? reqId : 'shared']);
+        isBalanced, Boolean(newThread), attachmentIdentity, abortSignal ? reqId : 'shared']);
 
       const inFlight = DuplicateActionGuard.getInFlight(
         providerId,
@@ -1427,7 +1562,7 @@ export class TransgenticMcpServer {
             throwIfCancelled(reqAbortController?.signal || abortSignal);
             reportProgress?.(`Generating response with ${getProviderDisplayName(providerId)}`);
             try {
-              adapterResult = await adapter.executePrompt(promptToSend, effectiveMode, projectMeta, undefined, reqAbortController?.signal || abortSignal);
+              adapterResult = await adapter.executePrompt(promptToSend, effectiveMode, projectMeta, undefined, reqAbortController?.signal || abortSignal, attachments);
             } catch (promptErr: any) {
               if (promptErr?.message && /conversation (?:is getting|too) long|context[ _]length/i.test(promptErr.message)) {
                 await adapter.navigateToNewChat();
@@ -1442,7 +1577,7 @@ export class TransgenticMcpServer {
                 if (this.config?.recall) {
                   rolloverPrompt = applyRecallPipeline(rolloverPrompt, this.config.recall, effectiveMode);
                 }
-                adapterResult = await adapter.executePrompt(rolloverPrompt, effectiveMode, projectMeta, undefined, reqAbortController?.signal || abortSignal);
+                adapterResult = await adapter.executePrompt(rolloverPrompt, effectiveMode, projectMeta, undefined, reqAbortController?.signal || abortSignal, attachments);
               } else {
                 throw promptErr;
               }
@@ -1638,7 +1773,9 @@ export class TransgenticMcpServer {
     newThread?: boolean,
     isQuickPrompt?: boolean,
     isStrictExplicitMode?: boolean,
-    caller?: CallerContext
+    caller?: CallerContext,
+    rawFiles?: unknown,
+    attachmentRequirement?: 'image-only' | 'image-or-video'
   ): Promise<any> {
     const startTime = Date.now();
     this.requestCounter++;
@@ -1653,12 +1790,26 @@ export class TransgenticMcpServer {
     const isAgenticClient = responseProfile === 'agentic';
     let effectiveResponseMode: TaskMode = normalizeTaskMode(mode);
     let detachAbort: (() => void) | undefined;
+    let attachmentCleanup: (() => Promise<void>) | undefined;
+    let attachments: readonly StagedAttachment[] = [];
+    let requestEnvelope: NormalizedRequestEnvelope | undefined;
 
     try {
       // 2. Intelligent Intent Classification
       const { mode: effectiveMode, intent: taskIntent, isAutoDetected } = DynamicRouter.classifyMode(rawPrompt, mode, isStrictExplicitMode);
       effectiveResponseMode = effectiveMode;
       throwIfCancelled(abortSignal);
+      const staged = await AttachmentManager.stage(rawFiles, { loopback: caller?.isLoopback === true, mode: effectiveMode, signal: abortSignal });
+      attachments = staged.envelope.files;
+      attachmentCleanup = staged.cleanup;
+      requestEnvelope = {
+        promptText: rawPrompt,
+        mode: effectiveMode,
+        attachments: staged.envelope,
+        caller: { transport: isQuickPrompt ? 'desktop' : caller?.isLoopback ? 'loopback' : 'remote', sessionId: caller?.sessionId },
+      };
+      if (attachmentRequirement === 'image-only' && attachments.some(file => file.kind !== 'image')) throw new Error('edit_image accepts image attachments only.');
+      if (attachmentRequirement === 'image-or-video' && attachments.some(file => file.kind !== 'image' && file.kind !== 'video')) throw new Error('edit_video accepts image or video attachments only.');
       if (effectiveMode === 'audio') {
         const unavailableLog: McpRequestLog = {
           id: reqId,
@@ -1704,6 +1855,8 @@ export class TransgenticMcpServer {
       let candidateProviders: ProviderId[] = forcedProvider
         ? [forcedProvider]
         : DynamicRouter.getCandidateChain(effectiveMode, undefined, true, 'main', doubleAgentCfg.includeLocalLlm);
+
+      candidateProviders = this.filterAttachmentCapableProviders(candidateProviders, attachments, effectiveMode, requestedModel, forcedProvider);
 
       if (caller?.cliRequest?.workspaceId) {
         if (forcedProvider && !isCliProvider(forcedProvider)) throw new Error('Workspace execution requires a CLI provider.');
@@ -1807,6 +1960,7 @@ export class TransgenticMcpServer {
         microTaskCategory: microTask.category,
         bypassedWebviewDispatch,
         bypassedCloudDispatch: bypassedWebviewDispatch,
+        ...attachmentLogSummary(attachments),
       };
       this.addLog(log);
 
@@ -1835,8 +1989,8 @@ export class TransgenticMcpServer {
 
       // 4. Execution Dispatching: Scenario 2 vs Single Pipeline
       if (shouldRunScenario2) {
-        const mainCandidates = DynamicRouter.getCandidateChain(effectiveMode, undefined, true, 'main', doubleAgentCfg.includeLocalLlm).filter(p => !caller?.cliRequest?.workspaceId || isCliProvider(p));
-        const coCandidates = DynamicRouter.getCandidateChain(effectiveMode, undefined, true, 'co', doubleAgentCfg.includeLocalLlm).filter(p => !caller?.cliRequest?.workspaceId || isCliProvider(p));
+        const mainCandidates = this.filterAttachmentCapableProviders(DynamicRouter.getCandidateChain(effectiveMode, undefined, true, 'main', doubleAgentCfg.includeLocalLlm).filter(p => !caller?.cliRequest?.workspaceId || isCliProvider(p)), attachments, effectiveMode, requestedModel);
+        const coCandidates = this.filterAttachmentCapableProviders(DynamicRouter.getCandidateChain(effectiveMode, undefined, true, 'co', doubleAgentCfg.includeLocalLlm).filter(p => !caller?.cliRequest?.workspaceId || isCliProvider(p)), attachments, effectiveMode, requestedModel);
 
         if (mainCandidates.length === 0 && coCandidates.length === 0) {
           throw new Error(`No available AI services found for mode "${effectiveMode}" in either Main or Co pipelines.`);
@@ -1867,6 +2021,7 @@ export class TransgenticMcpServer {
             startTime,
             bypassedWebviewDispatch,
             forcedProvider,
+            requestEnvelope,
           }),
           () => this.executePipelineCandidateChain({
             candidateProviders: coCandidates,
@@ -1892,6 +2047,7 @@ export class TransgenticMcpServer {
             startTime,
             bypassedWebviewDispatch,
             forcedProvider,
+            requestEnvelope,
           }),
           mainCandidates[0] || 'chatgpt',
           coCandidates[0] || 'claude'
@@ -1947,6 +2103,7 @@ export class TransgenticMcpServer {
           startTime,
           bypassedWebviewDispatch,
           forcedProvider,
+          requestEnvelope,
         });
 
         finalResponseWithLocalPath = pipelineResult.finalResponseWithLocalPath;
@@ -1985,6 +2142,7 @@ export class TransgenticMcpServer {
         : finalResponseWithLocalPath.slice(0, 240);
       log.mediaPath = activeMediaPath;
       log.modelUsed = executionResult.modelUsed;
+      log.attachmentDestinations = providers.filter(provider => provider.status === 'completed').map(provider => String(provider.provider));
       if (log.presetPromptsAttached === undefined) {
         log.presetPromptsAttached = wasNewChat;
       }
@@ -2117,6 +2275,7 @@ export class TransgenticMcpServer {
     } finally {
       detachAbort?.();
       this.activeAbortControllers.delete(reqId);
+      await attachmentCleanup?.();
       // 8. Request-scoped 'finally' purge: GUARANTEES all volatile tokens for this request are purged
       globalBlindingEngine.purgeRequestContext(contextId);
       globalLocalZeroLeakManager.purgeRequestContext(reqId);

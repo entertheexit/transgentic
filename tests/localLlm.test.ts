@@ -1,6 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { LocalLlmClient } from '../src/main/localllm/localLlmClient.js';
 import { LocalLLMConfig } from '../src/shared/types.js';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 
 describe('LocalLlmClient Unit Tests', () => {
   describe('normalizeBaseUrl', () => {
@@ -152,6 +155,19 @@ describe('LocalLlmClient Unit Tests', () => {
 
       const res = await LocalLlmClient.generateCompletion('Write code', config);
       expect(res.text).toBe('def solve(): return 42');
+    });
+
+    it('sends declared local attachments as structured OpenAI-compatible content', async () => {
+      const root = fs.mkdtempSync(path.join(os.tmpdir(), 'transgentic-local-vision-'));
+      const imagePath = path.join(root, 'reference.png');
+      fs.writeFileSync(imagePath, Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+      global.fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ choices: [{ message: { content: 'seen' } }] }) } as any);
+      try {
+        const config: LocalLLMConfig = { enabled: true, preset: 'custom', baseUrl: 'http://127.0.0.1:8000', selectedModel: 'vision', temperature: 0.2, contextLength: 8192, attachmentKinds: ['image'] };
+        await LocalLlmClient.generateCompletion('Inspect', config, { attachments: [{ path: imagePath, name: 'reference.png', mimeType: 'image/png', kind: 'image', size: 4, sha256: 'a' }] });
+        const body = JSON.parse(String((global.fetch as any).mock.calls[0][1].body));
+        expect(body.messages[0].content[1].image_url.url).toMatch(/^data:image\/png;base64,/);
+      } finally { fs.rmSync(root, { recursive: true, force: true }); }
     });
 
     it('should capture exact error message from LM Studio when request fails', async () => {

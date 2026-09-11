@@ -11,6 +11,7 @@ import {
   ServicesManifest,
   RouteMode,
   TaskMode,
+  AttachmentKind,
 } from '../../shared/types.js';
 import {
   ArrowLeft,
@@ -98,8 +99,8 @@ interface SettingsViewProps {
   onToggleModel: (providerId: ProviderId, modelId: string, enabled: boolean) => Promise<any>;
   onToggleService: (providerId: ProviderId, enabled: boolean) => Promise<any>;
   onToggleExperimentalService?: (serviceId: ProviderId, enabled: boolean) => Promise<any>;
-  onAddCustomApiProvider?: (params: { name: string; baseUrl: string; apiKey?: string; defaultModelId?: string }) => Promise<any>;
-  onUpdateCustomApiProvider?: (providerId: ProviderId, updates: { name?: string; baseUrl?: string; apiKey?: string; defaultModelId?: string }) => Promise<any>;
+  onAddCustomApiProvider?: (params: { name: string; baseUrl: string; apiKey?: string; defaultModelId?: string; attachmentKinds?: AttachmentKind[] }) => Promise<any>;
+  onUpdateCustomApiProvider?: (providerId: ProviderId, updates: { name?: string; baseUrl?: string; apiKey?: string; defaultModelId?: string; attachmentKinds?: AttachmentKind[] }) => Promise<any>;
   onDeleteProvider?: (providerId: ProviderId) => Promise<any>;
   onUpdateServiceTitle?: (providerId: ProviderId, title: string) => Promise<any>;
   onInstallRecipe?: (recipe: any) => Promise<any>;
@@ -188,6 +189,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [apiFormBaseUrl, setApiFormBaseUrl] = useState<string>('');
   const [apiFormApiKey, setApiFormApiKey] = useState<string>('');
   const [apiFormModel, setApiFormModel] = useState<string>('');
+  const [apiFormAttachmentKinds, setApiFormAttachmentKinds] = useState<AttachmentKind[]>([]);
   const [isSubmittingApi, setIsSubmittingApi] = useState<boolean>(false);
   const [apiFormError, setApiFormError] = useState<string | null>(null);
   const [editingWebviewId, setEditingWebviewId] = useState<ProviderId | null>(null);
@@ -305,6 +307,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           baseUrl: apiFormBaseUrl.trim(),
           apiKey: apiFormApiKey.trim() || undefined,
           defaultModelId: apiFormModel.trim() || undefined,
+          attachmentKinds: apiFormAttachmentKinds,
         });
       } else if (onAddCustomApiProvider) {
         const beforeIds = new Set(Object.keys(servicesManifest?.services || {}));
@@ -313,6 +316,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           baseUrl: apiFormBaseUrl.trim(),
           apiKey: apiFormApiKey.trim() || undefined,
           defaultModelId: apiFormModel.trim() || undefined,
+          attachmentKinds: apiFormAttachmentKinds,
         });
         const createdId = Object.keys(updated?.services || {}).find(id => !beforeIds.has(id) && id.startsWith('api_')) as ProviderId | undefined;
         if (createdId) {
@@ -326,6 +330,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       setApiFormBaseUrl('');
       setApiFormApiKey('');
       setApiFormModel('');
+      setApiFormAttachmentKinds([]);
     } catch (err: any) {
       setApiFormError(err?.message || 'Failed to save API provider');
     } finally {
@@ -1651,6 +1656,9 @@ http_headers = { "Authorization" = "Bearer ${clientToken || 'YOUR_TOKEN'}" }`;
 
                                 const switcherFound = Boolean(landmarks?.modelDropdownTrigger?.found ?? landmarks?.modelDropdownTrigger?.exists);
                                 const switcherHealed = Boolean(landmarks?.modelDropdownTrigger?.activeSelector);
+                                const attachmentEntries = Object.values(report?.attachmentLandmarks || {}) as any[];
+                                const attachmentFound = attachmentEntries.length > 0 && attachmentEntries.every((entry) => entry?.found);
+                                const attachmentHealed = attachmentEntries.some((entry) => entry?.activeSelector);
 
                                 return (
                                   <>
@@ -1658,6 +1666,7 @@ http_headers = { "Authorization" = "Bearer ${clientToken || 'YOUR_TOKEN'}" }`;
                                     {renderLandmarkBadge('submit', submitFound, submitHealed)}
                                     {renderLandmarkBadge('stop', stopFound, stopHealed)}
                                     {renderLandmarkBadge('switcher', switcherFound, switcherHealed)}
+                                    {attachmentEntries.length > 0 && renderLandmarkBadge('upload', attachmentFound, attachmentHealed)}
                                   </>
                                 );
                               })()}
@@ -2678,6 +2687,7 @@ http_headers = { "Authorization" = "Bearer ${clientToken || 'YOUR_TOKEN'}" }`;
                           setApiFormBaseUrl('');
                           setApiFormApiKey('');
                           setApiFormModel('');
+                          setApiFormAttachmentKinds([]);
                           setApiFormError(null);
                           setShowApiForm(true);
                         }}
@@ -2766,6 +2776,23 @@ http_headers = { "Authorization" = "Bearer ${clientToken || 'YOUR_TOKEN'}" }`;
                           onChange={(e) => setApiFormApiKey(e.target.value)}
                           className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-xs font-mono text-slate-200 focus:border-cyan-500/50 focus:outline-none"
                         />
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <label className="text-[10px] font-mono uppercase text-slate-400">Declared attachment inputs</label>
+                        <div className="flex flex-wrap gap-2">
+                          {(['image', 'document', 'video'] as AttachmentKind[]).map(kind => (
+                            <label key={kind} className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-2.5 py-1.5 text-[10px] text-slate-300 cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={apiFormAttachmentKinds.includes(kind)}
+                                onChange={(event) => setApiFormAttachmentKinds(current => event.target.checked ? [...current, kind] : current.filter(item => item !== kind))}
+                              />
+                              <span className="capitalize">{kind}</span>
+                            </label>
+                          ))}
+                        </div>
+                        <p className="text-[9.5px] text-slate-500">Enable only kinds accepted by this endpoint/model. Undeclared inputs are never sent.</p>
                       </div>
 
                       <div className="flex items-center justify-end gap-2 pt-2 border-t border-white/5">
@@ -2857,6 +2884,7 @@ http_headers = { "Authorization" = "Bearer ${clientToken || 'YOUR_TOKEN'}" }`;
                                   setApiFormBaseUrl(srv.baseUrl || '');
                                   setApiFormApiKey(srv.apiKey || '');
                                   setApiFormModel(srv.defaultModelId || '');
+                                  setApiFormAttachmentKinds([...(srv.attachmentKinds || [])]);
                                   setApiFormError(null);
                                   setShowApiForm(true);
                                 }}
@@ -3279,6 +3307,7 @@ http_headers = { "Authorization" = "Bearer ${clientToken || 'YOUR_TOKEN'}" }`;
                         setApiFormBaseUrl(service.baseUrl || '');
                         setApiFormApiKey(service.apiKey || '');
                         setApiFormModel(service.defaultModelId || '');
+                        setApiFormAttachmentKinds([...(service.attachmentKinds || [])]);
                         setApiFormError(null);
                         setShowApiForm(true);
                         setMoreProvidersTab('api');

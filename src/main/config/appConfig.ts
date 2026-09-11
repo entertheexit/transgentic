@@ -45,6 +45,7 @@ export interface LocalLLMConfig {
   localCompact?: boolean;
   completionCompact?: boolean;
   compactThresholdChars?: number;
+  attachmentKinds?: import('../../shared/attachments.js').AttachmentKind[];
 }
 
 export interface HealingConfig {
@@ -66,6 +67,7 @@ export const DEFAULT_LOCAL_LLM_CONFIG: LocalLLMConfig = {
   localCompact: false,
   completionCompact: false,
   compactThresholdChars: 4000,
+  attachmentKinds: [],
 };
 
 export const DEFAULT_HEALING_CONFIG: HealingConfig = {

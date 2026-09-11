@@ -26,6 +26,12 @@ describe('DuplicateActionGuard & DOM Concurrency Lock', () => {
     expect(keyA).not.toBe(keyD);
   });
 
+  it('should differentiate equal prompts with different attachment identities', () => {
+    const first = DuplicateActionGuard.generateKey('gemini', 'general', 'vision', 'Describe this', JSON.stringify(['thread', 'hash-a']));
+    const second = DuplicateActionGuard.generateKey('gemini', 'general', 'vision', 'Describe this', JSON.stringify(['thread', 'hash-b']));
+    expect(first).not.toBe(second);
+  });
+
   it('should register, detect, and unregister in-flight requests', async () => {
     let resolveTask!: (val: any) => void;
     const taskPromise = new Promise((res) => {

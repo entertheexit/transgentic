@@ -38,6 +38,8 @@ For a client that owns project actions, configure its OpenAI-compatible provider
 
 For Agentic Mode through MCP, use `prompt_model` with a CLI provider ID, or `ask_codex_cli`, `ask_claude_code_cli`, `ask_antigravity_cli`, and `ask_grok_cli`. Existing web aliases retain their original meaning.
 
+Those tools also accept request-scoped `files`. Codex receives image inputs through its native `--image` option; documents are copied into the isolated scratch root and referenced explicitly. Claude Code and Antigravity receive read-only scratch paths. Grok ACP receives image or embedded-resource blocks only after advertising the corresponding prompt capability. Attachments never enable project editing or command execution.
+
 Example tool arguments:
 
 ```json

@@ -261,6 +261,10 @@ For transport details, selection examples, and plain-client configuration, see [
 
   Send requests from the desktop or bundled command-line bridge without requiring an agentic IDE. Built-in native CLI services can act as isolated completion providers or, with explicit host permissions, as Agentic Mode services.
 
+- **Request-scoped multimodal inputs:**
+
+  MCP Streamable HTTP, legacy SSE, configured API services, supported native CLIs, upload-enabled webview recipes, and the desktop Quick Prompt accept explicit image/document attachments; Video mode also accepts supported video files. Quick Prompt shows removable square previews in a horizontally scrollable row beneath its composer and sends them only with that request. Image/video editing uses `edit_image` and `edit_video`, while the original generation tools stay text-only.
+
 - **MCP client profiles:**
 
   Agentic callers receive separate workflow reminders; plain callers receive neutral answers and errors. Applications can select the profile explicitly.
@@ -369,6 +373,8 @@ The guides describe this source checkout. They are not a live provider compatibi
 - **Provider communication:**
 
   There is no Transgentic-operated cloud relay. Prompts, attachments, and authenticated sessions communicate with the providers or model endpoints you configure. Local orchestration is not a guarantee that data stays on your machine.
+
+  Text blinding does not inspect or redact attachment contents. Files are transmitted unchanged to every selected Main/Co provider and may remain in provider-side conversation history under that provider's retention policy. Request-scoped staging is removed after success, failure, or cancellation; it does not delete provider-side copies.
 
 - **Update checks:**
 

@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import fs from 'node:fs';
 import { TransgenticMcpServer } from '../src/main/mcp/server.js';
 import { DynamicRouter } from '../src/main/mcp/router.js';
 import { LocalLlmClient } from '../src/main/localllm/localLlmClient.js';
@@ -39,15 +40,15 @@ function configure(balancedMode = true, localMicroTask = false, doubleAgent = fa
     doubleAgent: { enabled: doubleAgent, includeLocalLlm: true },
     localLLM: {
       enabled: true, preset: 'custom', baseUrl: 'http://127.0.0.1:1234',
-      selectedModel: 'test-coder', localMicroTask,
+      selectedModel: 'test-coder', localMicroTask, attachmentKinds: ['image', 'document'],
     },
   } as TransgenticConfig;
   server.updateConfig(config);
 }
 
-function run(prompt = 'Return add(a, b).', mode: TaskMode = 'coding', provider?: ProviderId, newThread = true, quick = false, caller?: CallerContext, signal?: AbortSignal) {
+function run(prompt = 'Return add(a, b).', mode: TaskMode = 'coding', provider?: ProviderId, newThread = true, quick = false, caller?: CallerContext, signal?: AbortSignal, files?: unknown) {
   return server.orchestratePrompt(prompt, mode, provider, undefined, undefined, signal,
-    'response-guidance-test', newThread, quick, true, caller);
+    'response-guidance-test', newThread, quick, true, caller, files);
 }
 
 function expectAnswerAndGuidance(result: any, marker: string, expectedAnswer = answer) {
@@ -287,6 +288,24 @@ describe('Actual provider answers with server-side reminders', () => {
     const result = await run('Return add(a,b).', 'coding', undefined, true, true);
     expect(result.content).toEqual([{ type: 'text', text: answer }]);
     expect(completion.mock.calls[0][0]).toEqual([{ role: 'user', content: 'Return add(a,b).' }]);
+  });
+
+  it('stages Quick Prompt files through the desktop request and cleans them after the answer', async () => {
+    const bytes = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.from('quick-prompt')]);
+    const result = await run(
+      'Describe the attached image.',
+      'general',
+      undefined,
+      true,
+      true,
+      { profile: 'plain', sessionId: 'desktop-test', isLoopback: true },
+      undefined,
+      [{ data: bytes.toString('base64'), name: 'reference.png', mimeType: 'image/png' }],
+    );
+    expect(result.content).toEqual([{ type: 'text', text: answer }]);
+    const staged = completion.mock.calls[0][2]?.attachments?.[0];
+    expect(staged).toMatchObject({ name: 'reference.png', kind: 'image', size: bytes.length });
+    expect(fs.existsSync(staged.path)).toBe(false);
   });
 });
 

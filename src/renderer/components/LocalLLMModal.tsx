@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { LocalLLMConfig } from '../../shared/types.js';
+import { LocalLLMConfig, type AttachmentKind } from '../../shared/types.js';
 import {
   Cpu,
   Server,
@@ -64,6 +64,7 @@ export const LocalLLMModal: React.FC<LocalLLMModalProps> = ({
   const [localCompact, setLocalCompact] = useState<boolean>(config?.localCompact ?? false);
   const [completionCompact, setCompletionCompact] = useState<boolean>(config?.completionCompact ?? false);
   const [compactThresholdChars, setCompactThresholdChars] = useState<number>(config?.compactThresholdChars ?? 4000);
+  const [attachmentKinds, setAttachmentKinds] = useState<AttachmentKind[]>(config?.attachmentKinds || []);
 
   // Discovery & Test State
   const [availableModels, setAvailableModels] = useState<string[]>([]);
@@ -88,6 +89,7 @@ export const LocalLLMModal: React.FC<LocalLLMModalProps> = ({
       setLocalCompact(config.localCompact ?? false);
       setCompletionCompact(config.completionCompact ?? false);
       setCompactThresholdChars(config.compactThresholdChars ?? 4000);
+      setAttachmentKinds(config.attachmentKinds || []);
     }
   }, [isOpen]);
 
@@ -164,6 +166,12 @@ export const LocalLLMModal: React.FC<LocalLLMModalProps> = ({
         compactThresholdChars,
       });
     } catch {}
+  };
+
+  const handleAttachmentKindToggle = async (kind: AttachmentKind, checked: boolean) => {
+    const next = checked ? Array.from(new Set([...attachmentKinds, kind])) : attachmentKinds.filter(item => item !== kind);
+    setAttachmentKinds(next);
+    await onUpdateConfig({ attachmentKinds: next });
   };
 
   const handleClose = async () => {
@@ -658,6 +666,20 @@ export const LocalLLMModal: React.FC<LocalLLMModalProps> = ({
                 Reset
               </button>
             </div>
+          </div>
+
+          {/* Model Discovery & Model Selector Dropdown */}
+          <div className="space-y-1.5 rounded-xl border border-white/5 bg-black/40 p-3">
+            <label className="text-[10px] font-mono uppercase tracking-wider text-slate-300">Declared model inputs</label>
+            <div className="flex flex-wrap gap-2">
+              {(['image', 'document', 'video'] as AttachmentKind[]).map(kind => (
+                <label key={kind} className="flex cursor-pointer items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-2.5 py-1.5 text-[10px] text-slate-300">
+                  <input type="checkbox" checked={attachmentKinds.includes(kind)} disabled={!enabled} onChange={event => void handleAttachmentKindToggle(kind, event.target.checked)} />
+                  <span className="capitalize">{kind}</span>
+                </label>
+              ))}
+            </div>
+            <p className="text-[9.5px] text-slate-500">Enable only inputs supported by the selected model. Ollama native fallback accepts images only.</p>
           </div>
 
           {/* Model Discovery & Model Selector Dropdown */}

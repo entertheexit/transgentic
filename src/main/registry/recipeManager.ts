@@ -536,9 +536,34 @@ export class RecipeManager {
     const nextVersion = bumpSemanticVersion(current.version);
     const changelog: string[] = [];
     const updatedSelectors = { ...current.selectors };
+    const updatedResponse = structuredClone(current.response);
 
     for (const [key, val] of Object.entries(verifiedSelectors)) {
       if (typeof val === 'string' && val.trim().length > 0) {
+        if (key.startsWith('attachment.')) {
+          const parts = key.split('.');
+          const mode = parts[1] as keyof typeof updatedResponse.modes;
+          const upload = updatedResponse.modes[mode]?.inputAttachments;
+          if (!upload) continue;
+          if (parts[2] === 'revealSteps' && /^\d+$/.test(parts[3] || '') && parts[4] === 'selectors') {
+            const index = Number(parts[3]);
+            const step = upload.revealSteps?.[index];
+            if (!step) continue;
+            const oldVal = step.target.selectors;
+            const oldList = normalizeSelectorList(oldVal);
+            step.target.selectors = normalizeSelectorCandidate([val.trim(), ...oldList.filter(selector => selector !== val.trim())]);
+            changelog.push(`${key}: "${oldList.join(', ') || 'none'}" -> "${val.trim()}"`);
+            continue;
+          }
+          if (['fileInput', 'ready', 'cleanup'].includes(parts[2])) {
+            const field = parts[2] as 'fileInput' | 'ready' | 'cleanup';
+            const oldVal = upload[field];
+            const oldList = normalizeSelectorList(oldVal);
+            (upload as any)[field] = normalizeSelectorCandidate([val.trim(), ...oldList.filter(selector => selector !== val.trim())]);
+            changelog.push(`${key}: "${oldList.join(', ') || 'none'}" -> "${val.trim()}"`);
+          }
+          continue;
+        }
         const oldVal = (current.selectors as any)[key];
         const oldList = normalizeSelectorList(oldVal);
         const updatedList = [val.trim(), ...oldList.filter((s) => s !== val.trim())];
@@ -551,6 +576,7 @@ export class RecipeManager {
       ...current,
       version: nextVersion,
       selectors: updatedSelectors,
+      response: updatedResponse,
       healedAt: new Date().toISOString(),
       healer,
       changelog,
@@ -796,7 +822,13 @@ Produce a valid JSON object strictly matching the following schema:
       "text": {
         "enabled": true,
         "contentSelector": "CSS selector for text markdown response",
-        "mediaKind": "text"
+        "mediaKind": "text",
+        "inputAttachments": {
+          "fileInput": "Optional observed native input[type=file] selector",
+          "revealSteps": [{ "action": "click", "target": { "selectors": "Stable CSS fallback", "role": "button", "name": ["Exact accessible label"] } }],
+          "acceptedKinds": ["image", "document"],
+          "multiple": true
+        }
       },
       "image": {
         "enabled": true,
@@ -822,6 +854,8 @@ ${domSnippet.slice(0, 4000)}
 
 REQUIREMENTS:
 - Return ONLY the JSON object. Do not include markdown formatting or commentary.
+- Include inputAttachments only when a native file input or attachment controls are present in the supplied DOM. Never invent upload support.
+- Use revealSteps only for the minimum UI clicks required to make the native file input available; prefer roles and exact accessible names over generated IDs.
 `.trim();
 
     const completion = await LocalLlmClient.generateCompletion(prompt, activeConfig, {

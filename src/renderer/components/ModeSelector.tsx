@@ -22,7 +22,7 @@ export const ModeSelector: React.FC<ModeSelectorProps> = ({ activeMode, onChange
     onChange(mode);
   };
   return (
-    <div className="w-full px-4">
+    <div className="w-full">
       <div className="bg-black/50 backdrop-blur-md p-1 rounded-2xl border border-white/10 flex items-center justify-between shadow-inner gap-0.5">
         {MODES.map(({ id, label, icon: Icon }, idx) => {
           const isActive = activeMode === id || (activeMode === 'writing' && id === 'general');

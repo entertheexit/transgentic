@@ -14,6 +14,7 @@ import { AccountManagerModal } from './components/AccountManagerModal.js';
 import { AuthSetupModal } from './components/AuthSetupModal.js';
 import { LocalLLMModal } from './components/LocalLLMModal.js';
 import { ProviderId, TaskMode } from '../shared/types.js';
+import type { AttachmentInput, DesktopAttachmentSelection } from '../shared/attachments.js';
 import { getProviderDisplayName } from './utils/providerTheme.js';
 import {
   Pin,
@@ -94,6 +95,7 @@ export function App() {
     minimize,
     hideToTray,
     executePrompt,
+    selectQuickPromptFiles,
     hasActiveSession,
     clearThreadSessions,
     servicesManifest,
@@ -329,10 +331,10 @@ export function App() {
     openDrawer(providerId);
   };
 
-  const handleSendPrompt = async (promptText: string) => {
+  const handleSendPrompt = async (promptText: string, files: AttachmentInput[] = []) => {
     soundFx.playClick();
     try {
-      const result = await executePrompt(promptText, coreStatus.activeMode);
+      const result = await executePrompt(promptText, coreStatus.activeMode, undefined, undefined, undefined, files);
       soundFx.playTaskSuccess();
       return result;
     } catch (err) {
@@ -681,6 +683,7 @@ export function App() {
                     }}
                     localLLMEnabled={config.localLLM?.enabled ?? false}
                     onSendPrompt={handleSendPrompt}
+                    onSelectFiles={(mode?: TaskMode): Promise<DesktopAttachmentSelection[]> => selectQuickPromptFiles(mode)}
                     hasActiveSession={hasActiveSession}
                     onClearSession={clearThreadSessions}
                     onOpenAuthModal={() => {

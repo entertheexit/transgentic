@@ -1,5 +1,7 @@
 export * from './types/recipe.js';
+export * from './attachments.js';
 import type { CustomRecipe } from './types/recipe.js';
+import type { AttachmentKind } from './attachments.js';
 
 export type ProviderId = 'chatgpt' | 'claude' | 'gemini' | 'grok' | 'localllm' | (string & {});
 
@@ -107,6 +109,10 @@ export interface McpRequestLog {
   localCompactApplied?: boolean;
   localCompactOriginalChars?: number;
   localCompactDistilledChars?: number;
+  attachmentCount?: number;
+  attachmentBytes?: number;
+  attachments?: Array<{ name: string; mimeType: string; size: number; sha256: string }>;
+  attachmentDestinations?: string[];
 }
 
 export interface BlindedTokenMap {
@@ -286,6 +292,7 @@ export interface LocalLLMConfig {
   localCompact?: boolean;           // Context distillation for prompts exceeding character threshold before Cloud AI
   completionCompact?: boolean;      // Explicit Local LLM compaction for text-only completion requests
   compactThresholdChars?: number;   // Character threshold to trigger Local Compact (default: 4000)
+  attachmentKinds?: AttachmentKind[]; // Explicit input capability declaration for the selected local model
 }
 
 export type DoubleAgentConfig = doubleAgentConfig;
@@ -309,6 +316,7 @@ export const DEFAULT_LOCAL_LLM_CONFIG: LocalLLMConfig = {
   localCompact: false,
   completionCompact: false,
   compactThresholdChars: 4000,
+  attachmentKinds: [],
 };
 
 export const DEFAULT_HEALING_CONFIG: HealingConfig = {
@@ -354,6 +362,7 @@ export interface ServiceModelDef {
   requiresTier?: string;
   mode?: RouteMode;
   modes?: RouteMode[];
+  attachmentKinds?: AttachmentKind[];
 }
 
 export interface ServiceThemeConfig {
@@ -377,6 +386,7 @@ export interface ServiceManifestEntry {
   apiKey?: string;
   baseUrl?: string;
   supportsModelRouting?: boolean;
+  attachmentKinds?: AttachmentKind[];
   disclaimer?: string;
   url: string;
   partition: string;
@@ -482,8 +492,8 @@ export interface IpcApi {
   toggleExperimentalService?: (serviceId: ProviderId, enabled: boolean) => Promise<ServicesManifest>;
   updateServiceManifest?: (serviceId: ProviderId, updates: Partial<ServiceManifestEntry>) => Promise<ServicesManifest>;
   getServiceConflicts: () => Promise<ServiceRouteConflict[]>;
-  addCustomApiProvider?: (entry: { name: string; baseUrl: string; apiKey?: string; defaultModelId?: string }) => Promise<ServicesManifest>;
-  updateCustomApiProvider?: (serviceId: ProviderId, entry: { name?: string; baseUrl?: string; apiKey?: string; defaultModelId?: string }) => Promise<ServicesManifest>;
+  addCustomApiProvider?: (entry: { name: string; baseUrl: string; apiKey?: string; defaultModelId?: string; attachmentKinds?: AttachmentKind[] }) => Promise<ServicesManifest>;
+  updateCustomApiProvider?: (serviceId: ProviderId, entry: { name?: string; baseUrl?: string; apiKey?: string; defaultModelId?: string; attachmentKinds?: AttachmentKind[] }) => Promise<ServicesManifest>;
   deleteProvider?: (serviceId: ProviderId) => Promise<ServicesManifest>;
   updateServiceTitle?: (serviceId: ProviderId, title: string) => Promise<ServicesManifest>;
   getAccounts: () => Promise<AccountRegistryStore>;

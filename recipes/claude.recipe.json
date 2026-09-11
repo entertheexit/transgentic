@@ -57,7 +57,8 @@
       "text": {
         "enabled": true,
         "contentSelector": ".font-claude-message, .prose",
-        "mediaKind": "text"
+        "mediaKind": "text",
+        "inputAttachments": { "fileInput": "input[type=\"file\"]", "acceptedKinds": ["image", "document"], "multiple": true }
       }
     }
   }
