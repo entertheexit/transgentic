@@ -18,6 +18,11 @@
 </p>
 
 <p align="center">
+  <a href="https://buymeacoffee.com/patiparnne"><img src="docs/assets/badge-buy-me-a-coffee.svg" alt="Support on Buy Me a Coffee" height="30"></a>
+  <a href="https://www.patreon.com/patiparnne"><img src="docs/assets/badge-patreon.svg" alt="Support on Patreon" height="30"></a>
+</p>
+
+<p align="center">
   <a href="#overview">Overview</a> ·
   <a href="#getting-started">Downloads &amp; quick start</a> ·
   <a href="#provider-and-mcp-endpoints">Endpoints</a> ·
