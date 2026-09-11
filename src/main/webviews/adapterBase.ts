@@ -10,7 +10,7 @@ import { TimeoutManager } from '../config/timeouts.js';
 export interface ProviderAdapterResult {
   text: string;
   media?: {
-    type: 'image' | 'video' | 'audio' | 'music';
+    type: 'image' | 'video' | 'audio';
     data: string; // Base64 or URL
     suggestedName?: string;
   };
@@ -306,7 +306,7 @@ export abstract class BaseProviderAdapter {
 
       // If model is actively thinking or rendering media, ensure budget accommodates deep reasoning & media generation (at least 420s)
       if (inspection.isThinking || inspection.isMediaRendering) {
-        maxBudgetMs = Math.max(maxBudgetMs, (mode === 'video' || mode === 'audio' || (mode as any) === 'music') ? 420_000 : 300_000);
+        maxBudgetMs = Math.max(maxBudgetMs, (mode === 'video' || mode === 'music') ? 420_000 : 300_000);
       }
 
       // 2. Stream chunk updates if new text streamed
@@ -370,7 +370,7 @@ export abstract class BaseProviderAdapter {
           const finalText = cleanModelOutput(rawFinal);
 
           let finalMediaUrl = finalInspect.mediaUrl || effectiveMediaUrl;
-          let finalMediaType = finalInspect.mediaType || inspection.mediaType || (mode === 'video' ? 'video' : (mode === 'audio' || (mode as any) === 'music') ? 'audio' : mode === 'image' ? 'image' : undefined);
+          let finalMediaType = finalInspect.mediaType || inspection.mediaType || (mode === 'video' ? 'video' : mode === 'music' ? 'audio' : mode === 'image' ? 'image' : undefined);
 
           // If the media URL is from contribution.usercontent.google.com (which requires authenticated Google session cookies),
           // download the binary buffer directly within the authenticated webview session to guarantee 100% authenticated retrieval
@@ -400,7 +400,7 @@ export abstract class BaseProviderAdapter {
           }
 
           if ((mode === 'video' || finalMediaType === 'video') && finalMediaUrl) {
-            const isMusic = mode === 'audio' || (mode as any) === 'music' || finalInspect.mediaType === 'audio' || (finalInspect.mediaType as any) === 'music';
+            const isMusic = mode === 'music' || finalInspect.mediaType === 'audio';
             return {
               text: finalText,
               media: {
@@ -411,13 +411,13 @@ export abstract class BaseProviderAdapter {
             };
           }
 
-          if ((mode === 'audio' || (mode as any) === 'music' || finalMediaType === 'audio') && finalMediaUrl) {
+          if ((mode === 'music' || finalMediaType === 'audio') && finalMediaUrl) {
             return {
               text: finalText,
               media: {
                 type: 'audio',
                 data: finalMediaUrl,
-                suggestedName: `${this.providerId}_audio`,
+                suggestedName: `${this.providerId}_music`,
               },
             };
           }

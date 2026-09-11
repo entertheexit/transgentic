@@ -22,7 +22,7 @@ The field reference below covers commonly used fields, not a complete validation
 ## How recipes work
 
 1. **Declarative DOM Landmarks**: Recipes define CSS selectors (or prioritized fallback candidate lists) for text input areas, send buttons, stop generation buttons, and model switchers.
-2. **Multi-Mode Extraction**: The `response.modes` configuration defines extraction selectors for **Text/Markdown**, **Images** (`<img>`, `data:image/...`), **Videos** (`<video>`, `.mp4`), and **Audio/Music** (`<audio>`, `.mp3`), allowing Transgentic to download media assets directly to local disk.
+2. **Multi-Mode Extraction**: The `response.modes` configuration defines extraction selectors for **Text/Markdown**, **Images** (`<img>`, `data:image/...`), **Videos** (`<video>`, `.mp4`), and **Music** (`<audio>`, `.mp3`), allowing Transgentic to download media assets directly to local disk.
 3. **Cookie Synchronization (`cookie_sync`)**: Transgentic bridges session cookies from your active Google Chrome browser via the **Transgentic Sync** companion extension into an isolated background Electron partition (`persist:transgentic_<provider>`). Google Chrome does not need to stay open.
 4. **URL recovery (`resetUrlPatterns`)**: If a webview navigates away from the active chat view (e.g. into `/projects` or `/settings`), configured redirect rules can return the session back to the clean chat interface.
 
@@ -35,6 +35,7 @@ The field reference below covers commonly used fields, not a complete validation
 | `id` | `string` (required) | Unique alphanumeric slug (e.g. `"custom_ai"`, `"enterprise_portal"`). |
 | `title` | `string` (required) | Human-readable provider name displayed across the UI (e.g. `"Enterprise AI Portal"`). |
 | `version` | `string` (required) | Semantic version string (e.g. `"1.0.0"`). Automatically bumped by Self-Healing. |
+| `modeSchemaVersion` | `2` | Identifies the Music mode schema. Recipes without it migrate the former `audio` mode key to `music`. |
 | `domainMatch` | `string` (required) | Hostname pattern used by the Chrome extension to detect the site (e.g. `"chat.example.com"`). |
 | `url` | `string` (optional) | Default entry URL loaded inside the background webview partition. |
 | `newChatUrl` | `string` (optional) | Direct URL loaded when starting a brand new conversation turn (e.g. `"https://chat.example.com/new"`). |
@@ -44,7 +45,7 @@ The field reference below covers commonly used fields, not a complete validation
 | `authStrategy` | `"cookie_sync"` | Session authentication strategy. |
 | `auth` | `object` (optional) | Verification cookies, logged-in badges, and login page redirect patterns. |
 | `rateLimit` | `object` (optional) | Text patterns and error banner selectors indicating rate-limit cooldowns. |
-| `models` | `Array<ModelDef>` (optional) | Models supported by the provider with declared modes (`general`, `coding`, `image`, `video`, `audio`). |
+| `models` | `Array<ModelDef>` (optional) | Models supported by the provider with declared modes (`general`, `coding`, `image`, `video`, `music`). |
 
 ### Selectors
 
@@ -58,7 +59,7 @@ The field reference below covers commonly used fields, not a complete validation
 * **`text`**: `{ enabled: true, contentSelector?: "...", mediaKind: "text" }` — Prose and code extraction.
 * **`image`**: `{ enabled: true, contentSelector: "img.generated-image, img[src*='storage']", downloadSelector?: "...", mediaKind: "image" }` — Image generation.
 * **`video`**: `{ enabled: true, contentSelector: "video source, video[src]", downloadSelector?: "...", mediaKind: "video" }` — Video generation.
-* **`audio`**: `{ enabled: true, contentSelector: "audio source, audio[src]", downloadSelector?: "...", mediaKind: "audio" }` — Audio/music generation.
+* **`music`**: `{ enabled: true, contentSelector: "audio source, audio[src]", downloadSelector?: "...", mediaKind: "audio" }` — Music generation. The media kind remains `audio` because it describes the file format.
 
 ---
 
@@ -198,7 +199,7 @@ The configured storage root (default: `~/Documents/Transgentic`) groups custom r
 ├── Library/
 │   ├── Images/     # Downloaded PNG/WebP images
 │   ├── Videos/     # Downloaded MP4 videos
-│   └── Audios/     # Downloaded MP3/WAV tracks
+│   └── Music/      # Downloaded MP3/WAV music tracks
 └── Recipes/
     ├── Custom/     # User-installed recipes (<id>.json)
     ├── Healed/     # Self-healed active selector overrides (<id>.json)

@@ -11,7 +11,7 @@ export interface DomInspectionResult {
   securityWarningReason?: string;
   text: string;
   mediaUrl?: string;
-  mediaType?: 'image' | 'video' | 'audio' | 'music';
+  mediaType?: 'image' | 'video' | 'audio';
 }
 
 export class DomObserver {
@@ -542,7 +542,7 @@ export class DomObserver {
                   '[data-test-id*="image"] img'
                 ));
 
-                const isMusicMode = ${JSON.stringify(mode)} === 'audio' || ${JSON.stringify(mode)} === 'music' || !!turnContainer.querySelector('generated-music');
+                const isMusicMode = ${JSON.stringify(mode)} === 'music' || !!turnContainer.querySelector('generated-music');
                 const isVideoMode = ${JSON.stringify(mode)} === 'video' || !!turnContainer.querySelector('generated-video');
 
                 if (isMusicMode && musicEl) {

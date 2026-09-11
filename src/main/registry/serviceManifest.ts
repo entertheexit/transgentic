@@ -3,24 +3,26 @@ import { builtInCliServices } from '../../shared/cli.js';
 import path from "path";
 import { fileURLToPath } from "url";
 import { app } from "electron";
-import { ModeRouteConfig, ProviderId, ServiceManifestEntry, ServiceModelDef, ServiceRouteConflict, ServicesManifest, RouteMode, normalizeRouteMode } from "../../shared/types.js";
+import { MODE_SCHEMA_VERSION, ModeRouteConfig, ProviderId, ServiceManifestEntry, ServiceModelDef, ServiceRouteConflict, ServicesManifest, RouteMode, normalizeRouteMode } from "../../shared/types.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 function normalizeModelModes<T extends ServiceModelDef>(model: T): T {
+  const migrateMode = (mode: unknown): RouteMode => normalizeRouteMode(mode === 'audio' ? 'music' : String(mode));
   const modes = Array.isArray(model.modes)
-    ? Array.from(new Set(model.modes.map(normalizeRouteMode)))
+    ? Array.from(new Set(model.modes.map(migrateMode)))
     : model.modes;
   return {
     ...model,
-    mode: model.mode ? normalizeRouteMode(model.mode) : model.mode,
+    mode: model.mode ? migrateMode(model.mode) : model.mode,
     ...(modes ? { modes } : {}),
   } as T;
 }
 
 export class ServiceManifestManager {
   private static readonly DEFAULT_MANIFEST: ServicesManifest = {
+    modeSchemaVersion: MODE_SCHEMA_VERSION,
     version: "1.0.0",
     services: {
       ...builtInCliServices(),
@@ -98,10 +100,10 @@ export class ServiceManifestManager {
           glowClass: "shadow-[0_0_15px_rgba(59,130,246,0.15)]",
         },
         models: [
-          { id: "gemini-2-0-flash", displayName: "Gemini 2.0 Flash (Next-Gen Multimodal)", enabled: true, discoveredAvailable: true, userEnabled: true, requiresTier: "Free/Advanced", mode: "general", modes: ["general", "coding", "image", "video", "audio"] },
-          { id: "gemini-2-0-pro", displayName: "Gemini 2.0 Pro Experimental", enabled: true, discoveredAvailable: true, userEnabled: true, requiresTier: "Advanced", mode: "general", modes: ["general", "coding", "image", "video", "audio"] },
-          { id: "gemini-1-5-flash", displayName: "Gemini 1.5 Flash (Fast)", enabled: true, discoveredAvailable: true, userEnabled: true, requiresTier: "Free", mode: "general", modes: ["general", "coding", "video", "audio"] },
-          { id: "gemini-1-5-pro", displayName: "Gemini 1.5 Pro (2M Context)", enabled: true, discoveredAvailable: true, userEnabled: true, requiresTier: "Free/Advanced", mode: "general", modes: ["general", "coding", "video", "audio"] },
+          { id: "gemini-2-0-flash", displayName: "Gemini 2.0 Flash (Next-Gen Multimodal)", enabled: true, discoveredAvailable: true, userEnabled: true, requiresTier: "Free/Advanced", mode: "general", modes: ["general", "coding", "image", "video", "music"] },
+          { id: "gemini-2-0-pro", displayName: "Gemini 2.0 Pro Experimental", enabled: true, discoveredAvailable: true, userEnabled: true, requiresTier: "Advanced", mode: "general", modes: ["general", "coding", "image", "video", "music"] },
+          { id: "gemini-1-5-flash", displayName: "Gemini 1.5 Flash (Fast)", enabled: true, discoveredAvailable: true, userEnabled: true, requiresTier: "Free", mode: "general", modes: ["general", "coding", "video", "music"] },
+          { id: "gemini-1-5-pro", displayName: "Gemini 1.5 Pro (2M Context)", enabled: true, discoveredAvailable: true, userEnabled: true, requiresTier: "Free/Advanced", mode: "general", modes: ["general", "coding", "video", "music"] },
         ],
       },
       grok: {
@@ -192,6 +194,7 @@ export class ServiceManifestManager {
           const parsed = JSON.parse(raw);
           if (parsed && parsed.services) {
             baseManifest = {
+              modeSchemaVersion: MODE_SCHEMA_VERSION,
               version: parsed.version || baseManifest.version,
               services: {
                 ...baseManifest.services,
@@ -289,6 +292,7 @@ export class ServiceManifestManager {
     for (const service of Object.values(baseManifest.services)) {
       if (Array.isArray(service.models)) service.models = service.models.map(normalizeModelModes);
     }
+    baseManifest.modeSchemaVersion = MODE_SCHEMA_VERSION;
     this.currentManifest = baseManifest;
     this.notify();
     return this.currentManifest;
@@ -309,6 +313,7 @@ export class ServiceManifestManager {
       }
       // Clone and sanitize before persisting: ensure obsolete keys and unwanted flags are purged
       const toSave: ServicesManifest = JSON.parse(JSON.stringify(this.currentManifest));
+      toSave.modeSchemaVersion = MODE_SCHEMA_VERSION;
       for (const key of Object.keys(toSave.services)) {
         if (
           !this.DEFAULT_MANIFEST.services[key] &&

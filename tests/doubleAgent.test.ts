@@ -156,7 +156,7 @@ describe('Double Agent Dispatch & Dual Pipeline Routing', () => {
             coding: false,
             image: true,
             video: true,
-            audio: true,
+            music: true,
           },
         },
       };
@@ -302,7 +302,7 @@ describe('Double Agent Dispatch & Dual Pipeline Routing', () => {
 
     it('should enforce mutual exclusion between Main and Co primaries', () => {
       const matrix = DynamicRouter.getRouteMatrix();
-      const modes = ['general', 'coding', 'image', 'video', 'audio'] as const;
+      const modes = ['general', 'coding', 'image', 'video', 'music'] as const;
       for (const mode of modes) {
         const mainService = matrix.main[mode].defaultService;
         const coService = matrix.co[mode].defaultService;
@@ -337,7 +337,7 @@ describe('Double Agent Dispatch & Dual Pipeline Routing', () => {
       expect(updatedMatrix.co.coding.defaultService).not.toBe(mainPrimary);
     });
 
-    it('should disallow Local LLM in media modes (image, video, audio)', () => {
+    it('should disallow Local LLM in media modes (image, video, music)', () => {
       DynamicRouter.setLocalLlmConfig({
         enabled: true,
         preset: 'ollama',

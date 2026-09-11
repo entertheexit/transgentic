@@ -38,7 +38,7 @@ import {
   PenTool,
   Image as ImageIcon,
   Video,
-  Volume2,
+  Music,
   ChevronDown,
   ChevronUp,
   Timer,
@@ -727,7 +727,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         coding: true,
         image: true,
         video: true,
-        audio: true,
+        music: true,
       };
       const updatedModes = {
         ...currentModes,
@@ -1076,7 +1076,7 @@ http_headers = { "Authorization" = "Bearer ${clientToken || 'YOUR_TOKEN'}" }`;
                 <label className="text-[10px] font-mono uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
                   <span>Active Double Agent Modes:</span>
                   <span className="text-[9px] text-amber-400 font-bold uppercase">
-                    {Object.values(config.doubleAgent?.modes || { general: true, coding: true, image: true, video: true, audio: true }).filter(Boolean).length}/5 Enabled
+                    {Object.values(config.doubleAgent?.modes || { general: true, coding: true, image: true, video: true, music: true }).filter(Boolean).length}/5 Enabled
                   </span>
                 </label>
               </div>
@@ -1086,7 +1086,7 @@ http_headers = { "Authorization" = "Bearer ${clientToken || 'YOUR_TOKEN'}" }`;
                   { mode: 'coding' as RouteMode, label: 'Coding', icon: Code2 },
                   { mode: 'image' as RouteMode, label: 'Image', icon: ImageIcon },
                   { mode: 'video' as RouteMode, label: 'Video', icon: Video },
-                  { mode: 'audio' as RouteMode, label: 'Audio', icon: Volume2 },
+                  { mode: 'music' as RouteMode, label: 'Music', icon: Music },
                 ].map(({ mode, label, icon: Icon }) => {
                   const isModeActive = config.doubleAgent?.modes
                     ? (config.doubleAgent.modes[mode] ?? true)
@@ -1168,7 +1168,7 @@ http_headers = { "Authorization" = "Bearer ${clientToken || 'YOUR_TOKEN'}" }`;
                 { mode: 'coding' as RouteMode, label: 'Coding', icon: Code2 },
                 { mode: 'image' as RouteMode, label: 'Image', icon: ImageIcon },
                 { mode: 'video' as RouteMode, label: 'Video', icon: Video },
-                { mode: 'audio' as RouteMode, label: 'Audio', icon: Volume2 },
+                { mode: 'music' as RouteMode, label: 'Music', icon: Music },
               ].map(({ mode, label, icon: Icon }) => {
                 const isGuardActive = typeof config.agentHaltGuard === 'object' && config.agentHaltGuard !== null
                   ? (config.agentHaltGuard[mode] ?? true)
@@ -1321,7 +1321,7 @@ http_headers = { "Authorization" = "Bearer ${clientToken || 'YOUR_TOKEN'}" }`;
                 <label className="text-[10px] font-mono uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
                   <span>Active Recall Modes:</span>
                   <span className="text-[9px] text-purple-400 font-bold uppercase">
-                    {Object.values(config.recall?.modes || { general: true, coding: true, image: true, video: true, audio: true }).filter(Boolean).length}/5 Enabled
+                    {Object.values(config.recall?.modes || { general: true, coding: true, image: true, video: true, music: true }).filter(Boolean).length}/5 Enabled
                   </span>
                 </label>
                 <span className="text-[9px] text-slate-500 font-sans">
@@ -1335,7 +1335,7 @@ http_headers = { "Authorization" = "Bearer ${clientToken || 'YOUR_TOKEN'}" }`;
                   { mode: 'coding' as RouteMode, label: 'Coding', icon: Code2 },
                   { mode: 'image' as RouteMode, label: 'Image', icon: ImageIcon },
                   { mode: 'video' as RouteMode, label: 'Video', icon: Video },
-                  { mode: 'audio' as RouteMode, label: 'Audio', icon: Volume2 },
+                  { mode: 'music' as RouteMode, label: 'Music', icon: Music },
                 ].map(({ mode, label, icon: Icon }) => {
                   const isModeActive = config.recall?.modes ? (config.recall.modes[mode] ?? true) : true;
                   const isMasterEnabled = config.recall?.enabled ?? true;
@@ -1838,7 +1838,7 @@ http_headers = { "Authorization" = "Bearer ${clientToken || 'YOUR_TOKEN'}" }`;
                     Local Media File Storage
                   </span>
                   <p className="text-[10px] text-slate-400">
-                    100% local storing in Documents folder for generated images, videos, and audio.
+                    100% local storage in Documents for generated images, videos, and music.
                   </p>
                 </div>
               </div>
@@ -1883,7 +1883,7 @@ http_headers = { "Authorization" = "Bearer ${clientToken || 'YOUR_TOKEN'}" }`;
                   <span className="text-purple-300 font-bold block">Library/</span>
                   <span className="text-slate-400 block">• Images/</span>
                   <span className="text-slate-400 block">• Videos/</span>
-                  <span className="text-slate-400 block">• Audios/</span>
+                  <span className="text-slate-400 block">• Music/</span>
                 </div>
                 <div className="p-2 rounded-lg bg-black/40 border border-white/5 space-y-0.5">
                   <span className="text-cyan-300 font-bold block">Recipes/</span>
@@ -2235,7 +2235,7 @@ http_headers = { "Authorization" = "Bearer ${clientToken || 'YOUR_TOKEN'}" }`;
                       </p>
                       <div className="font-mono text-[9px] text-slate-300 bg-black/50 p-2 rounded border border-white/5 space-y-0.5">
                         <div>• <b>prompt</b> (string, required): The prompt to execute.</div>
-                        <div>• <b>mode</b> (enum): general | writing | coding | image | video | audio</div>
+                        <div>• <b>mode</b> (enum): general | writing | coding | image | video | music</div>
                         <div>• <b>writing</b>: Keeps Writing guidance and identity while using General route settings.</div>
                         <div>• <b>provider</b> (enum): chatgpt | claude | gemini | grok</div>
                         <div>• <b>model</b> (string): e.g. 'gpt-4o', 'o1', 'claude-3-5-sonnet', 'grok-3'</div>
@@ -2247,7 +2247,7 @@ http_headers = { "Authorization" = "Bearer ${clientToken || 'YOUR_TOKEN'}" }`;
 
                     <div className="bg-black/40 p-2.5 rounded-xl border border-white/5 space-y-1">
                       <div className="flex items-center justify-between">
-                        <span className="font-mono text-purple-300 font-bold">generate_image / generate_video / generate_audio</span>
+                        <span className="font-mono text-purple-300 font-bold">generate_image / generate_video / generate_music</span>
                         <span className="text-[9px] font-mono text-purple-400 bg-purple-500/10 px-1.5 py-0.2 rounded border border-purple-500/20 whitespace-nowrap">
                           Local Disk Assets
                         </span>
@@ -2386,24 +2386,25 @@ http_headers = { "Authorization" = "Bearer ${clientToken || 'YOUR_TOKEN'}" }`;
                       </div>
                     </div>
 
-                    {/* Audio & Music Generation */}
+                    {/* Music Generation */}
                     <div className="p-2.5 rounded-xl bg-black/40 border border-white/5 space-y-1.5">
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
-                          <Volume2 className="w-3.5 h-3.5 text-emerald-400" />
-                          <span className="text-emerald-300 font-bold">GET /audio/sse</span>
+                          <Music className="w-3.5 h-3.5 text-emerald-400" />
+                          <span className="text-emerald-300 font-bold">GET /music/sse</span>
                         </div>
                         <button
-                          onClick={() => copyToClipboard(`http://127.0.0.1:${currentPort}/audio/sse?token=${clientToken || 'YOUR_TOKEN'}`, 'ep-mode-audio')}
+                          onClick={() => copyToClipboard(`http://127.0.0.1:${currentPort}/music/sse?token=${clientToken || 'YOUR_TOKEN'}`, 'ep-mode-music')}
                           className="px-2 py-0.5 rounded bg-white/10 hover:bg-white/20 text-slate-200 text-[10px] transition-colors cursor-pointer"
                         >
-                          {copiedId === 'ep-mode-audio' ? 'Copied!' : 'Copy URL'}
+                          {copiedId === 'ep-mode-music' ? 'Copied!' : 'Copy URL'}
                         </button>
                       </div>
                       <div className="flex items-center justify-between text-[10px] text-slate-400 font-sans">
-                        <span><strong className="text-slate-200 font-normal">Audio & Music Generation</strong> <span className="font-mono text-slate-300 text-[9.5px]">(lyria-3-pro)</span></span>
+                        <span><strong className="text-slate-200 font-normal">Music Generation</strong> <span className="font-mono text-slate-300 text-[9.5px]">(lyria-3-pro)</span></span>
                         <span className="text-[9px] font-mono text-emerald-400 bg-emerald-500/10 px-1.5 py-0.2 rounded border border-emerald-500/20">Local Disk MP3</span>
                       </div>
+                      <p className="text-[9px] text-slate-500">Narration, speech, voiceover, TTS, podcasts, and sound effects are reserved for a future Audio provider.</p>
                     </div>
 
                     {/* Coding Mode */}

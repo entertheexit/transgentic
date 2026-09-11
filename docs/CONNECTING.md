@@ -109,11 +109,13 @@ These connections supply a default task mode while leaving provider selection to
 | Coding | Code, tests, and technical review using the coding route. | `/coding/mcp` | `/coding/sse` |
 | Image | Image or storyboard requests that need image-mode routing rather than a text-only answer. | `/image/mcp` | `/image/sse` |
 | Video | Video requests using configured video-capable candidates and extraction rules. | `/video/mcp` | `/video/sse` |
-| Audio | Audio or music requests using configured audio-capable candidates and extraction rules. | `/audio/mcp` | `/audio/sse` |
+| Music | Songs, tracks, soundtracks, beats, melodies, jingles, BGM, and instrumentals using configured music-capable candidates. | `/music/mcp` | `/music/sse` |
 
 For example, a storyboard application can connect to `/image/mcp` and call `prompt_model` without repeating the image mode on every request. Routing still depends on your enabled providers and available accounts. Local text models are not media generators, and a media request may fail or return without a saved artifact.
 
 Writing remains a distinct backend request mode. `/writing/mcp`, `/writing/sse`, explicit `mode: "writing"`, and the `transgentic/writing` completion model retain Writing guidance and identity. They share General's configured provider route and per-mode policies, so no separate Writing route appears in the desktop controls.
+
+Speech, narration, voiceover, TTS, podcasts, and sound effects are reserved for a future Audio provider. The former `/audio/mcp` and `/audio/sse` music aliases are not available.
 
 ### Combining provider and mode choices
 

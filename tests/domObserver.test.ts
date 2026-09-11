@@ -10,7 +10,7 @@ describe('DomObserver Multi-Provider & Media Scraping Tests', () => {
     'grok',
     'claude',
   ];
-  const modes: TaskMode[] = ['general', 'coding', 'image', 'video', 'audio'];
+  const modes: TaskMode[] = ['general', 'coding', 'image', 'video', 'music'];
 
   it('should generate valid async executable JavaScript for every provider and mode combination', () => {
     for (const provider of providers) {
@@ -47,7 +47,7 @@ describe('DomObserver Multi-Provider & Media Scraping Tests', () => {
     expect(script).toContain('generated-music video[src]');
     expect(script).toContain('structured-content-container');
 
-    const audioScript = DomObserver.getInspectionScript('gemini', 'audio');
+    const audioScript = DomObserver.getInspectionScript('gemini', 'music');
     expect(audioScript).toContain('structured-content-container');
     expect(audioScript).toContain('generated-music video');
     expect(audioScript).toContain('output.mp4');

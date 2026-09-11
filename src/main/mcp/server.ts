@@ -65,6 +65,7 @@ import {
   AcceptedTaskMode,
   TaskIntent,
   TransgenticConfig,
+  AUDIO_MODE_UNAVAILABLE_MESSAGE,
   normalizeTaskMode,
   isAgentHaltGuardEnabled,
   isRecallEnabledForMode,
@@ -350,8 +351,8 @@ export class TransgenticMcpServer {
       });
     }
 
-    // 3. Dedicated Mode Gateways (e.g. /image/sse, /video/sse, /audio/sse, /coding/sse, /writing/sse)
-    const modes: AcceptedTaskMode[] = ['image', 'video', 'audio', 'coding', 'writing', 'general'];
+    // 3. Dedicated Mode Gateways (e.g. /image/sse, /video/sse, /music/sse, /coding/sse, /writing/sse)
+    const modes: AcceptedTaskMode[] = ['image', 'video', 'music', 'coding', 'writing', 'general'];
     for (const m of modes) {
       this.app.get(`/${m}/mcp`, (req, res) => {
         this.handleSseConnect(req, res, undefined, `/${m}/mcp`, m);
@@ -394,7 +395,7 @@ export class TransgenticMcpServer {
 
     const rawMode = (req.query.mode as string | undefined) || defaultMode;
     let effectiveMode: AcceptedTaskMode | undefined = undefined;
-    if (rawMode && ['general', 'coding', 'writing', 'image', 'video', 'audio', 'music'].includes(rawMode)) {
+    if (rawMode && ['general', 'coding', 'writing', 'image', 'video', 'music'].includes(rawMode)) {
       effectiveMode = rawMode as AcceptedTaskMode;
     }
 
@@ -691,7 +692,7 @@ export class TransgenticMcpServer {
 
     const queryMode = (req.query.mode as string | undefined) || defaultMode || sseClient?.targetMode;
     let resolvedMode: AcceptedTaskMode | undefined = undefined;
-    if (queryMode && ['general', 'coding', 'writing', 'image', 'video', 'audio', 'music'].includes(queryMode)) {
+    if (queryMode && ['general', 'coding', 'writing', 'image', 'video', 'music'].includes(queryMode)) {
       resolvedMode = queryMode as AcceptedTaskMode;
     }
 
@@ -782,7 +783,7 @@ export class TransgenticMcpServer {
 
     const modeProperty = {
       type: 'string',
-      enum: ['general', 'coding', 'writing', 'image', 'video', 'audio'],
+      enum: ['general', 'coding', 'writing', 'image', 'video', 'music'],
       description: 'Optional task mode hint affecting routing and output structure. Writing is a backend mode with prose guidance that uses the General route configuration.',
     };
 
@@ -791,14 +792,14 @@ export class TransgenticMcpServer {
       {
         name: 'prompt_model',
         description:
-          'RECOMMENDED DEFAULT: Primary Transgentic auto-routing endpoint. Automatically classifies task intent (general, coding, writing, reasoning, image, video, audio) and routes to the optimal active provider (Claude, ChatGPT, Gemini, Grok) with data blinding, secret protection, rate-limit fallback, model selection, and thread continuity. For media generation (images, storyboard scenes, video, audio), specify the "mode" parameter ("image", "video", "audio") or use dedicated media tools (generate_image, etc.) so Transgentic switches to specialized models rather than general text LLMs.',
+          'RECOMMENDED DEFAULT: Primary Transgentic auto-routing endpoint. Automatically classifies task intent (general, coding, writing, reasoning, image, video, music) and routes to the optimal active provider (Claude, ChatGPT, Gemini, Grok) with data blinding, secret protection, rate-limit fallback, model selection, and thread continuity. For media generation (images, storyboard scenes, video, music), specify the "mode" parameter ("image", "video", "music") or use dedicated media tools (generate_image, generate_video, generate_music) so Transgentic switches to specialized models rather than general text LLMs.',
         inputSchema: {
           type: 'object',
           properties: {
             prompt: { type: 'string', description: 'The prompt or instruction to execute.' },
             mode: {
               type: 'string',
-              enum: ['general', 'coding', 'writing', 'image', 'video', 'audio'],
+              enum: ['general', 'coding', 'writing', 'image', 'video', 'music'],
               description: 'Optional task mode hint affecting model routing & output structuring. If omitted, automatically classified.',
             },
             provider: {
@@ -920,31 +921,9 @@ export class TransgenticMcpServer {
         },
       },
       {
-        name: 'generate_audio',
-        description:
-          'Generates audio / speech / sound / music via AI services (Gemini, etc.), saves locally, and returns the short file path. Recommended for narration, character voices, and sound effects. Automatically activates audio mode.',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            prompt: { type: 'string', description: 'Audio generation prompt.' },
-            provider: {
-              type: 'string',
-              enum: ['gemini'],
-              description: 'Optional provider override.',
-            },
-            model: {
-              type: 'string',
-              description: 'Optional target model ID.',
-            },
-            ...sessionProperties,
-          },
-          required: ['prompt'],
-        },
-      },
-      {
         name: 'generate_music',
         description:
-          'Alias for generate_audio (generates background music and soundtracks via AI services), saves locally, and returns the short file path. Automatically activates audio/music mode.',
+          'Generates songs, background music, soundtracks, beats, melodies, jingles, and instrumentals via Gemini, saves the result locally, and returns the short file path. Automatically activates Music mode.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -1036,12 +1015,12 @@ export class TransgenticMcpServer {
       mode = 'video';
       isStrictExplicitMode = true;
     }
-    if (name === 'generate_audio' || name === 'generate_music') {
-      mode = 'audio';
+    if (name === 'generate_music') {
+      mode = 'music';
       isStrictExplicitMode = true;
     }
-    if (args.mode && ['general', 'coding', 'writing', 'image', 'video', 'audio', 'music'].includes(args.mode)) {
-      mode = args.mode === 'music' ? 'audio' : args.mode;
+    if (args.mode && ['general', 'coding', 'writing', 'image', 'video', 'music'].includes(args.mode)) {
+      mode = args.mode;
       isStrictExplicitMode = true;
     }
 
@@ -1506,7 +1485,8 @@ export class TransgenticMcpServer {
               adapterResult.media.data,
               adapterResult.media.type,
               adapterResult.media.suggestedName,
-              cookieHeader
+              cookieHeader,
+              effectiveMode
             );
             savedMediaRelPath = saved.filePath;
           }
@@ -1679,6 +1659,32 @@ export class TransgenticMcpServer {
       const { mode: effectiveMode, intent: taskIntent, isAutoDetected } = DynamicRouter.classifyMode(rawPrompt, mode, isStrictExplicitMode);
       effectiveResponseMode = effectiveMode;
       throwIfCancelled(abortSignal);
+      if (effectiveMode === 'audio') {
+        const unavailableLog: McpRequestLog = {
+          id: reqId,
+          timestamp: startTime,
+          mode: 'audio',
+          intent: 'audio',
+          targetProvider: 'none',
+          status: 'failed',
+          outcome: 'failed',
+          maskedSecretsCount: replacementsCount,
+          promptSnippet: maskedText.slice(0, 160),
+          promptText: maskedText,
+          responseText: AUDIO_MODE_UNAVAILABLE_MESSAGE,
+          responseSnippet: AUDIO_MODE_UNAVAILABLE_MESSAGE.slice(0, 160),
+          durationMs: Date.now() - startTime,
+          autoClassified: isAutoDetected,
+          isQuickPrompt: !!isQuickPrompt,
+        };
+        this.addLog(unavailableLog);
+        this.updateCoreState('idle');
+        return withResponseDetails({
+          isError: true,
+          content: [{ type: 'text', text: AUDIO_MODE_UNAVAILABLE_MESSAGE }],
+          metadata: { mode: 'audio', intent: 'audio', directive: 'audio_provider_unavailable', durationMs: Date.now() - startTime },
+        }, { status: 'failed', mode: 'audio', responseProfile });
+      }
       const balancedModeConfig = this.config?.balancedMode ?? this.config?.coding?.balancedMode ?? true;
       const isBalanced = isQuickPrompt ? (effectiveMode === 'coding' && balancedModeConfig) : balancedModeConfig;
       const doubleAgentCfg = this.config?.doubleAgent ?? { enabled: false, includeLocalLlm: false };
@@ -1955,7 +1961,7 @@ export class TransgenticMcpServer {
       }
 
       throwIfCancelled(reqAbortController.signal);
-      if (['image', 'video', 'audio'].includes(effectiveMode) && artifacts.length === 0) partial = true;
+      if (['image', 'video', 'music'].includes(effectiveMode) && artifacts.length === 0) partial = true;
       log.outcome = partial ? 'partial' : 'completed';
       if (shouldRunScenario2) {
         log.status = 'success';
@@ -2037,7 +2043,7 @@ export class TransgenticMcpServer {
         }
       }
 
-      if (!activeMediaPath && isAgenticClient && ['image', 'video', 'audio', 'music'].includes(effectiveMode)) {
+      if (!activeMediaPath && isAgenticClient && ['image', 'video', 'music'].includes(effectiveMode)) {
         contentItems.push({
           type: 'text',
           text: `\n[NOTE FOR AGENTIC CLIENT]: Transgentic completed the query but no downloadable media asset file was returned from ${executionResult.provider}. If your workflow requires an asset file, fallback to your own local generation tools or alternative approaches.`,

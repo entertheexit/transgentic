@@ -9,7 +9,7 @@ describe('Long-Running Operations & SSE Transports', () => {
     it('should allocate mode-specific timeout budgets accurately', () => {
       expect(TimeoutManager.getTimeout('coding')).toBe(300_000); // 5 minutes
       expect(TimeoutManager.getTimeout('video')).toBe(420_000);  // 7 minutes
-      expect(TimeoutManager.getTimeout('audio')).toBe(420_000);  // 7 minutes
+      expect(TimeoutManager.getTimeout('music')).toBe(420_000);  // 7 minutes
       expect(TimeoutManager.getTimeout('image')).toBe(120_000);  // 2 minutes
       expect(TimeoutManager.getTimeout('general')).toBe(60_000); // 60 seconds
       expect(TimeoutManager.getTimeout('writing')).toBe(60_000); // General route budget
@@ -99,7 +99,7 @@ describe('Long-Running Operations & SSE Transports', () => {
       expect(grokScript).toContain('video source, video[src]');
       expect(grokScript).toContain('img[src*="grok"]');
 
-      const geminiScript = DomObserver.getInspectionScript('gemini', 'audio');
+      const geminiScript = DomObserver.getInspectionScript('gemini', 'music');
       expect(geminiScript).toContain('audio source, audio[src]');
     });
   });

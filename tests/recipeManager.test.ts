@@ -95,7 +95,21 @@ describe('Custom Recipe System Unit Tests', () => {
       expect(result.recipe?.response.modes.text.enabled).toBe(true);
       expect(result.recipe?.response.modes.image?.contentSelector).toBe('img.output');
       expect(result.recipe?.response.modes.video?.contentSelector).toBe('video.stream');
-      expect(result.recipe?.response.modes.audio?.contentSelector).toBe('audio.clip');
+      expect(result.recipe?.response.modes.music?.contentSelector).toBe('audio.clip');
+    });
+
+    it('should migrate a legacy recipe Audio mode to Music and keep audio as its media kind', () => {
+      const legacy = JSON.parse(JSON.stringify(sampleValidRecipe));
+      delete legacy.modeSchemaVersion;
+      legacy.response.modes.audio = { enabled: true, contentSelector: 'audio.track', mediaKind: 'audio' };
+      legacy.models.push({ id: 'legacy-music', displayName: 'Legacy Music', mode: 'audio', modes: ['audio'] });
+
+      const result = validateCustomRecipe(legacy);
+      expect(result.valid).toBe(true);
+      expect(result.recipe?.modeSchemaVersion).toBe(2);
+      expect(result.recipe?.response.modes).not.toHaveProperty('audio');
+      expect(result.recipe?.response.modes.music).toMatchObject({ contentSelector: 'audio.track', mediaKind: 'audio' });
+      expect(result.recipe?.models.at(-1)).toMatchObject({ mode: 'music', modes: ['music'] });
     });
 
     it('should reject invalid payloads, missing required fields, or illegal characters', () => {

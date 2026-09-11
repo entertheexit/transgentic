@@ -78,7 +78,7 @@ export class AdaptiveRateLimiter {
   }
 
   public calculateJitterMs(mode: TaskMode): number {
-    const isMedia = mode === 'image' || mode === 'video' || mode === 'audio' || (mode as any) === 'music';
+    const isMedia = mode === 'image' || mode === 'video' || mode === 'music';
     const min = isMedia ? this.mediaJitterMinMs : this.textJitterMinMs;
     const max = isMedia ? this.mediaJitterMaxMs : this.textJitterMaxMs;
     return Math.floor(Math.random() * (max - min + 1)) + min;

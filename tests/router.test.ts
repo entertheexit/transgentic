@@ -31,9 +31,9 @@ describe('DynamicRouter', () => {
     const videoChain = DynamicRouter.getCandidateChain('video', undefined, false);
     expect(videoChain).toEqual(['grok', 'gemini']);
 
-    // Audio mode: Gemini
-    const audioChain = DynamicRouter.getCandidateChain('audio', undefined, false);
-    expect(audioChain).toEqual(['gemini']);
+    // Music mode: Gemini
+    const musicChain = DynamicRouter.getCandidateChain('music', undefined, false);
+    expect(musicChain).toEqual(['gemini']);
   });
 
   it('should support dynamic route updating and custom fallback reordering', () => {
@@ -94,10 +94,31 @@ describe('DynamicRouter', () => {
     expect(resImage.mode).toBe('image');
     expect(resImage.isAutoDetected).toBe(true);
 
-    // Audio intent
-    const resAudio = DynamicRouter.classifyMode('Generate audio sound effect of futuristic engine startup');
-    expect(resAudio.mode).toBe('audio');
-    expect(resAudio.isAutoDetected).toBe(true);
+    // Music intent reaches the implemented Gemini music route.
+    for (const prompt of [
+      'Compose background music for a fantasy scene',
+      'Create a song for the end credits',
+      'Make a synthwave track',
+      'Generate a cinematic soundtrack',
+      'Create a drum beat',
+      'Compose a melody and jingle',
+      'Make instrumental BGM',
+    ]) {
+      expect(DynamicRouter.classifyMode(prompt), prompt).toMatchObject({ mode: 'music', isAutoDetected: true });
+    }
+
+    // Speech and sound intent is reserved for a future Audio provider.
+    for (const prompt of [
+      'Generate a speech recording',
+      'Create narration for the documentary',
+      'Generate a voiceover for the trailer',
+      'Make TTS for this paragraph',
+      'Create a podcast introduction',
+      'Generate audio sound effect of futuristic engine startup',
+      'Make SFX for a spaceship door',
+    ]) {
+      expect(DynamicRouter.classifyMode(prompt), prompt).toMatchObject({ mode: 'audio', intent: 'audio', isAutoDetected: true });
+    }
 
     // Explicit mode override should be preserved
     const resExplicit = DynamicRouter.classifyMode('Write a story about space', 'writing');
@@ -128,12 +149,25 @@ describe('DynamicRouter', () => {
     expect(DynamicRouter.migrateRouteMatrix(writingMigrates)).toEqual(writingMigrates);
   });
 
+  it('migrates the legacy Audio route into Music without merging an explicit Music route', () => {
+    const legacyAudio = { mode: 'audio', primary: 'gemini', fallbacks: ['chatgpt'] };
+    const migrated = DynamicRouter.migrateRouteMatrix({ main: { audio: legacyAudio }, co: { audio: legacyAudio } });
+    expect(migrated.main.music).toMatchObject({ mode: 'music', primary: 'gemini', fallbacks: ['chatgpt'] });
+    expect(migrated.main).not.toHaveProperty('audio');
+
+    const explicitMusic = { mode: 'music', primary: 'grok', fallbacks: [] };
+    const musicWins = DynamicRouter.migrateRouteMatrix({ main: { audio: legacyAudio, music: explicitMusic }, co: {} });
+    expect(musicWins.main.music).toMatchObject({ primary: 'grok', fallbacks: [] });
+    expect(DynamicRouter.migrateRouteMatrix(migrated)).toEqual(migrated);
+  });
+
   it('preserves Writing as a backend mode while sharing General settings', () => {
     expect(normalizeTaskMode('writing')).toBe('writing');
     expect(normalizeRouteMode('writing')).toBe('general');
     expect(normalizeModeFlags({ writing: false, coding: false } as any)).toEqual({
-      general: false, coding: false, image: true, video: true, audio: true,
+      general: false, coding: false, image: true, video: true, music: true,
     });
+    expect(() => normalizeRouteMode('audio')).toThrow('Audio providers are not available yet');
     expect(normalizeModeFlags({ general: true, writing: false } as any).general).toBe(true);
     const normalized = normalizeModeFlags({ writing: false } as any);
     expect(normalizeModeFlags(normalized)).toEqual(normalized);

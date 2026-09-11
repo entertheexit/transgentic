@@ -41,7 +41,7 @@ export class TrayManager {
       };
     });
 
-    const modes: RouteMode[] = ['general', 'coding', 'image', 'video', 'audio'];
+    const modes: RouteMode[] = ['general', 'coding', 'image', 'video', 'music'];
     const modeItems = modes.map((m) => ({
       label: m.toUpperCase(),
       type: 'radio' as const,

@@ -58,7 +58,7 @@
         "downloadSelector": "a[data-testid=\"download-button\"], a[download][href*=\"video\"], a[href*=\"download-video\"]",
         "mediaKind": "video"
       },
-      "audio": {
+      "music": {
         "enabled": true,
         "contentSelector": "audio, audio source, audio[src]",
         "downloadSelector": "a[download][href*=\"audio\"], a[download][href*=\"music\"], a[href*=\"download-audio\"]",
@@ -101,12 +101,13 @@
       ]
     },
     {
-      "id": "model-audio-synth",
-      "displayName": "Synth Audio 1.0",
-      "mode": "audio",
+      "id": "model-music-synth",
+      "displayName": "Music Synth 1.0",
+      "mode": "music",
       "modes": [
-        "audio"
+        "music"
       ]
     }
-  ]
+  ],
+  "modeSchemaVersion": 2
 }

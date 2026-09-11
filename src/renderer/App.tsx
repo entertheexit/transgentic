@@ -34,6 +34,7 @@ import {
   PenTool,
   Image as ImageIcon,
   Video,
+  Music,
   Copy,
   Check,
   Key,
@@ -423,8 +424,10 @@ export function App() {
         return <ImageIcon className="w-3 h-3 text-blue-400" />;
       case 'video':
         return <Video className="w-3 h-3 text-rose-400" />;
+      case 'music':
+        return <Music className="w-3 h-3 text-amber-400" />;
       case 'audio':
-        return <Volume2 className="w-3 h-3 text-amber-400" />;
+        return <Volume2 className="w-3 h-3 text-slate-400" />;
       case 'general':
       default:
         return <Sparkles className="w-3 h-3 text-cyan-300" />;

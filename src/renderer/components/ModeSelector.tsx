@@ -1,6 +1,6 @@
 import React from 'react';
 import { RouteMode, TaskMode } from '../../shared/types.js';
-import { Sparkles, Code, Image, Video, Volume2 } from 'lucide-react';
+import { Sparkles, Code, Image, Video, Music } from 'lucide-react';
 import { soundFx } from '../audio/soundFx.js';
 
 interface ModeSelectorProps {
@@ -13,7 +13,7 @@ const MODES: Array<{ id: RouteMode; label: string; icon: React.ComponentType<{ c
   { id: 'coding', label: 'Coding', icon: Code },
   { id: 'image', label: 'Image', icon: Image },
   { id: 'video', label: 'Video', icon: Video },
-  { id: 'audio', label: 'Audio', icon: Volume2 },
+  { id: 'music', label: 'Music', icon: Music },
 ];
 
 export const ModeSelector: React.FC<ModeSelectorProps> = ({ activeMode, onChange }) => {

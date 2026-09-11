@@ -70,11 +70,12 @@
         "downloadSelector": "a[download][href*=\"video\"]",
         "mediaKind": "video"
       },
-      "audio": {
+      "music": {
         "enabled": true,
         "contentSelector": "audio source, audio[src], [data-testid*=\"audio\"] audio, audio, [data-testid=\"audio-player\"] audio",
         "mediaKind": "audio"
       }
     }
-  }
+  },
+  "modeSchemaVersion": 2
 }

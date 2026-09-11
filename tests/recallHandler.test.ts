@@ -54,7 +54,7 @@ describe('Recall & Context Memory Engine Handler', () => {
         coding: true,
         image: false,
         video: true,
-        audio: false,
+        music: false,
       },
     };
 
@@ -74,7 +74,7 @@ describe('Recall & Context Memory Engine Handler', () => {
     const imageOutput = applyRecallPipeline(samplePrompt, config, 'image');
     expect(imageOutput).toBe(samplePrompt);
 
-    const audioOutput = applyRecallPipeline(samplePrompt, config, 'audio');
+    const audioOutput = applyRecallPipeline(samplePrompt, config, 'music');
     expect(audioOutput).toBe(samplePrompt);
   });
 
@@ -88,7 +88,7 @@ describe('Recall & Context Memory Engine Handler', () => {
         coding: true,
         image: true,
         video: true,
-        audio: true,
+        music: true,
       },
     };
 

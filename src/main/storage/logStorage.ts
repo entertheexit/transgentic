@@ -1,7 +1,17 @@
 import fs from 'fs';
 import path from 'path';
 import { app } from 'electron';
-import { McpRequestLog } from '../../shared/types.js';
+import { McpRequestLog, MODE_SCHEMA_VERSION } from '../../shared/types.js';
+
+export function migratePersistedLog(log: McpRequestLog): McpRequestLog {
+  const legacyMode = log.modeSchemaVersion !== MODE_SCHEMA_VERSION && log.mode === 'audio' ? 'music' : log.mode;
+  let mediaPath = log.mediaPath;
+  if (mediaPath?.includes(`${path.sep}Library${path.sep}Audios${path.sep}`)) {
+    const migratedPath = mediaPath.replace(`${path.sep}Library${path.sep}Audios${path.sep}`, `${path.sep}Library${path.sep}Music${path.sep}`);
+    if (!fs.existsSync(mediaPath) && fs.existsSync(migratedPath)) mediaPath = migratedPath;
+  }
+  return { ...log, modeSchemaVersion: MODE_SCHEMA_VERSION, mode: legacyMode, ...(mediaPath ? { mediaPath } : {}) };
+}
 
 export class PersistentLogStorage {
   private inMemoryCache: McpRequestLog[] = [];
@@ -26,6 +36,7 @@ export class PersistentLogStorage {
         if (Array.isArray(parsed)) {
           let hasUnfinished = false;
           this.inMemoryCache = parsed.map((l: McpRequestLog) => {
+            l = migratePersistedLog(l);
             if (l.status === 'pending' || (l.status as any) === 'processing' || (l.status as any) === 'routing' || l.status === 'fallback') {
               hasUnfinished = true;
               return {
@@ -65,6 +76,7 @@ export class PersistentLogStorage {
 
   public insert(log: McpRequestLog): void {
     this.ensureLoaded();
+    log = { ...log, modeSchemaVersion: MODE_SCHEMA_VERSION };
     const existingIdx = this.inMemoryCache.findIndex((l) => l.id === log.id);
     if (existingIdx !== -1) {
       this.inMemoryCache[existingIdx] = { ...log };
@@ -76,6 +88,7 @@ export class PersistentLogStorage {
 
   public update(log: McpRequestLog): void {
     this.ensureLoaded();
+    log = { ...log, modeSchemaVersion: MODE_SCHEMA_VERSION };
     const idx = this.inMemoryCache.findIndex((l) => l.id === log.id);
     if (idx !== -1) {
       this.inMemoryCache[idx] = { ...log };

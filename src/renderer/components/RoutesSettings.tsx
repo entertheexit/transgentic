@@ -17,7 +17,6 @@ import {
   PenTool,
   Image as ImageIcon,
   Video,
-  Volume2,
   Music,
   Plus,
   Trash2,
@@ -136,8 +135,8 @@ export const RoutesSettings: React.FC<RoutesSettingsProps> = ({
         return <ImageIcon className="w-3 h-3" />;
       case 'video':
         return <Video className="w-3 h-3" />;
-      case 'audio':
-        return <Volume2 className="w-3 h-3" />;
+      case 'music':
+        return <Music className="w-3 h-3" />;
     }
   };
 
@@ -486,8 +485,8 @@ export const RoutesSettings: React.FC<RoutesSettingsProps> = ({
       )}
 
       {/* Mode Selector Tabs */}
-      <div className="grid grid-cols-6 gap-1 bg-black/40 p-1 rounded-xl border border-white/5">
-        {(['general', 'coding', 'image', 'video', 'audio'] as RouteMode[]).map((mode) => (
+      <div className="grid grid-cols-5 gap-1 bg-black/40 p-1 rounded-xl border border-white/5">
+        {(['general', 'coding', 'image', 'video', 'music'] as RouteMode[]).map((mode) => (
           <button
             key={mode}
             onClick={() => {
@@ -1057,7 +1056,7 @@ export const RoutesSettings: React.FC<RoutesSettingsProps> = ({
             </div>
 
             <p className="text-xs text-slate-300 leading-relaxed font-sans bg-black/40 p-3 rounded-xl border border-white/5">
-              This will restore default primary providers and candidate fallback chains for all 5 task modes (General, Coding, Image, Video, Audio).
+              This will restore default primary providers and candidate fallback chains for all 5 task modes (General, Coding, Image, Video, Music).
             </p>
 
             <div className="flex items-center justify-end gap-2 pt-1">

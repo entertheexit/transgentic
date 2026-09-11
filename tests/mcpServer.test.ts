@@ -78,7 +78,7 @@ describe('TransgenticMcpServer Integration', () => {
     expect(toolNames).toContain('prompt_model');
     expect(toolNames).toContain('generate_image');
     expect(toolNames).toContain('generate_video');
-    expect(toolNames).toContain('generate_audio');
+    expect(toolNames).not.toContain('generate_audio');
     expect(toolNames).toContain('generate_music');
     expect(toolNames).toContain('get_status');
 

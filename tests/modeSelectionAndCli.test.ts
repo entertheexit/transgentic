@@ -29,7 +29,7 @@ describe('Mode Selection & Routing Verification', () => {
         { id: 'gpt-image-2', displayName: 'GPT Image', enabled: true, discoveredAvailable: true, userEnabled: true, mode: 'image', modes: ['image'] },
         { id: 'sample-image-lite', displayName: 'Sample Image Lite', enabled: true, discoveredAvailable: true, userEnabled: true, mode: 'image', modes: ['image'] },
         { id: 'sample-video-fast', displayName: 'Sample Video Fast', enabled: true, discoveredAvailable: true, userEnabled: true, mode: 'video', modes: ['video'] },
-        { id: 'lyria-3-pro', displayName: 'Lyria Pro', enabled: true, discoveredAvailable: true, userEnabled: true, mode: 'audio', modes: ['audio'] },
+        { id: 'lyria-3-pro', displayName: 'Lyria Pro', enabled: true, discoveredAvailable: true, userEnabled: true, mode: 'music', modes: ['music'] },
         { id: 'kimi-k2-7-code', displayName: 'Kimi Code', enabled: true, discoveredAvailable: true, userEnabled: true, mode: 'coding', modes: ['coding'] },
       ],
     };
@@ -70,7 +70,7 @@ describe('Mode Selection & Routing Verification', () => {
       expect(vid.isAutoDetected).toBe(true);
 
       const aud = DynamicRouter.classifyMode('สร้างเพลงเปียโนบรรเลงฟังสบาย');
-      expect(aud.mode).toBe('audio');
+      expect(aud.mode).toBe('music');
       expect(aud.isAutoDetected).toBe(true);
 
       const code = DynamicRouter.classifyMode('ช่วยเขียนโค้ด typescript สำหรับเชื่อมต่อ sqlite หน่อย');
@@ -103,7 +103,7 @@ describe('Mode Selection & Routing Verification', () => {
       const vidModel = DynamicRouter.resolveTargetModel(TEST_WEBVIEW_ID as any, 'video');
       expect(vidModel).toBe('sample-video-fast');
 
-      const audModel = DynamicRouter.resolveTargetModel(TEST_WEBVIEW_ID as any, 'audio');
+      const audModel = DynamicRouter.resolveTargetModel(TEST_WEBVIEW_ID as any, 'music');
       expect(audModel).toBe('lyria-3-pro');
 
       const codeModel = DynamicRouter.resolveTargetModel(TEST_WEBVIEW_ID as any, 'coding');
@@ -170,6 +170,11 @@ describe('Mode Selection & Routing Verification', () => {
       expect(toolNames).toContain('ask_gemini');
       expect(toolNames).toContain('ask_grok');
       expect(toolNames).toContain('prompt_model');
+      expect(toolNames).toContain('generate_music');
+      expect(toolNames).not.toContain('generate_audio');
+      const promptModel = tools.find((t: any) => t.name === 'prompt_model');
+      expect(promptModel.inputSchema.properties.mode.enum).toContain('music');
+      expect(promptModel.inputSchema.properties.mode.enum).not.toContain('audio');
 
       const genImage = tools.find((t: any) => t.name === 'generate_image');
       expect(genImage).toBeDefined();
@@ -210,6 +215,19 @@ describe('Mode Selection & Routing Verification', () => {
       expect(client?.targetMode).toBe('image');
 
       reader?.cancel();
+    });
+
+    it('exposes Music endpoints and removes the former Audio endpoint', async () => {
+      const musicRes = await fetch(`http://127.0.0.1:${testPort}/music/sse?token=${token}`);
+      expect(musicRes.status).toBe(200);
+      const reader = musicRes.body?.getReader();
+      const { value } = await reader!.read();
+      const sessionId = new TextDecoder().decode(value).match(/sessionId=([a-f0-9-]+)/)![1];
+      expect(SseTransportManager.getClient(sessionId)?.targetMode).toBe('music');
+      reader?.cancel();
+
+      const audioRes = await fetch(`http://127.0.0.1:${testPort}/audio/sse?token=${token}`);
+      expect(audioRes.status).toBe(404);
     });
 
     it('keeps /writing/sse as a first-class Writing endpoint backed by General routing', async () => {

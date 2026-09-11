@@ -655,8 +655,8 @@ describe('Local LLM Micro-Task in Balanced Mode Unit & Integration Tests', () =>
       expect(directive).toContain('Transgentic Local LLM is available for micro-tasks');
     });
 
-    it('should not treat prompts in image, video, audio as micro-tasks', () => {
-      const nonCodingModes = ['image', 'video', 'audio'] as const;
+    it('should not treat prompts in image, video, music as micro-tasks', () => {
+      const nonCodingModes = ['image', 'video', 'music'] as const;
       const prompt = 'Write a regex to match emails';
 
       for (const mode of nonCodingModes) {

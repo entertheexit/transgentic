@@ -1,4 +1,5 @@
 {
+  "modeSchemaVersion": 2,
   "main": {
     "general": {
       "mode": "general",
@@ -64,8 +65,8 @@
       "modelRouting": {},
       "providerModels": {}
     },
-    "audio": {
-      "mode": "audio",
+    "music": {
+      "mode": "music",
       "defaultService": "gemini",
       "primary": "gemini",
       "fallbackChain": [],
@@ -132,8 +133,8 @@
       "modelRouting": {},
       "providerModels": {}
     },
-    "audio": {
-      "mode": "audio",
+    "music": {
+      "mode": "music",
       "defaultService": "chatgpt",
       "primary": "chatgpt",
       "fallbackChain": [

@@ -28,7 +28,7 @@ describe('DynamicRouter Model Routing', () => {
         { id: 'sample-image-pro', displayName: 'Sample Image 4', enabled: true, discoveredAvailable: true, userEnabled: true, mode: 'image', modes: ['image'] },
         { id: 'nano-banana-pro', displayName: 'Banana Pro', enabled: true, discoveredAvailable: true, userEnabled: true, mode: 'image', modes: ['image'] },
         { id: 'sample-video-fast', displayName: 'Sample Video Fast', enabled: true, discoveredAvailable: true, userEnabled: true, mode: 'video', modes: ['video'] },
-        { id: 'lyria-3-pro', displayName: 'Lyria Pro', enabled: true, discoveredAvailable: true, userEnabled: true, mode: 'audio', modes: ['audio'] },
+        { id: 'lyria-3-pro', displayName: 'Lyria Pro', enabled: true, discoveredAvailable: true, userEnabled: true, mode: 'music', modes: ['music'] },
         { id: 'kimi-k2-7-code', displayName: 'Kimi Code', enabled: true, discoveredAvailable: true, userEnabled: true, mode: 'coding', modes: ['coding'] },
       ],
     };
@@ -49,8 +49,8 @@ describe('DynamicRouter Model Routing', () => {
     const videoModel = DynamicRouter.resolveTargetModel(TEST_WEBVIEW_ID, 'video');
     expect(videoModel).toBe('sample-video-fast');
 
-    // Audio mode should resolve to lyria-3-pro for custom webview
-    const audioModel = DynamicRouter.resolveTargetModel(TEST_WEBVIEW_ID, 'audio');
+    // Music mode should resolve to lyria-3-pro for custom webview
+    const audioModel = DynamicRouter.resolveTargetModel(TEST_WEBVIEW_ID, 'music');
     expect(audioModel).toBe('lyria-3-pro');
 
     // Coding mode should resolve to kimi-k2-7-code for custom webview
@@ -135,12 +135,12 @@ describe('DynamicRouter Model Routing', () => {
     expect(videoCandidates).not.toContain('chatgpt'); // chatgpt filtered out
     expect(videoCandidates).not.toContain('claude');  // claude filtered out
 
-    // 3. In audio mode, gemini and webview support audio generation (chatgpt, claude, grok do not)
-    DynamicRouter.updateRouteConfig('audio', {
+    // 3. In music mode, gemini and webview support audio generation (chatgpt, claude, grok do not)
+    DynamicRouter.updateRouteConfig('music', {
       primary: 'gemini',
       fallbacks: [TEST_WEBVIEW_ID, 'chatgpt', 'claude', 'grok'],
     });
-    const audioCandidates = DynamicRouter.getCandidateChain('audio', undefined, false);
+    const audioCandidates = DynamicRouter.getCandidateChain('music', undefined, false);
     expect(audioCandidates).toContain('gemini');
     expect(audioCandidates).toContain(TEST_WEBVIEW_ID);
     expect(audioCandidates).not.toContain('chatgpt'); // chatgpt filtered out

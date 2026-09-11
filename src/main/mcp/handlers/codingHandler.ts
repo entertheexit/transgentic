@@ -10,7 +10,8 @@ function modeGuidance(mode: TaskMode | TaskIntent): string {
     writing: 'drafting, editing, and creative writing',
     image: 'image generation and image edits',
     video: 'video generation and video edits',
-    audio: 'audio, speech, and music generation',
+    music: 'music generation',
+    audio: 'future narration, speech, voiceover, and sound generation',
   };
   return `Use Transgentic MCP when further ${work[mode]} is useful. ${TASK_SCOPE_GUIDANCE}`;
 }
@@ -22,7 +23,7 @@ function modeGuidance(mode: TaskMode | TaskIntent): string {
  * (Codex, Antigravity, Cursor) and Transgentic MCP:
  * - Agentic Client: Handles heavy, long continuous execution (file edits, builds, tests, story integration).
  * - Transgentic MCP: Handles architectural planning, creative storyboarding, reasoning, memory recall,
- *   and multimodal asset generation (images, videos, audio/music).
+ *   and multimodal asset generation (images, videos, and music).
  * - Resilient Fallback: If Transgentic encounters an error, timeout, or unexpected output format,
  *   the agentic client immediately and gracefully falls back to its own local capabilities.
  */
@@ -58,7 +59,7 @@ You are the high-level creative, narrative, and storyboarding engine collaborati
 COOPERATIVE DIVISION OF LABOR:
 1. Agentic Client Role: Heavy, continuous project tasks (writing long documents, file structuring, managing project files, and integrating media) are executed directly by the local agentic client.
 2. Transgentic MCP Role: Conceptual design, structured storyboarding, narrative flow, and multimodal planning.
-3. Multimodal Asset Generation: When your storyboard, narrative, or plan requires visual scenes, concept art, character illustrations, animations, video clips, voiceover, or music, explicitly instruct the agentic client to call Transgentic MCP tools (generate_image, generate_video, generate_audio, generate_music).
+3. Multimodal Asset Generation: When your storyboard, narrative, or plan requires visual scenes, concept art, character illustrations, animations, video clips, or music, explicitly instruct the agentic client to call Transgentic MCP tools (generate_image, generate_video, generate_music).
 4. Fallback Protocol: If the agentic client encounters an error, rate limit, or unexpected output format from Transgentic MCP, it must immediately fallback to its own local capabilities to continue the task autonomously without blocking.
 
 ${ANSWER_CONTRACT}
@@ -68,7 +69,7 @@ ${rawPrompt}
 `.trim();
   }
 
-  // Multimodal modes (image, video, audio)
+  // Multimodal modes (image, video, music)
   return `
 [SYSTEM DIRECTIVE: BALANCED AGENTIC HARNESS (TRANSGENTIC MCP - MULTIMODAL GENERATION)]
 You are generating multimodal media assets for an automated local agentic client (Codex, Antigravity, Cursor) via Transgentic MCP.

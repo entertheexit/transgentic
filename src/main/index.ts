@@ -31,6 +31,7 @@ import { LocalLlmClient } from './localllm/localLlmClient.js';
 import { globalHealingManager } from './healing/healingManager.js';
 import { globalRecipeManager } from './registry/recipeManager.js';
 import {
+  MODE_SCHEMA_VERSION,
   AgentHaltGuardConfig,
   doubleAgentConfig,
   HealingConfig,
@@ -93,6 +94,7 @@ function getDefaultAssetsDir(): string {
 function loadPersistedConfig(): TransgenticConfig {
   const defaultAssetsDir = getDefaultAssetsDir();
   const defaults: TransgenticConfig = {
+    modeSchemaVersion: MODE_SCHEMA_VERSION,
     cli: normalizeCliConfig(),
     serverAccess: { lanEnabled: false, advertisedAddress: '' },
     port: 58420,
@@ -115,7 +117,7 @@ function loadPersistedConfig(): TransgenticConfig {
         coding: true,
         image: true,
         video: true,
-        audio: true,
+        music: true,
       },
     },
     routes: DynamicRouter.getRouteMatrix(),
@@ -134,7 +136,7 @@ function loadPersistedConfig(): TransgenticConfig {
         coding: true,
         image: true,
         video: true,
-        audio: true,
+        music: true,
       },
     },
     agentHaltGuard: {
@@ -142,7 +144,7 @@ function loadPersistedConfig(): TransgenticConfig {
       coding: true,
       image: true,
       video: true,
-      audio: true,
+      music: true,
     },
     localLLM: {
       enabled: false,
@@ -166,6 +168,7 @@ function loadPersistedConfig(): TransgenticConfig {
     if (fs.existsSync(configPath)) {
       const raw = fs.readFileSync(configPath, 'utf-8');
       const parsed = JSON.parse(raw);
+      const isLegacyModeSchema = parsed.modeSchemaVersion !== MODE_SCHEMA_VERSION;
       const legacyCompletion = parsed.completion && typeof parsed.completion === 'object' ? parsed.completion : undefined;
       const hadCompletionRecall = Object.prototype.hasOwnProperty.call(parsed.recall || {}, 'completionEnabled');
       const hadCompletionCompact = Object.prototype.hasOwnProperty.call(parsed.localLLM || {}, 'completionCompact');
@@ -193,7 +196,7 @@ function loadPersistedConfig(): TransgenticConfig {
           coding: val,
           image: val,
           video: val,
-          audio: val,
+          music: val,
         };
       } else {
         parsed.agentHaltGuard = normalizeModeFlags(parsed.agentHaltGuard);
@@ -246,7 +249,10 @@ function loadPersistedConfig(): TransgenticConfig {
       // CLI configurations created before Provider/Agentic modes migrate to
       // Provider Mode. normalizeCliConfig also clears host permissions there.
       parsed.cli = normalizeCliConfig(parsed.cli);
-      parsed.defaultMode = normalizeTaskMode(parsed.defaultMode);
+      parsed.defaultMode = isLegacyModeSchema && parsed.defaultMode === 'audio'
+        ? 'music'
+        : normalizeTaskMode(parsed.defaultMode);
+      parsed.modeSchemaVersion = MODE_SCHEMA_VERSION;
       return { ...defaults, ...parsed };
     }
   } catch {}
@@ -260,7 +266,7 @@ function savePersistedConfig(cfg: TransgenticConfig): void {
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
     }
-    fs.writeFileSync(configPath, JSON.stringify(cfg, null, 2), 'utf-8');
+    fs.writeFileSync(configPath, JSON.stringify({ ...cfg, modeSchemaVersion: MODE_SCHEMA_VERSION }, null, 2), 'utf-8');
   } catch {}
 }
 
@@ -729,7 +735,7 @@ function setupIpcHandlers() {
         coding: true,
         image: true,
         video: true,
-        audio: true,
+        music: true,
       },
     };
     currentConfig = {
@@ -774,7 +780,7 @@ function setupIpcHandlers() {
       coding: true,
       image: true,
       video: true,
-      audio: true,
+      music: true,
     };
     const currentVal = existingModes[mode] ?? true;
     const nextVal = enabled !== undefined ? enabled : !currentVal;
@@ -802,7 +808,7 @@ function setupIpcHandlers() {
       coding: true,
       image: true,
       video: true,
-      audio: true,
+      music: true,
     };
     currentConfig = {
       ...currentConfig,
@@ -838,7 +844,7 @@ function setupIpcHandlers() {
       coding: true,
       image: true,
       video: true,
-      audio: true,
+      music: true,
     };
     const currentVal = currentModes[mode] ?? true;
     const nextVal = enabled !== undefined ? enabled : !currentVal;
@@ -865,7 +871,7 @@ function setupIpcHandlers() {
       coding: true,
       image: true,
       video: true,
-      audio: true,
+      music: true,
     },
   });
 
@@ -873,7 +879,7 @@ function setupIpcHandlers() {
   ipcMain.handle('config:toggle-agent-guard', (_, { mode, enabled }: { mode: RouteMode; enabled?: boolean }) => {
     const currentMap = (typeof currentConfig.agentHaltGuard === 'object' && currentConfig.agentHaltGuard !== null)
       ? currentConfig.agentHaltGuard
-      : { general: true, coding: true, image: true, video: true, audio: true };
+      : { general: true, coding: true, image: true, video: true, music: true };
     const currentVal = currentMap[mode] ?? true;
     const nextVal = enabled !== undefined ? enabled : !currentVal;
     currentConfig = {
@@ -895,7 +901,7 @@ function setupIpcHandlers() {
   ipcMain.handle('config:update-agent-guard', (_, guardCfg: Partial<AgentHaltGuardConfig>) => {
     const currentMap = (typeof currentConfig.agentHaltGuard === 'object' && currentConfig.agentHaltGuard !== null)
       ? currentConfig.agentHaltGuard
-      : { general: true, coding: true, image: true, video: true, audio: true };
+      : { general: true, coding: true, image: true, video: true, music: true };
     currentConfig = {
       ...currentConfig,
       agentHaltGuard: {

@@ -24,10 +24,10 @@ describe('Route Matrix Local LLM Integration Tests', () => {
       expect(DynamicRouter.isLocalLlmSupportedForMode('coding')).toBe(true);
     });
 
-    it('should strictly prohibit image, video, and audio modes for Local LLM', () => {
+    it('should strictly prohibit image, video, and music modes for Local LLM', () => {
       expect(DynamicRouter.isLocalLlmSupportedForMode('image')).toBe(false);
       expect(DynamicRouter.isLocalLlmSupportedForMode('video')).toBe(false);
-      expect(DynamicRouter.isLocalLlmSupportedForMode('audio')).toBe(false);
+      expect(DynamicRouter.isLocalLlmSupportedForMode('music')).toBe(false);
     });
   });
 

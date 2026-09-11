@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { ServiceManifestManager } from '../src/main/registry/serviceManifest.js';
 import { globalMcpServer } from '../src/main/mcp/server.js';
-import { globalLogStorage } from '../src/main/storage/logStorage.js';
+import { globalLogStorage, migratePersistedLog } from '../src/main/storage/logStorage.js';
 import { LocalLlmClient } from '../src/main/localllm/localLlmClient.js';
 import { RouteMode, ModeRouteConfig, McpRequestLog } from '../src/shared/types.js';
 
@@ -17,7 +17,7 @@ describe('Service Manifest & Local LLM Conflict Validation', () => {
       coding: { primary: 'localllm', fallbacks: ['claude'] },
       image: { primary: 'chatgpt', fallbacks: [] },
       video: { primary: 'chatgpt', fallbacks: [] },
-      audio: { primary: 'gemini', fallbacks: [] },
+      music: { primary: 'gemini', fallbacks: [] },
     };
 
     const conflicts = ServiceManifestManager.checkRouteConflicts(mockRoutes);
@@ -29,6 +29,14 @@ describe('Service Manifest & Local LLM Conflict Validation', () => {
 describe('Log Termination Engine Unit Tests', () => {
   beforeEach(() => {
     globalLogStorage.clear();
+  });
+
+  it('normalizes legacy Audio log records to Music once', () => {
+    const legacy = migratePersistedLog({
+      id: 'legacy-audio-log', timestamp: 1, mode: 'audio', targetProvider: 'gemini', status: 'success', maskedSecretsCount: 0, promptSnippet: 'music',
+    });
+    expect(legacy).toMatchObject({ modeSchemaVersion: 2, mode: 'music' });
+    expect(migratePersistedLog(legacy)).toEqual(legacy);
   });
 
   it('should terminate a single pending request and set status to failed', () => {

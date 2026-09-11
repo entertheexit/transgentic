@@ -33,7 +33,7 @@ describe('Balanced Agentic Mode Handler', () => {
 
     expect(wrapped).toContain('STORYBOARDING & CREATIVE PLANNING');
     expect(wrapped).toContain('Multimodal Asset Generation');
-    expect(wrapped).toContain('generate_image, generate_video, generate_audio, generate_music');
+    expect(wrapped).toContain('generate_image, generate_video, generate_music');
     expect(wrapped).toContain('Fallback Protocol');
     expect(wrapped).toContain('[TASK]');
     expect(wrapped).toContain(raw);

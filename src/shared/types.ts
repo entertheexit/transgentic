@@ -3,22 +3,28 @@ import type { CustomRecipe } from './types/recipe.js';
 
 export type ProviderId = 'chatgpt' | 'claude' | 'gemini' | 'grok' | 'localllm' | (string & {});
 
-export const TASK_MODES = ['general', 'coding', 'image', 'video', 'audio'] as const;
+export const MODE_SCHEMA_VERSION = 2 as const;
+export const TASK_MODES = ['general', 'coding', 'image', 'video', 'music'] as const;
 export type RouteMode = typeof TASK_MODES[number];
-export type TaskMode = RouteMode | 'writing';
-export type LegacyTaskMode = 'music';
-export type AcceptedTaskMode = TaskMode | LegacyTaskMode;
-export type TaskIntent = 'writing';
+export type TaskMode = RouteMode | 'writing' | 'audio';
+export type AcceptedTaskMode = TaskMode;
+export type TaskIntent = 'writing' | 'audio';
+
+export const AUDIO_MODE_UNAVAILABLE_MESSAGE =
+  'Audio providers are not available yet. Audio is reserved for narration, speech, voiceover, TTS, podcasts, and sound effects. Use Music mode for songs, tracks, soundtracks, beats, melodies, jingles, and BGM.';
 
 export function normalizeTaskMode(mode?: AcceptedTaskMode | string | null): TaskMode {
   if (mode === 'writing') return 'writing';
-  if (mode === 'music') return 'audio';
+  if (mode === 'audio') return 'audio';
   return (TASK_MODES as readonly string[]).includes(mode || '') ? mode as RouteMode : 'general';
 }
 
 /** Writing is a backend task mode that deliberately shares General's route and policy settings. */
 export function normalizeRouteMode(mode?: AcceptedTaskMode | string | null): RouteMode {
   const taskMode = normalizeTaskMode(mode);
+  if (taskMode === 'audio') {
+    throw new Error(AUDIO_MODE_UNAVAILABLE_MESSAGE);
+  }
   return taskMode === 'writing' ? 'general' : taskMode;
 }
 
@@ -33,7 +39,7 @@ export function normalizeModeFlags(
     coding: source.coding ?? fallback,
     image: source.image ?? fallback,
     video: source.video ?? fallback,
-    audio: source.audio ?? fallback,
+    music: source.music ?? source.audio ?? fallback,
   };
 }
 
@@ -67,6 +73,7 @@ export interface CoreStatus {
 }
 
 export interface McpRequestLog {
+  modeSchemaVersion?: typeof MODE_SCHEMA_VERSION;
   id: string;
   timestamp: number;
   mode: TaskMode;
@@ -127,19 +134,20 @@ export interface ModePipelineConfig {
 }
 
 export interface RouteMatrix {
+  modeSchemaVersion?: typeof MODE_SCHEMA_VERSION;
   main: {
     general: ModePipelineConfig;
     coding: ModePipelineConfig;
     image: ModePipelineConfig;
     video: ModePipelineConfig;
-    audio: ModePipelineConfig;
+    music: ModePipelineConfig;
   };
   co: {
     general: ModePipelineConfig;
     coding: ModePipelineConfig;
     image: ModePipelineConfig;
     video: ModePipelineConfig;
-    audio: ModePipelineConfig;
+    music: ModePipelineConfig;
   };
 }
 
@@ -204,7 +212,7 @@ export interface RecallModesConfig {
   coding: boolean;
   image: boolean;
   video: boolean;
-  audio: boolean;
+  music: boolean;
 }
 
 export const DEFAULT_RECALL_MODES: RecallModesConfig = {
@@ -212,7 +220,7 @@ export const DEFAULT_RECALL_MODES: RecallModesConfig = {
   coding: true,
   image: true,
   video: true,
-  audio: true,
+  music: true,
 };
 
 export interface RecallConfig {
@@ -220,7 +228,7 @@ export interface RecallConfig {
   strategy: 'single-pass' | 'two-stage'; // single-pass default for speed
   autoTriggerKeywords: boolean;
   completionEnabled?: boolean; // Explicit Recall opt-in for text-only completion requests
-  modes?: RecallModesConfig; // Per-mode enabling (general, coding, image, video, audio)
+  modes?: RecallModesConfig; // Per-mode enabling (general, coding, image, video, music)
 }
 
 export function isRecallEnabledForMode(
@@ -241,7 +249,7 @@ export interface AgentHaltGuardConfig {
   coding: boolean;
   image: boolean;
   video: boolean;
-  audio: boolean;
+  music: boolean;
 }
 
 export const DEFAULT_AGENT_HALT_GUARD: AgentHaltGuardConfig = {
@@ -249,7 +257,7 @@ export const DEFAULT_AGENT_HALT_GUARD: AgentHaltGuardConfig = {
   coding: true,
   image: true,
   video: true,
-  audio: true,
+  music: true,
 };
 
 export function isAgentHaltGuardEnabled(
@@ -311,6 +319,7 @@ export const DEFAULT_HEALING_CONFIG: HealingConfig = {
 };
 
 export interface TransgenticConfig {
+  modeSchemaVersion?: typeof MODE_SCHEMA_VERSION;
   cli?: import('./cli.js').CliConfig;
   serverAccess?: {
     lanEnabled: boolean;
@@ -379,6 +388,7 @@ export interface ServiceManifestEntry {
 }
 
 export interface ServicesManifest {
+  modeSchemaVersion?: typeof MODE_SCHEMA_VERSION;
   version: string;
   services: Record<string, ServiceManifestEntry>;
 }

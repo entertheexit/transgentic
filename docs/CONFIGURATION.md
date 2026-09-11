@@ -48,7 +48,7 @@ A forced provider request does not start the concurrent two-provider route. Quic
 
 In concurrent mode, outputs are combined and attributed to their actual providers. If one pipeline fails, the surviving answer is returned with a partial status. A comparison is not independent verification of correctness.
 
-The Local LLM candidate option applies to supported text tasks; local text models are excluded from image, video, and audio dispatch.
+The Local LLM candidate option applies to supported text tasks; local text models are excluded from image, video, and music dispatch.
 
 ## Local model options
 

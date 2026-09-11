@@ -76,8 +76,8 @@ export interface RecipeModes {
   image?: RecipeModeResponse;
   /** Video generation mode */
   video?: RecipeModeResponse;
-  /** Audio / music generation mode */
-  audio?: RecipeModeResponse;
+  /** Music generation mode. Result files may still use audio media formats. */
+  music?: RecipeModeResponse;
 }
 
 export interface RecipeResponseStructure {
@@ -133,7 +133,7 @@ export interface RecipeResetUrlRule {
 export interface CustomRecipeModelDef {
   id: string;
   displayName: string;
-  mode?: 'general' | 'coding' | 'image' | 'video' | 'audio';
+  mode?: 'general' | 'coding' | 'image' | 'video' | 'music';
   modes?: string[];
   requiresTier?: string;
 }
@@ -153,6 +153,7 @@ export interface RecipeModelSelection {
 }
 
 export interface CustomRecipe {
+  modeSchemaVersion?: 2;
   version: string;
   disclaimer?: string;
   disclaimerVersion?: string;
@@ -239,6 +240,20 @@ export function validateCustomRecipe(raw: any): { valid: boolean; errors: string
   if (!raw.authStrategy) raw.authStrategy = 'cookie_sync';
   if (!raw.title && raw.name) raw.title = raw.name;
   if (!raw.domainMatch && raw.domain) raw.domainMatch = raw.domain;
+  if (raw.response?.modes && !raw.response.modes.music && raw.response.modes.audio) {
+    raw.response.modes.music = raw.response.modes.audio;
+    delete raw.response.modes.audio;
+  }
+  if (Array.isArray(raw.models)) {
+    raw.models = raw.models.map((model: any) => ({
+      ...model,
+      ...(model?.mode === 'audio' ? { mode: 'music' } : {}),
+      ...(Array.isArray(model?.modes)
+        ? { modes: Array.from(new Set(model.modes.map((mode: string) => mode === 'audio' ? 'music' : mode))) }
+        : {}),
+    }));
+  }
+  raw.modeSchemaVersion = 2;
 
   // Flattened inspector structure: if response is missing but responseContainer or textResponse exists in selectors
   if (!raw.response && (raw.selectors?.responseContainer || raw.selectors?.textResponse || raw.responseStructure?.container)) {
@@ -270,7 +285,7 @@ export function validateCustomRecipe(raw: any): { valid: boolean; errors: string
       raw.response.modes.video = { enabled: true, contentSelector: raw.selectors?.videoResult || raw.responseStructure?.videoSelector, mediaKind: 'video' };
     }
     if (raw.selectors?.audioResult || raw.responseStructure?.audioSelector) {
-      raw.response.modes.audio = { enabled: true, contentSelector: raw.selectors?.audioResult || raw.responseStructure?.audioSelector, mediaKind: 'audio' };
+      raw.response.modes.music = { enabled: true, contentSelector: raw.selectors?.audioResult || raw.responseStructure?.audioSelector, mediaKind: 'audio' };
     }
   }
 
@@ -339,7 +354,7 @@ export function validateCustomRecipe(raw: any): { valid: boolean; errors: string
             downloadSelector: "a[data-testid=\"download-button\"], a[download][href*=\"video\"], a[href*=\"download-video\"]",
             mediaKind: "video"
           },
-          audio: {
+          music: {
             enabled: true,
             contentSelector: "audio, audio source, audio a[href], audio[src], audio[src^=\"blob:\"], audio[src^=\"data:audio/\"], a[download][href*=\"audio\"], a[download][href*=\"music\"], a[href*=\"/music/\"], a[href*=\".mp3\"], a[href*=\"download-audio\"], a[href*=\"download-music\"]",
             downloadSelector: "a[download][href*=\"audio\"], a[download][href*=\"music\"], a[href*=\"download-audio\"]",
@@ -384,7 +399,7 @@ export function validateCustomRecipe(raw: any): { valid: boolean; errors: string
           downloadSelector: "a[data-testid=\"download-button\"], a[download][href*=\"video\"], a[href*=\"download-video\"]",
           mediaKind: "video"
         },
-        audio: {
+        music: {
           enabled: true,
           contentSelector: "audio, audio source, audio a[href], audio[src], audio[src^=\"blob:\"], audio[src^=\"data:audio/\"], a[download][href*=\"audio\"], a[download][href*=\"music\"], a[href*=\"/music/\"], a[href*=\".mp3\"], a[href*=\"download-audio\"], a[href*=\"download-music\"]",
           downloadSelector: "a[download][href*=\"audio\"], a[download][href*=\"music\"], a[href*=\"download-audio\"]",
@@ -450,6 +465,7 @@ export function validateCustomRecipe(raw: any): { valid: boolean; errors: string
   }
 
   const sanitized: CustomRecipe = {
+    modeSchemaVersion: 2,
     version: String(raw.version).trim(),
     ...(typeof raw.disclaimer === 'string' && raw.disclaimer.trim() ? { disclaimer: raw.disclaimer.trim() } : {}),
     ...(typeof raw.disclaimerVersion === 'string' ? { disclaimerVersion: raw.disclaimerVersion.trim() } : {}),
@@ -515,15 +531,15 @@ export function validateCustomRecipe(raw: any): { valid: boolean; errors: string
               },
             }
           : {}),
-        ...(raw.response.modes.audio
+        ...(raw.response.modes.music
           ? {
-              audio: {
-                enabled: Boolean(raw.response.modes.audio.enabled),
-                pageUrl: raw.response.modes.audio.pageUrl?.trim() || undefined,
-                inputSelector: normalizeSelectorCandidate(raw.response.modes.audio.inputSelector),
-                submitSelector: normalizeSelectorCandidate(raw.response.modes.audio.submitSelector),
-                contentSelector: normalizeSelectorCandidate(raw.response.modes.audio.contentSelector),
-                downloadSelector: normalizeSelectorCandidate(raw.response.modes.audio.downloadSelector),
+              music: {
+                enabled: Boolean(raw.response.modes.music.enabled),
+                pageUrl: raw.response.modes.music.pageUrl?.trim() || undefined,
+                inputSelector: normalizeSelectorCandidate(raw.response.modes.music.inputSelector),
+                submitSelector: normalizeSelectorCandidate(raw.response.modes.music.submitSelector),
+                contentSelector: normalizeSelectorCandidate(raw.response.modes.music.contentSelector),
+                downloadSelector: normalizeSelectorCandidate(raw.response.modes.music.downloadSelector),
                 mediaKind: 'audio' as const,
               },
             }
@@ -568,6 +584,7 @@ export function validateCustomRecipe(raw: any): { valid: boolean; errors: string
  */
 export const BUILTIN_RECIPES: Record<'chatgpt' | 'claude' | 'gemini' | 'grok', CustomRecipe> = {
   chatgpt: {
+    modeSchemaVersion: 2,
     version: '1.0',
     id: 'chatgpt',
     title: 'OpenAI ChatGPT',
@@ -628,7 +645,7 @@ export const BUILTIN_RECIPES: Record<'chatgpt' | 'claude' | 'gemini' | 'grok', C
           downloadSelector: 'a[download][href*="video"]',
           mediaKind: 'video',
         },
-        audio: {
+        music: {
           enabled: true,
           contentSelector: 'audio source, audio[src], [data-testid*="audio"] audio, audio, [data-testid="audio-player"] audio',
           mediaKind: 'audio',
@@ -637,6 +654,7 @@ export const BUILTIN_RECIPES: Record<'chatgpt' | 'claude' | 'gemini' | 'grok', C
     },
   },
   claude: {
+    modeSchemaVersion: 2,
     version: '1.0',
     id: 'claude',
     title: 'Anthropic Claude',
@@ -690,6 +708,7 @@ export const BUILTIN_RECIPES: Record<'chatgpt' | 'claude' | 'gemini' | 'grok', C
     },
   },
   gemini: {
+    modeSchemaVersion: 2,
     version: '1.0',
     id: 'gemini',
     title: 'Google Gemini',
@@ -743,7 +762,7 @@ export const BUILTIN_RECIPES: Record<'chatgpt' | 'claude' | 'gemini' | 'grok', C
           downloadSelector: 'button[aria-label*="Download video" i]',
           mediaKind: 'video',
         },
-        audio: {
+        music: {
           enabled: true,
           contentSelector: 'generated-music video, generated-music audio, video-player video, audio',
           downloadSelector: 'button[aria-label*="Download track" i]',
@@ -753,6 +772,7 @@ export const BUILTIN_RECIPES: Record<'chatgpt' | 'claude' | 'gemini' | 'grok', C
     },
   },
   grok: {
+    modeSchemaVersion: 2,
     version: '1.0',
     id: 'grok',
     title: 'xAI Grok',

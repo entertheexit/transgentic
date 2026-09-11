@@ -3,13 +3,14 @@ import { globalCliRuntime } from '../cli/cliRuntimeManager.js';
 import fs from 'fs';
 import path from 'path';
 import { app } from 'electron';
-import { ModeRouteConfig, ProviderId, TaskMode, LocalLLMConfig, ModePipelineConfig, RouteMatrix, TASK_MODES, TaskIntent, normalizeTaskMode, normalizeRouteMode, type AcceptedTaskMode, type RouteMode } from '../../shared/types.js';
+import { MODE_SCHEMA_VERSION, ModeRouteConfig, ProviderId, TaskMode, LocalLLMConfig, ModePipelineConfig, RouteMatrix, TASK_MODES, TaskIntent, normalizeTaskMode, normalizeRouteMode, type AcceptedTaskMode, type RouteMode } from '../../shared/types.js';
 import { globalRateLimiter } from './rateLimiter.js';
 import { globalCircuitBreaker } from './circuitBreaker.js';
 import { ServiceManifestManager } from '../registry/serviceManifest.js';
 
 export class DynamicRouter {
   public static readonly DEFAULT_ROUTE_MATRIX: RouteMatrix = {
+    modeSchemaVersion: MODE_SCHEMA_VERSION,
     main: {
       general: {
         mode: 'general',
@@ -51,8 +52,8 @@ export class DynamicRouter {
         modelRouting: {},
         providerModels: {},
       },
-      audio: {
-        mode: 'audio',
+      music: {
+        mode: 'music',
         defaultService: 'gemini',
         primary: 'gemini',
         fallbackChain: [],
@@ -95,8 +96,8 @@ export class DynamicRouter {
         fallbacks: [],
         outputFormat: 'file_download',
       },
-      audio: {
-        mode: 'audio',
+      music: {
+        mode: 'music',
         defaultService: 'chatgpt',
         primary: 'chatgpt',
         fallbackChain: ['gemini'],
@@ -130,6 +131,11 @@ export class DynamicRouter {
       if (!Object.prototype.hasOwnProperty.call(source, 'general') && source.writing) {
         source.general = source.writing;
       }
+      // Before mode schema v2, the Audio route was the Gemini music route.
+      // An explicitly stored Music route wins and chains are never merged.
+      if (!Object.prototype.hasOwnProperty.call(source, 'music') && source.audio) {
+        source.music = source.audio;
+      }
       for (const mode of TASK_MODES) {
         const existing = migrated[mode];
         const candidate = source[mode] || existing;
@@ -151,6 +157,7 @@ export class DynamicRouter {
     };
 
     return {
+      modeSchemaVersion: MODE_SCHEMA_VERSION,
       main: migratePipeline(legacyMain, defaults.main),
       co: migratePipeline(legacyCo, defaults.co),
     };
@@ -190,7 +197,7 @@ export class DynamicRouter {
       const coFallbacks = this.currentRoutes.co[mode].fallbackChain || this.currentRoutes.co[mode].fallbacks || [];
       const alternative = coFallbacks.find((p) => p !== mainPrimary) ||
         (['chatgpt', 'claude', 'gemini', 'grok'] as ProviderId[]).find((p) => p !== mainPrimary && this.providerSupportsMode(p, mode)) ||
-        (mode === 'audio' ? 'chatgpt' : 'claude');
+        (mode === 'music' ? 'chatgpt' : 'claude');
 
       this.currentRoutes.co[mode].defaultService = alternative;
       this.currentRoutes.co[mode].primary = alternative as ProviderId;
@@ -265,15 +272,15 @@ export class DynamicRouter {
       : config.primary !== undefined
       ? config.primary
       : (existing.defaultService !== undefined ? existing.defaultService : existing.primary)) as ProviderId;
-    if (primary === 'localllm' && (mode === 'image' || mode === 'video' || mode === 'audio')) {
-      primary = (existing.defaultService !== 'localllm' ? existing.defaultService : (mode === 'audio' ? 'gemini' : 'grok')) as ProviderId;
+    if (primary === 'localllm' && (mode === 'image' || mode === 'video' || mode === 'music')) {
+      primary = (existing.defaultService !== 'localllm' ? existing.defaultService : (mode === 'music' ? 'gemini' : 'grok')) as ProviderId;
     }
     let fallbacks = (config.fallbackChain !== undefined
       ? config.fallbackChain
       : config.fallbacks !== undefined
       ? config.fallbacks
       : existing.fallbackChain || existing.fallbacks || []).map((p) => p as ProviderId);
-    if (mode === 'image' || mode === 'video' || mode === 'audio') {
+    if (mode === 'image' || mode === 'video' || mode === 'music') {
       fallbacks = fallbacks.filter((p) => p !== 'localllm');
     }
     const providerModels = {
@@ -322,7 +329,7 @@ export class DynamicRouter {
         const config = section[mode];
         if (config.primary === providerId || config.defaultService === providerId) {
           const fallback = config.fallbacks?.find((f) => f !== providerId) ||
-                           (mode === 'coding' ? 'claude' : (mode === 'audio' || mode === 'video' ? 'gemini' : 'chatgpt'));
+                           (mode === 'coding' ? 'claude' : (mode === 'music' || mode === 'video' ? 'gemini' : 'chatgpt'));
           config.primary = fallback as ProviderId;
           config.defaultService = fallback as ProviderId;
         }
@@ -602,9 +609,10 @@ export class DynamicRouter {
     const hasImageAction = /\b(generate|create|draw|render|illustrate|design|make)\s+(an?\s+)?(image|photo|picture|illustration|wallpaper|logo|drawing|icon|avatar)\b/.test(p);
     const hasImageStyling = /\b(photorealistic|hyperrealistic|cinematic|4k\s+render|8k\s+render|midjourney\s+prompt|dall-?e|concept\s+art|digital\s+art|matte\s+painting|character\s+design|character\s+sheet|anime\s+style|comic\s+panel|manga\s+panel|oil\s+painting|watercolor\s+painting|vector\s+art|3d\s+render|octane\s+render|unreal\s+engine\s+5?|wide\s+shot|close-up\s+shot|establishing\s+shot|cinematic\s+lighting|volumetric\s+lighting|aspect\s+ratio|--ar\s+\d+:\d+|--v\s+\d+)\b/.test(p);
     const hasStoryboardTerms = /\b(storyboard|storyboards?|scene\s+\d+|panel\s+\d+|shot\s+\d+|frame\s+\d+)\b/.test(p);
+    const hasNonImageMediaSubject = /\b(video|animation|clip|short\s+film|movie|music|songs?|tracks?|soundtracks?|beats?|melod(?:y|ies)|tunes?|jingles?|bgm|instrumentals?|audio|voices?|speech|narration|voiceovers?|tts|podcasts?|sound\s+effects?|sfx)\b/.test(p);
     const hasThaiImage = /(สร้างภาพ|วาดภาพ|วาดรูป|เจนภาพ|เจนรูป|รูปภาพ|ภาพวาด|ภาพถ่าย|สตอรี่บอร์ด|ออกแบบตัวละคร|ภาพประกอบ)/.test(prompt);
 
-    if (hasImageAction || hasImageStyling || hasStoryboardTerms || hasThaiImage) {
+    if (hasImageAction || ((hasImageStyling || hasStoryboardTerms) && !hasNonImageMediaSubject) || hasThaiImage) {
       return { mode: 'image', isAutoDetected: true };
     }
 
@@ -617,13 +625,23 @@ export class DynamicRouter {
       return { mode: 'video', isAutoDetected: true };
     }
 
-    // 4. Audio/Music generation intent (BGM, sound effects, voiceovers, Thai audio keywords)
-    const hasAudioAction = /\b(generate|create|compose|produce|make|synthesize)\s+(an?\s+)?(audio|music|song|track|soundtrack|beat|melody|tune|jingle|voice|speech|tts|podcast|sound\s+effect|sfx)\b/.test(p);
-    const hasAudioKeywords = /\b(background\s+music|bgm|instrumental|ambient\s+soundtrack|suno|udio|text-to-speech|voiceover|voice\s+narration)\b/.test(p);
-    const hasThaiAudio = /(สร้างเพลง|แต่งเพลง|ทำเพลง|สร้างเสียง|ดนตรี|เสียงดนตรี|เพลงบรรเลง|เสียงพากย์|เสียงเอฟเฟกต์)/.test(prompt);
+    // 4. Music generation intent. Physical results may still use audio MIME types.
+    const hasMusicAction = /\b(generate|create|compose|produce|make)\b[^.!?\n]{0,48}\b(music|songs?|tracks?|soundtracks?|beats?|melod(?:y|ies)|tunes?|jingles?|bgm|instrumentals?)\b/.test(p);
+    const hasMusicKeywords = /\b(background\s+music|bgm|instrumental|ambient\s+soundtrack|suno|udio)\b/.test(p);
+    const hasThaiMusic = /(สร้างเพลง|แต่งเพลง|ทำเพลง|ดนตรี|เสียงดนตรี|เพลงบรรเลง)/.test(prompt);
+
+    if (hasMusicAction || hasMusicKeywords || hasThaiMusic) {
+      return { mode: 'music', isAutoDetected: true };
+    }
+
+    // 5. Audio is reserved for future speech and sound providers. It must never
+    // fall through to the existing Gemini music implementation or General.
+    const hasAudioAction = /\b(generate|create|produce|make|synthesize)\b[^.!?\n]{0,48}\b(audio|voices?|speech|narration|voiceovers?|tts|podcasts?|sound\s+effects?|sfx)\b/.test(p);
+    const hasAudioKeywords = /\b(text-to-speech|voiceover|voice\s+narration|spoken\s+audio|character\s+voice|sound\s+effect|sfx)\b/.test(p);
+    const hasThaiAudio = /(สร้างเสียง|เสียงพากย์|เสียงบรรยาย|สังเคราะห์เสียง|เสียงเอฟเฟกต์)/.test(prompt);
 
     if (hasAudioAction || hasAudioKeywords || hasThaiAudio) {
-      return { mode: 'audio', isAutoDetected: true };
+      return { mode: 'audio', intent: 'audio', isAutoDetected: true };
     }
 
     return { mode: normalizedExplicit === 'auto' ? 'general' : normalizedExplicit, isAutoDetected: false };

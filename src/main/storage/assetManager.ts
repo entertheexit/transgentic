@@ -16,6 +16,7 @@ export function getDefaultAssetsDirectory(): string {
 
 export class AssetManager {
   private assetsDir: string;
+  private migratedAssetsDir = '';
 
   constructor(baseDir?: string) {
     this.assetsDir = baseDir || getDefaultAssetsDirectory();
@@ -33,9 +34,9 @@ export class AssetManager {
     return this.assetsDir;
   }
 
-  public getLibraryDirectory(type?: 'image' | 'video' | 'audio' | 'music' | 'Images' | 'Videos' | 'Audios' | string): string {
+  public getLibraryDirectory(type?: 'image' | 'video' | 'audio' | 'music' | 'Images' | 'Videos' | 'Music' | 'Audio' | string): string {
     const t = type?.toLowerCase() || '';
-    const sub = t.includes('image') ? 'Images' : t.includes('video') ? 'Videos' : (t.includes('audio') || t.includes('music')) ? 'Audios' : '';
+    const sub = t.includes('image') ? 'Images' : t.includes('video') ? 'Videos' : t.includes('music') ? 'Music' : t.includes('audio') ? 'Audio' : '';
     return sub ? path.join(this.assetsDir, 'Library', sub) : path.join(this.assetsDir, 'Library');
   }
 
@@ -49,7 +50,7 @@ export class AssetManager {
         this.assetsDir,
         path.join(this.assetsDir, 'Library', 'Images'),
         path.join(this.assetsDir, 'Library', 'Videos'),
-        path.join(this.assetsDir, 'Library', 'Audios'),
+        path.join(this.assetsDir, 'Library', 'Music'),
         path.join(this.assetsDir, 'Recipes', 'Custom'),
         path.join(this.assetsDir, 'Recipes', 'Healed'),
         path.join(this.assetsDir, 'Recipes', 'History'),
@@ -59,9 +60,34 @@ export class AssetManager {
           fs.mkdirSync(d, { recursive: true });
         }
       }
+      this.migrateLegacyMusicLibrary();
     } catch (e: any) {
       console.warn(`[Transgentic AssetManager] Notice creating directory ${this.assetsDir}:`, e.message);
     }
+  }
+
+  private migrateLegacyMusicLibrary(): void {
+    if (this.migratedAssetsDir === this.assetsDir) return;
+    this.migratedAssetsDir = this.assetsDir;
+    const legacyDir = path.join(this.assetsDir, 'Library', 'Audios');
+    const musicDir = path.join(this.assetsDir, 'Library', 'Music');
+    if (!fs.existsSync(legacyDir)) return;
+    for (const name of fs.readdirSync(legacyDir)) {
+      const source = path.join(legacyDir, name);
+      const target = path.join(musicDir, name);
+      if (fs.existsSync(target)) {
+        console.warn(`[Transgentic AssetManager] Kept legacy music asset because the target already exists: ${source}`);
+        continue;
+      }
+      try {
+        fs.renameSync(source, target);
+      } catch (error: any) {
+        console.warn(`[Transgentic AssetManager] Notice migrating legacy music asset ${source}:`, error?.message);
+      }
+    }
+    try {
+      if (fs.readdirSync(legacyDir).length === 0) fs.rmdirSync(legacyDir);
+    } catch {}
   }
 
   /**
@@ -91,7 +117,9 @@ export class AssetManager {
         const saved = await this.saveMediaAsset(
           fullDataUri,
           mediaType,
-          `${providerId}_${mode}`
+          `${providerId}_${mode}`,
+          undefined,
+          mode
         );
         if (!firstExtractedPath) {
           firstExtractedPath = saved.filePath;
@@ -111,17 +139,19 @@ export class AssetManager {
    */
   public async saveMediaAsset(
     data: string | Buffer,
-    type: 'image' | 'video' | 'audio' | 'music',
+    type: 'image' | 'video' | 'audio' | 'music' | 'Images' | 'Videos',
     suggestedName?: string,
-    cookieHeader?: string
+    cookieHeader?: string,
+    taskCategory?: string,
   ): Promise<{ filePath: string; relativePath: string; fileName: string; sizeBytes: number }> {
     this.ensureDirectoryExists();
 
     const timestamp = Date.now();
     const hash = crypto.randomBytes(4).toString('hex');
     let ext = 'png';
-    if (type === 'video') ext = 'mp4';
-    if (type === 'audio' || type === 'music') ext = 'mp3';
+    const mediaType = type.toLowerCase();
+    if (mediaType.includes('video')) ext = 'mp4';
+    if (mediaType === 'audio' || mediaType === 'music') ext = 'mp3';
 
     if (typeof data === 'string') {
       const fnMatch = data.match(/filename=([^&]+)/i);
@@ -174,10 +204,10 @@ export class AssetManager {
     }
 
     const cleanBaseName = suggestedName ? suggestedName.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 30) : type;
-    const t = (type || '').toLowerCase();
-    const subFolder = t.includes('image') ? 'Images' : t.includes('video') ? 'Videos' : 'Audios';
+    const category = (taskCategory || (mediaType === 'audio' ? 'music' : mediaType)).toLowerCase();
+    const subFolder = category.includes('image') ? 'Images' : category.includes('video') ? 'Videos' : category.includes('music') ? 'Music' : 'Audio';
     const fileName = `${cleanBaseName}_${timestamp}_${hash}.${ext}`;
-    const targetDir = this.getLibraryDirectory(type);
+    const targetDir = path.join(this.assetsDir, 'Library', subFolder);
     if (!fs.existsSync(targetDir)) {
       fs.mkdirSync(targetDir, { recursive: true });
     }

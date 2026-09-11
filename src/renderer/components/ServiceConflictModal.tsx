@@ -9,6 +9,7 @@ import {
   Image as ImageIcon,
   Video,
   Volume2,
+  Music,
   X,
   Layers,
 } from "lucide-react";
@@ -37,8 +38,10 @@ export const ServiceConflictModal: React.FC<ServiceConflictModalProps> = ({
         return <ImageIcon className="w-3.5 h-3.5 text-purple-400" />;
       case "video":
         return <Video className="w-3.5 h-3.5 text-rose-400" />;
+      case "music":
+        return <Music className="w-3.5 h-3.5 text-blue-400" />;
       case "audio":
-        return <Volume2 className="w-3.5 h-3.5 text-blue-400" />;
+        return <Volume2 className="w-3.5 h-3.5 text-slate-400" />;
       default:
         return <Layers className="w-3.5 h-3.5 text-slate-400" />;
     }

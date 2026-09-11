@@ -6,10 +6,11 @@ import { globalRateLimiter } from '../mcp/rateLimiter.js';
 import { ServiceManifestManager } from './serviceManifest.js';
 
 export function normalizeModelEntryModes<T extends ModelEntry>(model: T): T {
+  const migrateMode = (mode: unknown) => normalizeRouteMode(mode === 'audio' ? 'music' : String(mode));
   return {
     ...model,
-    ...(model.mode ? { mode: normalizeRouteMode(model.mode) } : {}),
-    ...(model.modes ? { modes: Array.from(new Set(model.modes.map(normalizeRouteMode))) } : {}),
+    ...(model.mode ? { mode: migrateMode(model.mode) } : {}),
+    ...(model.modes ? { modes: Array.from(new Set(model.modes.map(migrateMode))) } : {}),
   };
 }
 
@@ -50,10 +51,10 @@ export class ModelRegistryManager {
       hourlyLimit: 50,
       cooldownSeconds: 5,
       models: [
-        { id: 'gemini-2-0-flash', displayName: 'Gemini 2.0 Flash (Next-Gen Multimodal)', discoveredAvailable: true, userEnabled: true, requiresTier: 'Free/Advanced', mode: 'general', modes: ['general', 'coding', 'image', 'video', 'audio'] },
-        { id: 'gemini-2-0-pro', displayName: 'Gemini 2.0 Pro Experimental', discoveredAvailable: true, userEnabled: true, requiresTier: 'Advanced', mode: 'general', modes: ['general', 'coding', 'image', 'video', 'audio'] },
-        { id: 'gemini-1-5-flash', displayName: 'Gemini 1.5 Flash (Fast)', discoveredAvailable: true, userEnabled: true, requiresTier: 'Free', mode: 'general', modes: ['general', 'coding', 'video', 'audio'] },
-        { id: 'gemini-1-5-pro', displayName: 'Gemini 1.5 Pro (2M Context)', discoveredAvailable: true, userEnabled: true, requiresTier: 'Free/Advanced', mode: 'general', modes: ['general', 'coding', 'video', 'audio'] },
+        { id: 'gemini-2-0-flash', displayName: 'Gemini 2.0 Flash (Next-Gen Multimodal)', discoveredAvailable: true, userEnabled: true, requiresTier: 'Free/Advanced', mode: 'general', modes: ['general', 'coding', 'image', 'video', 'music'] },
+        { id: 'gemini-2-0-pro', displayName: 'Gemini 2.0 Pro Experimental', discoveredAvailable: true, userEnabled: true, requiresTier: 'Advanced', mode: 'general', modes: ['general', 'coding', 'image', 'video', 'music'] },
+        { id: 'gemini-1-5-flash', displayName: 'Gemini 1.5 Flash (Fast)', discoveredAvailable: true, userEnabled: true, requiresTier: 'Free', mode: 'general', modes: ['general', 'coding', 'video', 'music'] },
+        { id: 'gemini-1-5-pro', displayName: 'Gemini 1.5 Pro (2M Context)', discoveredAvailable: true, userEnabled: true, requiresTier: 'Free/Advanced', mode: 'general', modes: ['general', 'coding', 'video', 'music'] },
       ],
     },
     grok: {

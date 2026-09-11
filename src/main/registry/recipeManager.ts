@@ -774,6 +774,7 @@ Analyze the interactive HTML DOM snippet below for the AI service at "${url}" an
 
 Produce a valid JSON object strictly matching the following schema:
 {
+  "modeSchemaVersion": 2,
   "version": "1.0",
   "id": "${recipeId}",
   "title": "${recipeTitle}",
@@ -806,7 +807,7 @@ Produce a valid JSON object strictly matching the following schema:
         "enabled": false,
         "mediaKind": "video"
       },
-      "audio": {
+      "music": {
         "enabled": false,
         "mediaKind": "audio"
       }

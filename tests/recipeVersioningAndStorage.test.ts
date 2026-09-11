@@ -35,7 +35,8 @@ describe('Recipe Versioning, Storage & Self-Healing Tests', () => {
       // Check Library subdirectories
       expect(fs.existsSync(path.join(tempBaseDir, 'Library', 'Images'))).toBe(true);
       expect(fs.existsSync(path.join(tempBaseDir, 'Library', 'Videos'))).toBe(true);
-      expect(fs.existsSync(path.join(tempBaseDir, 'Library', 'Audios'))).toBe(true);
+      expect(fs.existsSync(path.join(tempBaseDir, 'Library', 'Music'))).toBe(true);
+      expect(fs.existsSync(path.join(tempBaseDir, 'Library', 'Audios'))).toBe(false);
 
       // Check Recipes subdirectories
       expect(fs.existsSync(path.join(tempBaseDir, 'Recipes', 'Custom'))).toBe(true);
@@ -50,6 +51,25 @@ describe('Recipe Versioning, Storage & Self-Healing Tests', () => {
       expect(saved.relativePath.startsWith('./Library/Images/')).toBe(true);
       expect(fs.existsSync(saved.filePath)).toBe(true);
       expect(fs.readFileSync(saved.filePath).toString()).toBe('fake image content');
+
+      const music = await assetManager.saveMediaAsset(Buffer.from('fake mp3'), 'audio', 'theme', undefined, 'music');
+      expect(music.relativePath.startsWith('./Library/Music/')).toBe(true);
+      expect(fs.existsSync(music.filePath)).toBe(true);
+    });
+
+    it('should migrate legacy music files from Library/Audios without overwriting collisions', () => {
+      const legacyDir = path.join(tempBaseDir, 'Library', 'Audios');
+      const musicDir = path.join(tempBaseDir, 'Library', 'Music');
+      fs.mkdirSync(legacyDir, { recursive: true });
+      fs.writeFileSync(path.join(legacyDir, 'legacy.mp3'), 'legacy');
+      fs.writeFileSync(path.join(legacyDir, 'collision.mp3'), 'legacy collision');
+      fs.writeFileSync(path.join(musicDir, 'collision.mp3'), 'current music');
+
+      assetManager = new AssetManager(tempBaseDir);
+
+      expect(fs.readFileSync(path.join(musicDir, 'legacy.mp3'), 'utf8')).toBe('legacy');
+      expect(fs.readFileSync(path.join(musicDir, 'collision.mp3'), 'utf8')).toBe('current music');
+      expect(fs.readFileSync(path.join(legacyDir, 'collision.mp3'), 'utf8')).toBe('legacy collision');
     });
   });
 

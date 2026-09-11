@@ -1,4 +1,5 @@
 import {
+  MODE_SCHEMA_VERSION,
   ProviderId,
   TaskMode,
   AgentHaltGuardConfig,
@@ -75,6 +76,7 @@ export const DEFAULT_HEALING_CONFIG: HealingConfig = {
 };
 
 export interface AppConfig {
+  modeSchemaVersion?: typeof MODE_SCHEMA_VERSION;
   activeMode: TaskMode;
   port: number;
   balancedMode: boolean;              // Synced between Hub header and Settings

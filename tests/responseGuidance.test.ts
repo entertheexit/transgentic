@@ -88,6 +88,27 @@ beforeEach(() => {
   configure();
 });
 
+it('rejects reserved Audio intent before selecting or invoking a provider', async () => {
+  const result = await server.orchestratePrompt(
+    'Generate a voiceover narration for this trailer',
+    'general',
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    'reserved-audio-test',
+    true,
+    false,
+    false,
+    { profile: 'plain', sessionId: 'reserved-audio-client' },
+  );
+  expect(result.isError).toBe(true);
+  expect(result.content[0].text).toContain('Audio providers are not available yet');
+  expect(result.metadata).toMatchObject({ mode: 'audio', intent: 'audio', directive: 'audio_provider_unavailable' });
+  expect(DynamicRouter.getCandidateChain).not.toHaveBeenCalled();
+  expect(adapter.executePrompt).not.toHaveBeenCalled();
+});
+
 afterEach(() => {
   globalThreadManager.clearAll();
   DuplicateActionGuard.clear();
@@ -134,7 +155,7 @@ describe('Actual provider answers with server-side reminders', () => {
     expect(adapter.executePrompt).toHaveBeenCalledTimes(2);
   });
 
-  it.each(['general', 'coding', 'image', 'video', 'audio'] as TaskMode[])(
+  it.each(['general', 'coding', 'image', 'video', 'music'] as TaskMode[])(
     'keeps Web AI answers and reminders across scenarios in %s mode', async (mode) => {
       for (const [balanced, double] of [[true, false], [false, false], [true, true], [false, true]]) {
         configure(balanced, false, double);
@@ -272,7 +293,7 @@ describe('Actual provider answers with server-side reminders', () => {
 describe('Caller profiles and truthful outcomes across providers', () => {
   it.each(['localllm', 'chatgpt', 'claude', 'gemini', 'grok', 'custom-service'] as ProviderId[])(
     'keeps neutral input/output for plain MCP and Quick Prompt on %s', async (provider) => {
-      const modes: TaskMode[] = provider === 'localllm' ? ['general', 'coding'] : ['general', 'coding', 'image', 'video', 'audio'];
+      const modes: TaskMode[] = provider === 'localllm' ? ['general', 'coding'] : ['general', 'coding', 'image', 'video', 'music'];
       for (const mode of modes) for (const quick of [true, false]) for (const balanced of [true, false]) {
         configure(balanced, true);
         const result = await run('A neutral user request.', mode, provider, true, quick,
@@ -281,7 +302,7 @@ describe('Caller profiles and truthful outcomes across providers', () => {
         expect(sent).toBe('A neutral user request.');
         expect(result.content).toEqual([{ type: 'text', text: answer }]);
         expect(result.structuredContent).toMatchObject({
-          status: ['image', 'video', 'audio'].includes(mode) ? 'partial' : 'completed', responseProfile: 'plain', guidance: '',
+          status: ['image', 'video', 'music'].includes(mode) ? 'partial' : 'completed', responseProfile: 'plain', guidance: '',
         });
       }
     });
@@ -356,7 +377,7 @@ describe('Caller profiles and truthful outcomes across providers', () => {
     expect(result.content).toEqual([{ type: 'text', text: 'Request cancelled.' }]);
   });
 
-  it.each(['image', 'video', 'audio', 'general'] as TaskMode[])('uses %s guidance without ordering implementation', async (mode) => {
+  it.each(['image', 'video', 'music', 'general'] as TaskMode[])('uses %s guidance without ordering implementation', async (mode) => {
     const result = await run('Help with this request.', mode, 'claude');
     expect(result.content[1].text).toContain('requested scope');
     expect(result.content[1].text).not.toContain('Continue with implementing');

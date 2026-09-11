@@ -22,12 +22,12 @@ The connected server's `tools/list` response is the reference for the tools and 
 | `ask_chatgpt`, `ask_claude`, `ask_gemini`, `ask_grok` | Request a specific built-in provider |
 | `generate_image` | Request image mode |
 | `generate_video` | Request video mode |
-| `generate_audio`, `generate_music` | Request audio mode |
+| `generate_music` | Request Music mode |
 | `get_status` | Inspect server health, provider state, limits, and model registry |
 
 Media tools request generation and attempt to save detected assets. They do not guarantee that a provider can generate the requested media or that extraction will succeed.
 
-Use an explicit mode for media requests. Supported backend task modes are `general`, `writing`, `coding`, `image`, `video`, and `audio`. Writing keeps its prose guidance and request identity while using the General provider route and per-mode policy configuration. Availability is determined by the configured model catalog, active account, and adapter; this guide intentionally does not list provider model IDs as permanent capabilities.
+Use an explicit mode for media requests. Public task modes are `general`, `writing`, `coding`, `image`, `video`, and `music`. Writing keeps its prose guidance and request identity while using the General provider route and per-mode policy configuration. Music covers songs, tracks, soundtracks, beats, melodies, jingles, BGM, and instrumentals. Speech and sound generation are reserved internally for a future Audio provider. Availability is determined by the configured model catalog, active account, and adapter; this guide intentionally does not list provider model IDs as permanent capabilities.
 
 ## Prompt arguments
 

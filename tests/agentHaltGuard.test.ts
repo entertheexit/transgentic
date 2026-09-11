@@ -26,7 +26,7 @@ describe('Agent Halt Guard', () => {
     expect(isAgentHaltGuardEnabled(config, 'coding')).toBe(true);
     expect(isAgentHaltGuardEnabled(config, 'image')).toBe(true);
     expect(isAgentHaltGuardEnabled(config, 'video')).toBe(true);
-    expect(isAgentHaltGuardEnabled(config, 'audio')).toBe(true);
+    expect(isAgentHaltGuardEnabled(config, 'music')).toBe(true);
     expect(isAgentHaltGuardEnabled(undefined, 'coding')).toBe(true);
   });
 
@@ -47,7 +47,7 @@ describe('Agent Halt Guard', () => {
         coding: false,
         image: true,
         video: false,
-        audio: true,
+        music: true,
       },
     };
 

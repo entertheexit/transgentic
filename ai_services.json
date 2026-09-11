@@ -173,7 +173,7 @@
             "coding",
             "image",
             "video",
-            "audio"
+            "music"
           ]
         },
         {
@@ -189,7 +189,7 @@
             "coding",
             "image",
             "video",
-            "audio"
+            "music"
           ]
         },
         {
@@ -204,7 +204,7 @@
             "general",
             "coding",
             "video",
-            "audio"
+            "music"
           ]
         },
         {
@@ -219,7 +219,7 @@
             "general",
             "coding",
             "video",
-            "audio"
+            "music"
           ]
         }
       ]
@@ -338,5 +338,6 @@
         }
       ]
     }
-  }
+  },
+  "modeSchemaVersion": 2
 }

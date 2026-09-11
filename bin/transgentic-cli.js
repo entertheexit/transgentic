@@ -75,7 +75,7 @@ for (let i = 0; i < rawArgs.length; i++) {
     token = rawArgs[++i];
   } else if (arg === '--json') {
     isJson = true;
-  } else if (!subcommand && ['prompt', 'image', 'video', 'audio', 'music', 'status'].includes(arg)) {
+  } else if (!subcommand && ['prompt', 'image', 'video', 'music', 'status'].includes(arg)) {
     subcommand = arg;
   } else if (!promptText) {
     promptText = arg;
@@ -96,11 +96,11 @@ USAGE:
   transgentic-cli prompt "<text>" [flags]           Run direct prompt with auto-routing or specified mode
   transgentic-cli image "<text>" [flags]            Generate image via Grok, ChatGPT, or Gemini
   transgentic-cli video "<text>" [flags]            Generate video via Grok or Gemini
-  transgentic-cli audio "<text>" [flags]            Generate audio/music via Gemini
+  transgentic-cli music "<text>" [flags]            Generate music via Gemini
   transgentic-cli status [flags]                    Query system health, rate limits, and model registry
 
 FLAGS:
-  -m, --mode <mode>        Task mode: general | writing | coding | image | video | audio
+  -m, --mode <mode>        Task mode: general | writing | coding | image | video | music
   -p, --provider <name>    Provider: chatgpt | claude | gemini | grok | cli_codex | cli_claude_code | cli_antigravity | cli_grok
       --model <modelId>    Specific model ID (e.g. dall-e-3, o1, claude-3-5-sonnet)
       --workspace <id>     Registered CLI workspace with a local MCP grant
@@ -148,8 +148,8 @@ async function executeDirectCommand() {
     toolName = 'generate_video';
     if (provider) toolArgs.provider = provider;
     if (model) toolArgs.model = model;
-  } else if (subcommand === 'audio' || subcommand === 'music') {
-    toolName = 'generate_audio';
+  } else if (subcommand === 'music') {
+    toolName = 'generate_music';
     if (provider) toolArgs.provider = provider;
     if (model) toolArgs.model = model;
   } else if (subcommand === 'status') {

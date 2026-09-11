@@ -118,9 +118,10 @@ export const LogStream: React.FC<LogStreamProps> = ({
         return 'bg-purple-500/15 text-purple-300 border-purple-500/30';
       case 'video':
         return 'bg-fuchsia-500/15 text-fuchsia-300 border-fuchsia-500/30';
-      case 'audio':
       case 'music':
         return 'bg-pink-500/15 text-pink-300 border-pink-500/30';
+      case 'audio':
+        return 'bg-slate-500/15 text-slate-300 border-slate-500/30';
       case 'general':
       default:
         return 'bg-slate-500/15 text-slate-300 border-slate-500/30';

@@ -51,7 +51,7 @@ Its two main uses are carrying available planning context into a task through **
 | Scripts and custom applications | Per-mode Main and Co-Agent routes with configured fallbacks | Text, code, saved-media paths, and structured outcomes |
 | Desktop Quick Prompt | The same provider and routing settings | In-app answers without IDE workflow reminders |
 
-**Configurable routes:** `General` · `Coding` · `Image` · `Video` · `Audio`
+**Configurable routes:** `General` · `Coding` · `Image` · `Video` · `Music`
 
 Writing remains a distinct backend mode for prose and long-form work. It has its own MCP endpoints, explicit mode value, completion model, writing guidance, and log identity, while provider routing and per-mode policies use the General configuration. For a novel project, files such as `novel.md`, chapter Markdown files, or structured story JSON remain caller-owned artifacts. An agentic client edits those files with its own tools while Transgentic handles the request as Writing through the General route.
 
@@ -211,9 +211,11 @@ Choose a mode-specific connection when an application consistently performs one 
 | Coding | `http://127.0.0.1:58420/coding/mcp` | `http://127.0.0.1:58420/coding/sse` |
 | Image | `http://127.0.0.1:58420/image/mcp` | `http://127.0.0.1:58420/image/sse` |
 | Video | `http://127.0.0.1:58420/video/mcp` | `http://127.0.0.1:58420/video/sse` |
-| Audio | `http://127.0.0.1:58420/audio/mcp` | `http://127.0.0.1:58420/audio/sse` |
+| Music | `http://127.0.0.1:58420/music/mcp` | `http://127.0.0.1:58420/music/sse` |
 
 Writing is a first-class backend mode. `/writing/mcp`, `/writing/sse`, explicit `mode: "writing"`, and `transgentic/writing` preserve Writing guidance and request identity, while all provider selection and per-mode policy settings resolve through General.
+
+Music covers songs, tracks, soundtracks, beats, melodies, jingles, BGM, and instrumentals. Narration, speech, voiceover, TTS, podcasts, and sound effects are reserved for a future Audio provider and are not advertised as a configurable route yet.
 
 Endpoint choices supply routing context, not permission boundaries. Explicit tool choices or mode arguments can change the request's target or mode; keep them consistent. A media endpoint does not guarantee generation or a saved file.
 
@@ -281,7 +283,7 @@ For transport details, selection examples, and plain-client configuration, see [
 
 - **Local media delivery:**
 
-  Attempts to save detected images, video, and audio under the configured storage root, returning host file paths. The default root is `~/Documents/Transgentic`.
+  Attempts to save detected images, video, and music under the configured storage root, returning host file paths. Music files may use standard audio formats such as MP3 or WAV. The default root is `~/Documents/Transgentic`.
 
 ### Request controls and visibility
 

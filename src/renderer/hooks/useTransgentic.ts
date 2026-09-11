@@ -68,10 +68,10 @@ const DEFAULT_REGISTRY: RegistryStore = {
     hourlyLimit: 50,
     cooldownSeconds: 5,
     models: [
-      { id: 'gemini-2-0-flash', displayName: 'Gemini 2.0 Flash (Next-Gen Multimodal)', discoveredAvailable: true, userEnabled: true, requiresTier: 'Free/Advanced', mode: 'general', modes: ['general', 'coding', 'image', 'video', 'audio'] },
-      { id: 'gemini-2-0-pro', displayName: 'Gemini 2.0 Pro Experimental', discoveredAvailable: true, userEnabled: true, requiresTier: 'Advanced', mode: 'general', modes: ['general', 'coding', 'image', 'video', 'audio'] },
-      { id: 'gemini-1-5-flash', displayName: 'Gemini 1.5 Flash (Fast)', discoveredAvailable: true, userEnabled: true, requiresTier: 'Free', mode: 'general', modes: ['general', 'coding', 'video', 'audio'] },
-      { id: 'gemini-1-5-pro', displayName: 'Gemini 1.5 Pro (2M Context)', discoveredAvailable: true, userEnabled: true, requiresTier: 'Free/Advanced', mode: 'general', modes: ['general', 'coding', 'video', 'audio'] },
+      { id: 'gemini-2-0-flash', displayName: 'Gemini 2.0 Flash (Next-Gen Multimodal)', discoveredAvailable: true, userEnabled: true, requiresTier: 'Free/Advanced', mode: 'general', modes: ['general', 'coding', 'image', 'video', 'music'] },
+      { id: 'gemini-2-0-pro', displayName: 'Gemini 2.0 Pro Experimental', discoveredAvailable: true, userEnabled: true, requiresTier: 'Advanced', mode: 'general', modes: ['general', 'coding', 'image', 'video', 'music'] },
+      { id: 'gemini-1-5-flash', displayName: 'Gemini 1.5 Flash (Fast)', discoveredAvailable: true, userEnabled: true, requiresTier: 'Free', mode: 'general', modes: ['general', 'coding', 'video', 'music'] },
+      { id: 'gemini-1-5-pro', displayName: 'Gemini 1.5 Pro (2M Context)', discoveredAvailable: true, userEnabled: true, requiresTier: 'Free/Advanced', mode: 'general', modes: ['general', 'coding', 'video', 'music'] },
     ],
   },
   grok: {
@@ -152,7 +152,7 @@ export function useTransgentic() {
     coding: { mode: 'coding', primary: 'claude', fallbacks: ['chatgpt', 'gemini', 'grok'], outputFormat: 'json_code' },
     image: { mode: 'image', primary: 'grok', fallbacks: ['chatgpt', 'gemini'], outputFormat: 'file_download' },
     video: { mode: 'video', primary: 'grok', fallbacks: ['gemini'], outputFormat: 'file_download' },
-    audio: { mode: 'audio', primary: 'gemini', fallbacks: [], outputFormat: 'file_download' },
+    music: { mode: 'music', primary: 'gemini', fallbacks: [], outputFormat: 'file_download' },
   });
 
   const [routeMatrix, setRouteMatrix] = useState<RouteMatrix | null>(null);
@@ -640,7 +640,7 @@ export function useTransgentic() {
       coding: true,
       image: true,
       video: true,
-      audio: true,
+      music: true,
     };
     const currentVal = currentModes[mode] ?? true;
     const nextVal = enabled !== undefined ? enabled : !currentVal;
@@ -714,7 +714,7 @@ export function useTransgentic() {
       coding: true,
       image: true,
       video: true,
-      audio: true,
+      music: true,
     };
     const currentVal = currentModes[mode] ?? true;
     const nextVal = enabled !== undefined ? enabled : !currentVal;
@@ -768,7 +768,7 @@ export function useTransgentic() {
   const toggleAgentGuard = useCallback(async (mode: RouteMode, enabled?: boolean) => {
     const currentMap = (typeof config.agentHaltGuard === 'object' && config.agentHaltGuard !== null)
       ? config.agentHaltGuard
-      : { general: true, coding: true, image: true, video: true, audio: true };
+      : { general: true, coding: true, image: true, video: true, music: true };
     const currentVal = currentMap[mode] ?? true;
     const nextVal = enabled !== undefined ? enabled : !currentVal;
 
@@ -787,7 +787,7 @@ export function useTransgentic() {
       agentHaltGuard: {
         ...((typeof prev.agentHaltGuard === 'object' && prev.agentHaltGuard !== null)
           ? prev.agentHaltGuard
-          : { general: true, coding: true, image: true, video: true, audio: true }),
+          : { general: true, coding: true, image: true, video: true, music: true }),
         [mode]: nextVal,
       },
     }));

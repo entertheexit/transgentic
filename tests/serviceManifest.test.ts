@@ -39,7 +39,7 @@ describe("ServiceManifestManager", () => {
       coding: { mode: "coding", primary: "claude", fallbacks: ["chatgpt"], outputFormat: "json_code" },
       image: { mode: "image", primary: "grok", fallbacks: [], outputFormat: "file_download" },
       video: { mode: "video", primary: "grok", fallbacks: [], outputFormat: "file_download" },
-      audio: { mode: "audio", primary: "gemini", fallbacks: [], outputFormat: "file_download" },
+      music: { mode: "music", primary: "gemini", fallbacks: [], outputFormat: "file_download" },
     };
 
     // When all are enabled, conflicts should be empty
@@ -152,8 +152,8 @@ describe("ServiceManifestManager", () => {
         { id: "sample-image-pro", displayName: "Sample Image Model", enabled: true, discoveredAvailable: true, userEnabled: true, mode: "image", modes: ["image"] },
         { id: "sample-video-fast", displayName: "Video Model", enabled: true, discoveredAvailable: true, userEnabled: true, mode: "video", modes: ["video"] },
         { id: "veo-3-1-fast", displayName: "Veo Model", enabled: true, discoveredAvailable: true, userEnabled: true, mode: "video", modes: ["video"] },
-        { id: "lyria-3-pro", displayName: "Audio Model Pro", enabled: true, discoveredAvailable: true, userEnabled: true, mode: "audio", modes: ["audio"] },
-        { id: "lyria-3-clip", displayName: "Audio Model Clip", enabled: true, discoveredAvailable: true, userEnabled: true, mode: "audio", modes: ["audio"] },
+        { id: "lyria-3-pro", displayName: "Music Model Pro", enabled: true, discoveredAvailable: true, userEnabled: true, mode: "music", modes: ["music"] },
+        { id: "lyria-3-clip", displayName: "Music Model Clip", enabled: true, discoveredAvailable: true, userEnabled: true, mode: "music", modes: ["music"] },
         { id: "kimi-k2-7-code", displayName: "Code Model", enabled: true, discoveredAvailable: true, userEnabled: true, mode: "coding", modes: ["coding"] },
         { id: "deepseek-v3-2", displayName: "DeepSeek Code", enabled: true, discoveredAvailable: true, userEnabled: true, mode: "coding", modes: ["coding"] },
         { id: "gemini-3-1-flash-lite", displayName: "Flash Lite", enabled: true, discoveredAvailable: true, userEnabled: true, mode: "general", modes: ["general"] },
@@ -175,10 +175,10 @@ describe("ServiceManifestManager", () => {
     expect(videoModels.some((m) => m.id === "sample-video-fast")).toBe(true);
     expect(videoModels.some((m) => m.id === "veo-3-1-fast")).toBe(true);
 
-    const audioModels = ServiceManifestManager.getModelsForMode(TEST_WEBVIEW_ID as any, "audio");
-    expect(audioModels.length).toBeGreaterThanOrEqual(2);
-    expect(audioModels.some((m) => m.id === "lyria-3-pro")).toBe(true);
-    expect(audioModels.some((m) => m.id === "lyria-3-clip")).toBe(true);
+    const musicModels = ServiceManifestManager.getModelsForMode(TEST_WEBVIEW_ID as any, "music");
+    expect(musicModels.length).toBeGreaterThanOrEqual(2);
+    expect(musicModels.some((m) => m.id === "lyria-3-pro")).toBe(true);
+    expect(musicModels.some((m) => m.id === "lyria-3-clip")).toBe(true);
 
     const codingModels = ServiceManifestManager.getModelsForMode(TEST_WEBVIEW_ID as any, "coding");
     expect(codingModels.some((m) => m.id === "kimi-k2-7-code")).toBe(true);
@@ -201,44 +201,44 @@ describe("ServiceManifestManager", () => {
       iconName: "Globe",
       supportsModelRouting: true,
       models: [
-        { id: "m1", displayName: "M1", enabled: true, discoveredAvailable: true, userEnabled: true, mode: "general", modes: ["general", "coding", "image", "video", "audio"] },
+        { id: "m1", displayName: "M1", enabled: true, discoveredAvailable: true, userEnabled: true, mode: "general", modes: ["general", "coding", "image", "video", "music"] },
       ],
     };
     ServiceManifestManager.saveManifest(manifest);
 
-    // ChatGPT: supports general, coding, and image; not video or audio
+    // ChatGPT: supports general, coding, and image; not video or music
     expect(ServiceManifestManager.providerSupportsMode("chatgpt", "general")).toBe(true);
     expect(ServiceManifestManager.providerSupportsMode("chatgpt", "coding")).toBe(true);
     expect(ServiceManifestManager.providerSupportsMode("chatgpt", "image")).toBe(true);
     expect(ServiceManifestManager.providerSupportsMode("chatgpt", "video")).toBe(false);
-    expect(ServiceManifestManager.providerSupportsMode("chatgpt", "audio")).toBe(false);
+    expect(ServiceManifestManager.providerSupportsMode("chatgpt", "music")).toBe(false);
 
     // Claude: supports general and coding; not media modes
     expect(ServiceManifestManager.providerSupportsMode("claude", "general")).toBe(true);
     expect(ServiceManifestManager.providerSupportsMode("claude", "coding")).toBe(true);
     expect(ServiceManifestManager.providerSupportsMode("claude", "image")).toBe(false);
     expect(ServiceManifestManager.providerSupportsMode("claude", "video")).toBe(false);
-    expect(ServiceManifestManager.providerSupportsMode("claude", "audio")).toBe(false);
+    expect(ServiceManifestManager.providerSupportsMode("claude", "music")).toBe(false);
 
     // Gemini supports all five canonical modes.
     expect(ServiceManifestManager.providerSupportsMode("gemini", "general")).toBe(true);
     expect(ServiceManifestManager.providerSupportsMode("gemini", "coding")).toBe(true);
     expect(ServiceManifestManager.providerSupportsMode("gemini", "image")).toBe(true);
     expect(ServiceManifestManager.providerSupportsMode("gemini", "video")).toBe(true);
-    expect(ServiceManifestManager.providerSupportsMode("gemini", "audio")).toBe(true);
+    expect(ServiceManifestManager.providerSupportsMode("gemini", "music")).toBe(true);
 
-    // Grok supports general, coding, image, and video; not audio.
+    // Grok supports general, coding, image, and video; not music.
     expect(ServiceManifestManager.providerSupportsMode("grok", "general")).toBe(true);
     expect(ServiceManifestManager.providerSupportsMode("grok", "coding")).toBe(true);
     expect(ServiceManifestManager.providerSupportsMode("grok", "image")).toBe(true);
     expect(ServiceManifestManager.providerSupportsMode("grok", "video")).toBe(true);
-    expect(ServiceManifestManager.providerSupportsMode("grok", "audio")).toBe(false);
+    expect(ServiceManifestManager.providerSupportsMode("grok", "music")).toBe(false);
 
     // Custom Webview with all canonical modes
     expect(ServiceManifestManager.providerSupportsMode(TEST_WEBVIEW_ID as any, "general")).toBe(true);
     expect(ServiceManifestManager.providerSupportsMode(TEST_WEBVIEW_ID as any, "coding")).toBe(true);
     expect(ServiceManifestManager.providerSupportsMode(TEST_WEBVIEW_ID as any, "image")).toBe(true);
     expect(ServiceManifestManager.providerSupportsMode(TEST_WEBVIEW_ID as any, "video")).toBe(true);
-    expect(ServiceManifestManager.providerSupportsMode(TEST_WEBVIEW_ID as any, "audio")).toBe(true);
+    expect(ServiceManifestManager.providerSupportsMode(TEST_WEBVIEW_ID as any, "music")).toBe(true);
   });
 });

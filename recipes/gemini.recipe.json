@@ -62,12 +62,13 @@
         "downloadSelector": "button[aria-label*=\"Download video\" i]",
         "mediaKind": "video"
       },
-      "audio": {
+      "music": {
         "enabled": true,
         "contentSelector": "generated-music video, generated-music audio, video-player video, audio",
         "downloadSelector": "button[aria-label*=\"Download track\" i]",
         "mediaKind": "audio"
       }
     }
-  }
+  },
+  "modeSchemaVersion": 2
 }
