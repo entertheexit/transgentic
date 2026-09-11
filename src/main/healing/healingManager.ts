@@ -6,6 +6,8 @@ import { HealingConfig, LocalLLMConfig, ProviderId, TransgenticConfig } from '..
 import { DynamicRouter } from '../mcp/router.js';
 import { LocalLlmClient } from '../localllm/localLlmClient.js';
 import { globalRateLimiter } from '../mcp/rateLimiter.js';
+import { globalRecipeManager } from '../registry/recipeManager.js';
+import { toCombinedCssSelector } from '../../shared/types/recipe.js';
 
 export class HealingManager {
   private static instance: HealingManager | null = null;
@@ -125,7 +127,19 @@ export class HealingManager {
   public getCustomSelectors(
     providerId: ProviderId
   ): Partial<Record<'inputPrompt' | 'submitButton' | 'stopButton' | 'modelDropdownTrigger', string>> {
-    return this.customSelectors.get(providerId) || {};
+    const fromStore = this.customSelectors.get(providerId) || {};
+    try {
+      const recipe = globalRecipeManager.getRecipe(providerId);
+      if (recipe?.selectors) {
+        return {
+          inputPrompt: fromStore.inputPrompt || toCombinedCssSelector(recipe.selectors.inputPrompt) || undefined,
+          submitButton: fromStore.submitButton || toCombinedCssSelector(recipe.selectors.submitButton) || undefined,
+          stopButton: fromStore.stopButton || toCombinedCssSelector(recipe.selectors.stopButton) || undefined,
+          modelDropdownTrigger: fromStore.modelDropdownTrigger || toCombinedCssSelector(recipe.selectors.modelDropdownTrigger) || undefined,
+        };
+      }
+    } catch {}
+    return fromStore;
   }
 
   public setCustomSelectors(

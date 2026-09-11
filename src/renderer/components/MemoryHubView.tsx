@@ -135,10 +135,10 @@ export const MemoryHubView: React.FC<MemoryHubViewProps> = ({
           {secrets.length > 0 && (
             <button
               onClick={handleWipeSecretsOnly}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-rose-300 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 rounded-xl transition-all cursor-pointer shadow-[0_0_12px_rgba(244,63,94,0.15)]"
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-mono font-semibold text-rose-300 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 shadow-[0_0_12px_rgba(244,63,94,0.15)] transition-all cursor-pointer"
               title="Wipe Secrets from RAM"
             >
-              <Trash2 className="w-3.5 h-3.5" />
+              <Trash2 className="w-3 h-3" />
               <span>Wipe Secrets</span>
             </button>
           )}
@@ -148,10 +148,10 @@ export const MemoryHubView: React.FC<MemoryHubViewProps> = ({
               soundFx.playClick();
               setShowConfirmModal('all');
             }}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-amber-300 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 rounded-xl transition-all cursor-pointer shadow-[0_0_12px_rgba(245,158,11,0.15)]"
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-mono font-semibold text-amber-300 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 shadow-[0_0_12px_rgba(245,158,11,0.15)] transition-all cursor-pointer"
             title="Clear all app memory & browser storage"
           >
-            <Trash2 className="w-3.5 h-3.5" />
+            <Trash2 className="w-3 h-3" />
             <span>Clear All</span>
           </button>
         </div>

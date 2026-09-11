@@ -152,7 +152,7 @@ export const LogStream: React.FC<LogStreamProps> = ({
   return (
     <div className="flex flex-col h-full pt-4 space-y-3 max-h-full overflow-hidden">
       {/* Header */}
-      <div className="flex pt-[1px] pl-4 pr-4 items-center gap-3 justify-between pb-4 border-b border-white/5 shrink-0">
+      <div className="flex pl-4 pr-4 items-center gap-3 justify-between pb-4 border-b border-white/5 shrink-0">
         <div className="flex items-center gap-2.5">
           <div className="w-8 h-8 rounded-xl bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center text-cyan-400 shadow-[0_0_15px_rgba(6,182,212,0.15)]">
             <Activity className="w-4 h-4" />
@@ -206,11 +206,11 @@ export const LogStream: React.FC<LogStreamProps> = ({
                     soundFx.playClick();
                     setShowClearConfirm(true);
                   }}
-                  className="flex items-center gap-1 px-2 py-1 rounded-lg bg-white/5 hover:bg-rose-500/20 text-slate-400 hover:text-rose-300 border border-white/5 hover:border-rose-500/30 text-[10px] font-mono transition-all cursor-pointer"
+                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-mono font-semibold text-amber-300 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 shadow-[0_0_12px_rgba(245,158,11,0.15)] transition-all cursor-pointer"
                   title="Clear all logs from disk and memory"
                 >
                   <Trash2 className="w-3 h-3" />
-                  <span>Clear</span>
+                  <span>Clear All</span>
                 </button>
               )}
             </>

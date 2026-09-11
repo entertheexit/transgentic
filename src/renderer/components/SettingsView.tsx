@@ -1,7 +1,7 @@
 import { CliServicesSettings, setCachedCliState } from './CliServicesSettings.js';
 import { loadCliState } from '../utils/cliStateLoader.js';
 import { motion } from 'framer-motion';
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   ProviderConfig,
   ProviderId,
@@ -54,6 +54,7 @@ import {
   Info,
   AlertCircle,
   AlertTriangle,
+  LoaderCircle,
   Globe,
   Link,
   Folder,
@@ -195,6 +196,18 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [webviewFormError, setWebviewFormError] = useState<string | null>(null);
   const [webviewFormSuccess, setWebviewFormSuccess] = useState<string | null>(null);
   const [isSubmittingWebview, setIsSubmittingWebview] = useState<boolean>(false);
+  const [installedCustomRecipes, setInstalledCustomRecipes] = useState<any[]>([]);
+
+  useEffect(() => {
+    const api = typeof window !== 'undefined' ? ((window as any).transgenticApi || (window as any).electronAPI) : undefined;
+    if (api?.getRecipes) {
+      void api.getRecipes().then((recipes: any[]) => {
+        if (Array.isArray(recipes)) {
+          setInstalledCustomRecipes(recipes);
+        }
+      }).catch(() => {});
+    }
+  }, [servicesManifest]);
   const [expandedServiceModels, setExpandedServiceModels] = useState<Record<string, boolean>>({});
   const [showAuthModalProvider, setShowAuthModalProvider] = useState<ProviderId | null>(null);
   const [selectedPlatform, setSelectedPlatform] = useState<ClientPlatform>('codex');
@@ -420,6 +433,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         setWebviewFormSuccess(
           `Recipe "${parsed.name || parsed.id}" installed! Navigate to ${targetHost} in Chrome to sync auth.`
         );
+        if (api?.getRecipes) {
+          void api.getRecipes().then((recipes: any[]) => {
+            if (Array.isArray(recipes)) setInstalledCustomRecipes(recipes);
+          }).catch(() => {});
+        }
         setTimeout(() => {
           setShowWebviewForm(false);
           setWebviewFormRecipeJson('');
@@ -484,15 +502,16 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     soundFx.playClick();
     if (!onAuditProviderDom) return;
     setAuditingProvider(pId);
+    const srvName = servicesManifest?.services?.[pId]?.name || pId.replace(/^custom_|^webview_|^recipe_/, '').toUpperCase();
     try {
       const res = await onAuditProviderDom(pId);
       const isHealthy = res?.allLandmarksHealthy ?? res?.healthy;
       if (isHealthy) {
         soundFx.playTaskSuccess();
-        setHealingStatusMsg(`All control landmarks on ${pId.toUpperCase()} are healthy!`);
+        setHealingStatusMsg(`All control landmarks on ${srvName} are healthy!`);
       } else {
         soundFx.playWarnTone();
-        setHealingStatusMsg(`Discrepancies detected on ${pId.toUpperCase()}! Recommended: click Heal.`);
+        setHealingStatusMsg(`Discrepancies detected on ${srvName}! Recommended: click Heal.`);
       }
       setTimeout(() => setHealingStatusMsg(null), 4000);
     } catch (err: any) {
@@ -506,14 +525,15 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     soundFx.playClick();
     if (!onHealProviderDom) return;
     setHealingProvider(pId);
+    const srvName = servicesManifest?.services?.[pId]?.name || pId.replace(/^custom_|^webview_|^recipe_/, '').toUpperCase();
     try {
       const res = await onHealProviderDom(pId);
       if (res?.success) {
         soundFx.playTaskSuccess();
-        setHealingStatusMsg(`Successfully healed ${pId.toUpperCase()} via ${res.healedBy}!`);
+        setHealingStatusMsg(`Successfully healed ${srvName} via ${res.healedBy || 'Local LLM'}!`);
       } else {
         soundFx.playWarnTone();
-        setHealingStatusMsg(`Healing ${pId.toUpperCase()}: ${res?.error || 'Could not resolve new selectors'}`);
+        setHealingStatusMsg(`Healing ${srvName}: ${res?.error || 'Could not resolve new selectors'}`);
       }
       setTimeout(() => setHealingStatusMsg(null), 5000);
     } catch (err: any) {
@@ -1520,125 +1540,163 @@ http_headers = { "Authorization" = "Bearer ${clientToken || 'YOUR_TOKEN'}" }`;
               </div>
 
               <div className="space-y-1.5">
-                {(['chatgpt', 'claude', 'gemini', 'grok'] as ProviderId[]).map((pId) => {
-                  const report = healingReports?.[pId];
-                  const landmarks = report?.landmarks;
-                  const isAuditing = auditingProvider === pId;
-                  const isHealing = healingProvider === pId;
-                  const ProviderIcon = getProviderTheme(pId).icon;
+                {(() => {
+                  const allServices = servicesManifest?.services || {};
+                  const customWebviewIds = Object.values(allServices)
+                    .filter(
+                      (s) =>
+                        !s.hidden &&
+                        s.id !== 'localllm' &&
+                        (s.providerType === 'webview' ||
+                          s.id.startsWith('webview_') ||
+                          s.id.startsWith('custom_') ||
+                          s.id.startsWith('recipe_'))
+                    )
+                    .map((s) => s.id as ProviderId);
 
-                  return (
-                    <div
-                      key={pId}
-                      className="p-2.5 rounded-xl bg-black/40 border border-white/5 flex items-center justify-between"
-                    >
-                      <div className="flex items-center gap-2.5">
-                        <div className="p-1 rounded-lg bg-white/5 border border-white/10 text-slate-300">
-                          <ProviderIcon className="w-4 h-4" />
-                        </div>
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs font-bold text-slate-200 font-mono uppercase">
-                              {pId}
-                            </span>
-                            {report ? (
-                              (report.allLandmarksHealthy ?? report.healthy) ? (
-                                <span className="text-[8.5px] font-mono px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                                  ALL HEALTHY
-                                </span>
-                              ) : (
-                                <span className="text-[8.5px] font-mono px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">
-                                  ISSUES DETECTED
-                                </span>
-                              )
-                            ) : (
-                              <span className="text-[8.5px] font-mono px-1.5 py-0.2 rounded bg-white/5 text-slate-500">
-                                UNINSPECTED
-                              </span>
-                            )}
-                          </div>
+                  const recipeIds = (installedCustomRecipes || []).map((r: any) => {
+                    const rId = String(r.id || r.name || '');
+                    if (rId.startsWith('custom_') || rId.startsWith('webview_') || rId.startsWith('recipe_')) {
+                      return rId as ProviderId;
+                    }
+                    return `custom_${rId}` as ProviderId;
+                  });
 
-                          {/* 4 Landmarks badges */}
-                          <div className="flex items-center gap-1 mt-1 text-[9px] font-mono">
-                            {(() => {
-                              const renderLandmarkBadge = (name: string, found: boolean, isHealed: boolean) => {
-                                if (isHealed) {
-                                  return (
-                                    <span className="pl-0.5 pr-1 py-0.5 rounded border flex items-center gap-0.5 bg-orange-500/20 text-orange-300 border-orange-500/40">
-                                      <ListCheck className="w-2.5 h-2.5 shrink-0" />
-                                      <span>{name}</span>
-                                    </span>
-                                  );
-                                }
-                                if (found) {
-                                  return (
-                                    <span className="pl-0.5 pr-1 py-0.5 rounded border flex items-center gap-0.5 bg-emerald-500/10 text-emerald-400 border-emerald-500/20">
-                                      <Check className="w-2.5 h-2.5 shrink-0" />
-                                      <span>{name}</span>
-                                    </span>
-                                  );
-                                }
-                                return (
-                                  <span className="pl-0.5 pr-1 py-0.5 rounded border flex items-center gap-0.5 bg-rose-500/10 text-rose-400 border-rose-500/20">
-                                    <X className="w-2.5 h-2.5 shrink-0" />
-                                    <span>{name}</span>
-                                  </span>
-                                );
-                              };
-
-                              const inputFound = Boolean(landmarks?.inputPrompt?.found ?? landmarks?.inputPrompt?.exists);
-                              const inputHealed = Boolean(landmarks?.inputPrompt?.activeSelector);
-
-                              const submitFound = Boolean(landmarks?.submitButton?.found ?? landmarks?.submitButton?.exists);
-                              const submitHealed = Boolean(landmarks?.submitButton?.activeSelector);
-
-                              const stopFound = Boolean(landmarks?.stopButton?.found ?? landmarks?.stopButton?.exists);
-                              const stopHealed = Boolean(landmarks?.stopButton?.activeSelector);
-
-                              const switcherFound = Boolean(landmarks?.modelDropdownTrigger?.found ?? landmarks?.modelDropdownTrigger?.exists);
-                              const switcherHealed = Boolean(landmarks?.modelDropdownTrigger?.activeSelector);
-
-                              return (
-                                <>
-                                  {renderLandmarkBadge('input', inputFound, inputHealed)}
-                                  {renderLandmarkBadge('submit', submitFound, submitHealed)}
-                                  {renderLandmarkBadge('stop', stopFound, stopHealed)}
-                                  {renderLandmarkBadge('switcher', switcherFound, switcherHealed)}
-                                </>
-                              );
-                            })()}
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center gap-1.5">
-                        <button
-                          onClick={() => handleAuditProvider(pId)}
-                          disabled={isAuditing || isHealing}
-                          className={`px-2.5 py-1 rounded-lg text-[10px] font-mono transition-colors ${isAuditing
-                              ? 'bg-white/10 text-slate-400 cursor-wait'
-                              : 'bg-white/5 hover:bg-orange-500/10 text-slate-300 hover:text-orange-200 border border-white/10 hover:border-orange-500/30 cursor-pointer'
-                            }`}
-                        >
-                          {isAuditing ? 'Checking...' : 'Check'}
-                        </button>
-                        <button
-                          onClick={() => handleHealProvider(pId)}
-                          disabled={isAuditing || isHealing || !config.localLLM?.enabled}
-                          title={!config.localLLM?.enabled ? 'Local LLM is disabled. Enable Local LLM in Hub to repair DOM landmarks.' : undefined}
-                          className={`px-2.5 py-1 rounded-lg text-[10px] font-mono font-semibold transition-all ${!config.localLLM?.enabled
-                              ? 'bg-white/5 text-slate-500 border border-white/5 cursor-not-allowed'
-                              : isHealing
-                                ? 'bg-orange-500/20 text-orange-300 cursor-wait'
-                                : 'bg-orange-500/20 hover:bg-orange-500/30 text-orange-300 border border-orange-500/40 shadow-[0_0_8px_rgba(249,115,22,0.25)] cursor-pointer'
-                            }`}
-                        >
-                          {isHealing ? 'Healing...' : 'Heal'}
-                        </button>
-                      </div>
-                    </div>
+                  const healingProviders: ProviderId[] = Array.from(
+                    new Set([
+                      'chatgpt',
+                      'claude',
+                      'gemini',
+                      'grok',
+                      ...customWebviewIds,
+                      ...recipeIds,
+                    ])
                   );
-                })}
+
+                  return healingProviders.map((pId) => {
+                    const cleanId = pId.replace(/^custom_|^recipe_/, '');
+                    const report = healingReports?.[pId] || healingReports?.[cleanId];
+                    const landmarks = report?.landmarks;
+                    const isAuditing = auditingProvider === pId || auditingProvider === cleanId;
+                    const isHealing = healingProvider === pId || healingProvider === cleanId;
+                    const srv = servicesManifest?.services?.[pId] || servicesManifest?.services?.[cleanId];
+                    const theme = getProviderTheme(pId, srv);
+                    const ProviderIcon = theme.icon;
+                    const displayName = srv?.name || cleanId;
+
+                    return (
+                      <div
+                        key={pId}
+                        className="p-2.5 rounded-xl bg-black/40 border border-white/5 flex items-center justify-between"
+                      >
+                        <div className="flex items-center gap-2.5">
+                          <div className={`p-1 rounded-lg border ${theme.bgClass || 'bg-white/5'} ${theme.borderClass || 'border-white/10'} ${theme.textClass || 'text-slate-300'}`}>
+                            <ProviderIcon className="w-4 h-4" />
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs font-bold text-slate-200 font-mono uppercase">
+                                {displayName}
+                              </span>
+                              {report ? (
+                                (report.allLandmarksHealthy ?? report.healthy) ? (
+                                  <span className="text-[8.5px] font-mono px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                                    ALL HEALTHY
+                                  </span>
+                                ) : (
+                                  <span className="text-[8.5px] font-mono px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                                    ISSUES DETECTED
+                                  </span>
+                                )
+                              ) : (
+                                <span className="text-[8.5px] font-mono px-1.5 py-0.2 rounded bg-white/5 text-slate-500">
+                                  UNINSPECTED
+                                </span>
+                              )}
+                            </div>
+
+                            {/* 4 Landmarks badges */}
+                            <div className="flex items-center gap-1 mt-1 text-[9px] font-mono">
+                              {(() => {
+                                const renderLandmarkBadge = (name: string, found: boolean, isHealed: boolean) => {
+                                  if (isHealed) {
+                                    return (
+                                      <span className="pl-0.5 pr-1 py-0.5 rounded border flex items-center gap-0.5 bg-orange-500/20 text-orange-300 border-orange-500/40">
+                                        <ListCheck className="w-2.5 h-2.5 shrink-0" />
+                                        <span>{name}</span>
+                                      </span>
+                                    );
+                                  }
+                                  if (found) {
+                                    return (
+                                      <span className="pl-0.5 pr-1 py-0.5 rounded border flex items-center gap-0.5 bg-emerald-500/10 text-emerald-400 border-emerald-500/20">
+                                        <Check className="w-2.5 h-2.5 shrink-0" />
+                                        <span>{name}</span>
+                                      </span>
+                                    );
+                                  }
+                                  return (
+                                    <span className="pl-0.5 pr-1 py-0.5 rounded border flex items-center gap-0.5 bg-rose-500/10 text-rose-400 border-rose-500/20">
+                                      <X className="w-2.5 h-2.5 shrink-0" />
+                                      <span>{name}</span>
+                                    </span>
+                                  );
+                                };
+
+                                const inputFound = Boolean(landmarks?.inputPrompt?.found ?? landmarks?.inputPrompt?.exists);
+                                const inputHealed = Boolean(landmarks?.inputPrompt?.activeSelector);
+
+                                const submitFound = Boolean(landmarks?.submitButton?.found ?? landmarks?.submitButton?.exists);
+                                const submitHealed = Boolean(landmarks?.submitButton?.activeSelector);
+
+                                const stopFound = Boolean(landmarks?.stopButton?.found ?? landmarks?.stopButton?.exists);
+                                const stopHealed = Boolean(landmarks?.stopButton?.activeSelector);
+
+                                const switcherFound = Boolean(landmarks?.modelDropdownTrigger?.found ?? landmarks?.modelDropdownTrigger?.exists);
+                                const switcherHealed = Boolean(landmarks?.modelDropdownTrigger?.activeSelector);
+
+                                return (
+                                  <>
+                                    {renderLandmarkBadge('input', inputFound, inputHealed)}
+                                    {renderLandmarkBadge('submit', submitFound, submitHealed)}
+                                    {renderLandmarkBadge('stop', stopFound, stopHealed)}
+                                    {renderLandmarkBadge('switcher', switcherFound, switcherHealed)}
+                                  </>
+                                );
+                              })()}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            onClick={() => handleAuditProvider(pId)}
+                            disabled={isAuditing || isHealing}
+                            className={`px-2.5 py-1 rounded-lg text-[10px] font-mono transition-colors ${isAuditing
+                                ? 'bg-white/10 text-slate-400 cursor-wait'
+                                : 'bg-white/5 hover:bg-orange-500/10 text-slate-300 hover:text-orange-200 border border-white/10 hover:border-orange-500/30 cursor-pointer'
+                              }`}
+                          >
+                            {isAuditing ? 'Checking...' : 'Check'}
+                          </button>
+                          <button
+                            onClick={() => handleHealProvider(pId)}
+                            disabled={isAuditing || isHealing || !config.localLLM?.enabled}
+                            title={!config.localLLM?.enabled ? 'Local LLM is disabled. Enable Local LLM in Hub to repair DOM landmarks.' : undefined}
+                            className={`px-2.5 py-1 rounded-lg text-[10px] font-mono font-semibold transition-all ${!config.localLLM?.enabled
+                                ? 'bg-white/5 text-slate-500 border border-white/5 cursor-not-allowed'
+                                : isHealing
+                                  ? 'bg-orange-500/20 text-orange-300 cursor-wait'
+                                  : 'bg-orange-500/20 hover:bg-orange-500/30 text-orange-300 border border-orange-500/40 shadow-[0_0_8px_rgba(249,115,22,0.25)] cursor-pointer'
+                              }`}
+                          >
+                            {isHealing ? 'Healing...' : 'Heal'}
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  });
+                })()}
               </div>
             </div>
           </div>
@@ -2502,9 +2560,9 @@ http_headers = { "Authorization" = "Bearer ${clientToken || 'YOUR_TOKEN'}" }`;
             };
 
             const renderProviderTab = (pid: ProviderId) => {
-              const isDevDisabled = servicesManifest?.services?.[pid]?.enabled === false;
-              const isExp = servicesManifest?.services?.[pid]?.experimental === true;
+              const isDevDisabled = servicesManifest?.services?.[pid]?.enabled === false || registry?.[pid]?.serviceEnabled === false;
               const isCliProvider = providerCategory === 'cli';
+              const isSelected = !showExperimentalPage && selectedProvider === pid;
               return (
                 <button
                   key={pid}
@@ -2514,20 +2572,18 @@ http_headers = { "Authorization" = "Bearer ${clientToken || 'YOUR_TOKEN'}" }`;
                     setSelectedProvider(pid);
                     setSelectedProviders(previous => ({ ...previous, [providerCategory]: pid }));
                   }}
-                  className={`relative flex min-w-0 items-center justify-center gap-1.5 overflow-hidden rounded-lg px-2 py-1.5 text-[10px] font-semibold uppercase tracking-wider transition-all cursor-pointer select-none ${!showExperimentalPage && selectedProvider === pid
-                      ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-[0_0_12px_rgba(6,182,212,0.25)]'
+                  className={`relative flex min-w-0 items-center justify-center gap-1.5 overflow-hidden rounded-lg px-2 py-1.5 text-[10px] font-semibold uppercase tracking-wider transition-all cursor-pointer select-none ${
+                    isSelected
+                      ? isDevDisabled
+                        ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40 shadow-[0_0_12px_rgba(244,63,94,0.25)]'
+                        : 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-[0_0_12px_rgba(6,182,212,0.25)]'
                       : isDevDisabled
-                        ? 'text-rose-400/70 hover:text-rose-300 border border-transparent'
+                        ? 'text-rose-400/80 hover:text-rose-300 hover:bg-rose-500/10 border border-transparent'
                         : 'text-slate-400 hover:text-slate-200 border border-transparent'
-                    }`}
+                  }`}
                 >
                   {providerCategory === 'webview' && getProviderIcon(pid)}
                   <span className={`${isCliProvider ? 'w-full text-center' : 'min-w-0'} truncate`} title={getProviderLabel(pid)}>{getProviderLabel(pid)}</span>
-                  {isDevDisabled && (
-                    <span className={`${isCliProvider ? 'pointer-events-none absolute right-0.5 top-0.5 px-1 py-0.5 text-[6.5px] leading-none' : 'px-1 py-0.2 text-[7.5px]'} rounded border border-rose-500/20 bg-rose-500/10 font-mono text-rose-400`}>
-                      OFF
-                    </span>
-                  )}
                 </button>
               );
             };
@@ -2780,9 +2836,6 @@ http_headers = { "Authorization" = "Bearer ${clientToken || 'YOUR_TOKEN'}" }`;
                               <div className="min-w-0">
                                 <div className="flex items-center gap-2">
                                   <span className="text-xs font-bold text-slate-100 truncate">{srv.name}</span>
-                                  <span className="text-[9px] font-mono text-cyan-300 bg-cyan-500/15 px-1.5 py-0.5 rounded border border-cyan-500/30">
-                                    API
-                                  </span>
                                   {srv.defaultModelId && (
                                     <span className="text-[9.5px] font-mono text-slate-400 bg-white/5 px-1.5 py-0.5 rounded border border-white/10">
                                       {srv.defaultModelId}
@@ -3090,12 +3143,12 @@ http_headers = { "Authorization" = "Bearer ${clientToken || 'YOUR_TOKEN'}" }`;
                                               {srv.id}
                                             </span>
                                             {isAuth ? (
-                                              <span className="text-emerald-400 font-mono flex items-center gap-1 text-[9.5px] bg-emerald-500/10 border border-emerald-500/30 px-2 py-0.5 rounded-full">
-                                                <CheckCircle2 className="w-3 h-3" /> Authenticated
+                                              <span className="text-emerald-400 font-mono flex items-center gap-1.5 text-[9.5px] bg-emerald-500/10 border border-emerald-500/30 px-2 py-0.5 rounded-full">
+                                                <span className="w-1.5 h-1.5 shrink-0 rounded-full bg-emerald-400" /> Connected
                                               </span>
                                             ) : (
-                                              <span className="text-amber-400 font-mono flex items-center gap-1 text-[9.5px] bg-amber-500/10 border border-amber-500/30 px-2 py-0.5 rounded-full" title="Sync auth cookies via Chrome extension">
-                                                <AlertTriangle className="w-3 h-3" /> Requires Chrome Sync
+                                              <span className="text-amber-400 font-mono flex items-center gap-1.5 text-[9.5px] bg-amber-500/10 border border-amber-500/30 px-2 py-0.5 rounded-full" title="Sync auth cookies via Chrome extension">
+                                                <span className="w-1.5 h-1.5 shrink-0 rounded-full bg-amber-400" /> Requires Chrome Sync
                                               </span>
                                             )}
                                             {srv.url && (
@@ -3183,60 +3236,43 @@ http_headers = { "Authorization" = "Bearer ${clientToken || 'YOUR_TOKEN'}" }`;
                   <div className="flex min-w-0 items-center gap-3">
                     <div className="service-icon-box flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-cyan-300"><Braces className="h-4 w-4" /></div>
                     <div className="min-w-0">
-                      <div className="flex min-w-0 items-center gap-2"><h3 className="truncate text-xs font-bold uppercase tracking-wide text-slate-100">{service.name}</h3><span className="rounded-md border border-cyan-500/25 bg-cyan-500/10 px-1.5 py-0.5 text-[8px] font-mono uppercase text-cyan-300">API</span></div>
-                      <p className="mt-1 truncate font-mono text-[9.5px] text-slate-500">OpenAI-compatible provider</p>
+                      <div className="flex min-w-0 items-center gap-2"><h3 className="truncate text-xs font-bold uppercase tracking-wide text-slate-100">{service.name}</h3></div>
+                      <div className={`mt-1 flex items-center gap-1.5 text-[9.5px] font-mono ${
+                        !currentProvConfig.serviceEnabled
+                          ? 'text-slate-500'
+                          : service.baseUrl
+                          ? 'text-emerald-400'
+                          : 'text-amber-400/80'
+                      }`}>
+                        <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${
+                          !currentProvConfig.serviceEnabled
+                            ? 'bg-slate-500'
+                            : service.baseUrl
+                            ? 'bg-emerald-400'
+                            : 'bg-amber-400'
+                        }`} />
+                        <span>
+                          {!currentProvConfig.serviceEnabled
+                            ? 'Disabled'
+                            : service.baseUrl
+                            ? 'Connected'
+                            : 'Not Configured'}
+                        </span>
+                      </div>
                     </div>
                   </div>
-                  <label className="relative inline-flex shrink-0 cursor-pointer items-center" title={`${currentProvConfig.serviceEnabled ? 'Disable' : 'Enable'} ${service.name}`}>
+                  <label className="relative inline-flex shrink-0 cursor-pointer items-center gap-2 select-none" title={`${currentProvConfig.serviceEnabled ? 'Disable' : 'Enable'} ${service.name}`}>
+                    <span className="text-[10px] font-mono uppercase tracking-wider text-slate-400">Enabled</span>
                     <input type="checkbox" className="peer sr-only" checked={currentProvConfig.serviceEnabled} onChange={event => { soundFx.playClick(); onToggleService(selectedProvider, event.target.checked); }} aria-label={`${currentProvConfig.serviceEnabled ? 'Disable' : 'Enable'} ${service.name}`} />
                     <span className="relative h-5 w-9 rounded-full border border-white/10 bg-slate-800 shadow-inner transition-colors peer-checked:border-cyan-400/40 peer-checked:bg-cyan-500/70 peer-focus-visible:ring-2 peer-focus-visible:ring-cyan-400/50 after:absolute after:left-[2px] after:top-[2px] after:h-3.5 after:w-3.5 after:rounded-full after:bg-slate-300 after:shadow after:transition-transform peer-checked:after:translate-x-4 peer-checked:after:bg-white" />
                   </label>
                 </div>
                 <div className="space-y-3 p-4">
                   <div className="grid gap-3 sm:grid-cols-2"><div className="rounded-xl border border-white/[0.07] bg-black/25 p-3"><div className="text-[9px] font-mono uppercase tracking-wider text-slate-500">Base URL</div><div className="mt-1 truncate font-mono text-[10.5px] text-cyan-200" title={service.baseUrl}>{service.baseUrl}</div></div><div className="rounded-xl border border-white/[0.07] bg-black/25 p-3"><div className="text-[9px] font-mono uppercase tracking-wider text-slate-500">Default model</div><div className="mt-1 truncate font-mono text-[10.5px] text-slate-200">{service.defaultModelId || 'default'}</div></div></div>
-                  {/* Gateway Routing Status & Edit Action */}
-                  <div className={`flex flex-col gap-3 rounded-2xl border p-3.5 sm:flex-row sm:items-center sm:justify-between transition-all ${
-                    currentProvConfig.serviceEnabled
-                      ? 'border-emerald-500/25 bg-gradient-to-r from-emerald-500/[0.08] via-emerald-500/[0.03] to-transparent shadow-[0_0_20px_rgba(16,185,129,0.06)]'
-                      : 'border-white/[0.07] bg-black/30'
-                  }`}>
-                    <div className="flex items-start gap-3">
-                      <div className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border ${
-                        currentProvConfig.serviceEnabled
-                          ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400 shadow-[0_0_10px_rgba(16,185,129,0.15)]'
-                          : 'border-white/10 bg-white/[0.04] text-slate-500'
-                      }`}>
-                        {currentProvConfig.serviceEnabled ? (
-                          <CheckCircle2 className="h-4 w-4 text-emerald-400" />
-                        ) : (
-                          <AlertCircle className="h-4 w-4 text-slate-500" />
-                        )}
-                      </div>
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2">
-                          <span className={`text-[11px] font-bold uppercase tracking-wider ${
-                            currentProvConfig.serviceEnabled ? 'text-emerald-300' : 'text-slate-400'
-                          }`}>
-                            {currentProvConfig.serviceEnabled ? 'Gateway Active' : 'Service Inactive'}
-                          </span>
-                          {currentProvConfig.serviceEnabled && (
-                            <span className="relative flex h-2 w-2">
-                              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
-                              <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-400" />
-                            </span>
-                          )}
-                        </div>
-                        <p className={`mt-0.5 text-[10px] leading-relaxed ${
-                          currentProvConfig.serviceEnabled ? 'text-emerald-200/80' : 'text-slate-500'
-                        }`}>
-                          {currentProvConfig.serviceEnabled
-                            ? 'Available to task routes and the completion gateway for active inference.'
-                            : 'Enable toggle above to connect this provider to task routing and completion gateway.'}
-                        </p>
-                      </div>
-                    </div>
-
+                  {/* Edit Action */}
+                  <div className="flex items-center justify-end pt-1">
                     <button
+                      type="button"
                       onClick={() => {
                         soundFx.playClick();
                         setEditingApiId(service.id);
@@ -3249,12 +3285,12 @@ http_headers = { "Authorization" = "Bearer ${clientToken || 'YOUR_TOKEN'}" }`;
                         setMoreProvidersTab('api');
                         setShowExperimentalPage(true);
                       }}
-                      className="group inline-flex shrink-0 items-center justify-center gap-2 rounded-xl border border-cyan-500/30 bg-cyan-500/10 px-3.5 py-2 text-xs font-semibold text-cyan-200 shadow-[0_0_12px_rgba(6,182,212,0.12)] transition-all hover:border-cyan-500/50 hover:bg-cyan-500/20 hover:text-white hover:shadow-[0_0_16px_rgba(6,182,212,0.22)] cursor-pointer"
+                      className="group inline-flex w-full sm:w-auto items-center justify-center gap-2 rounded-xl border border-cyan-500/30 bg-cyan-500/10 px-3.5 py-2 text-xs font-semibold text-cyan-200 shadow-[0_0_12px_rgba(6,182,212,0.12)] transition-all hover:border-cyan-500/50 hover:bg-cyan-500/20 hover:text-white hover:shadow-[0_0_16px_rgba(6,182,212,0.22)] cursor-pointer"
                       title="Edit endpoint URL, API key, or default model"
                     >
-                      <Pencil className="h-3.5 w-3.5 text-cyan-300 transition-transform group-hover:rotate-12" />
+                      <Pencil className="h-3.5 w-3.5 text-cyan-300" />
                       <span>Configure Provider</span>
-                      <ArrowRight className="h-3 w-3 text-cyan-400/70 transition-transform group-hover:translate-x-0.5" />
+                      <ArrowRight className="h-3 w-3 text-cyan-400/70" />
                     </button>
                   </div>
                 </div>
@@ -3274,15 +3310,63 @@ http_headers = { "Authorization" = "Bearer ${clientToken || 'YOUR_TOKEN'}" }`;
                       <span className="truncate text-xs font-bold uppercase tracking-wide text-slate-100">
                         {getProviderLabel(selectedProvider)}
                       </span>
+                      {['chatgpt', 'claude', 'gemini', 'grok'].includes(selectedProvider) && (
+                        <span className="rounded-md border border-cyan-500/25 bg-cyan-500/10 px-1.5 py-0.5 text-[8px] font-mono font-bold uppercase tracking-wider text-cyan-300">
+                          Built In
+                        </span>
+                      )}
                     </div>
-                    <span className="text-[10px] text-slate-500 font-mono">
-                      {providers[selectedProvider]?.isAuthenticated ? '● Authenticated' : '○ Not logged in'}
-                    </span>
+                    {(() => {
+                      const isAuth = providers[selectedProvider]?.isAuthenticated;
+                      const provState = providers[selectedProvider]?.state;
+                      const isBusy = isResyncing || provState === 'busy';
+                      const isWarning = provState === 'rate_limited' || provState === 'cooling_down';
+                      const tone = !currentProvConfig.serviceEnabled
+                        ? 'text-slate-500'
+                        : isBusy
+                        ? 'text-cyan-300'
+                        : isWarning
+                        ? 'text-rose-300'
+                        : isAuth
+                        ? 'text-emerald-400'
+                        : 'text-slate-500';
+                      const dotBg = !currentProvConfig.serviceEnabled
+                        ? 'bg-slate-500'
+                        : isBusy
+                        ? 'bg-cyan-400 animate-ping'
+                        : provState === 'rate_limited'
+                        ? 'bg-rose-400'
+                        : provState === 'cooling_down'
+                        ? 'bg-amber-400'
+                        : isAuth
+                        ? 'bg-emerald-400'
+                        : 'bg-slate-500';
+                      return (
+                        <div className={`mt-1 flex items-center gap-1.5 text-[9.5px] font-mono ${tone}`}>
+                          <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${dotBg}`} />
+                          <span>
+                            {!currentProvConfig.serviceEnabled
+                              ? 'Disabled'
+                              : isResyncing
+                              ? 'Syncing Models'
+                              : provState === 'busy'
+                              ? 'Busy'
+                              : provState === 'rate_limited'
+                              ? 'Rate Limited'
+                              : provState === 'cooling_down'
+                              ? 'Cooling Down'
+                              : isAuth
+                              ? 'Connected'
+                              : 'Not Logged In'}
+                          </span>
+                        </div>
+                      );
+                    })()}
                   </div>
                 </div>
 
                 {/* Action Buttons */}
-                <div className="flex shrink-0 items-center gap-1.5">
+                <div className="flex shrink-0 items-center gap-2">
                   <button
                     onClick={() => {
                       soundFx.playClick();
@@ -3295,20 +3379,11 @@ http_headers = { "Authorization" = "Bearer ${clientToken || 'YOUR_TOKEN'}" }`;
                     <span>Chrome Sync</span>
                   </button>
 
-                  {/* Re-sync Button */}
-                  <button
-                    disabled={isResyncing}
-                    onClick={handleResync}
-                    className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 text-[10px] font-mono font-semibold transition-all cursor-pointer"
-                    title="Scan live web session for available models"
-                  >
-                    <RefreshCw className={`w-3 h-3 ${isResyncing ? 'animate-spin text-cyan-400' : ''}`} />
-                    <span>{isResyncing ? 'Scanning...' : 'Models Sync'}</span>
-                  </button>
                   <label
-                    className="relative inline-flex shrink-0 cursor-pointer items-center"
+                    className="relative inline-flex shrink-0 cursor-pointer items-center gap-2 select-none"
                     title={`${currentProvConfig.serviceEnabled ? 'Disable' : 'Enable'} ${getProviderLabel(selectedProvider)}`}
                   >
+                    <span className="text-[10px] font-mono uppercase tracking-wider text-slate-400">Enabled</span>
                     <input
                       type="checkbox"
                       checked={currentProvConfig.serviceEnabled}
@@ -3468,9 +3543,22 @@ http_headers = { "Authorization" = "Bearer ${clientToken || 'YOUR_TOKEN'}" }`;
 
                 {/* Default Model Selector */}
                 <div className="space-y-1">
-                  <label className="text-[10px] font-mono uppercase tracking-wider text-slate-400">
-                    Default Fallback Model:
-                  </label>
+                  <div className="flex items-center justify-between gap-2">
+                    <label className="text-[10px] font-mono uppercase tracking-wider text-slate-400">
+                      Default Fallback Model:
+                    </label>
+                    <button
+                      type="button"
+                      disabled={isResyncing}
+                      onClick={handleResync}
+                      className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-slate-400 hover:bg-cyan-500/10 hover:text-cyan-300 transition-colors disabled:cursor-wait disabled:opacity-45 text-[9.5px] font-mono cursor-pointer"
+                      title="Scan live web session for available models"
+                      aria-label="Scan live web session for available models"
+                    >
+                      <RefreshCw className={`w-3 h-3 ${isResyncing ? 'animate-spin text-cyan-400' : ''}`} />
+                      <span>{isResyncing ? 'Scanning…' : 'Sync Models'}</span>
+                    </button>
+                  </div>
                   <select
                     value={currentProvConfig.defaultModelId}
                     onChange={(e) => {

@@ -654,8 +654,8 @@ export const RoutesSettings: React.FC<RoutesSettingsProps> = ({
                             ? `● Connected (${sEntry?.defaultModelId || 'Default'})`
                             : '○ Not configured'
                           : prov?.isAuthenticated
-                          ? '● Authenticated'
-                          : '○ Not connected'}
+                          ? '● Connected'
+                          : '○ Not Connected'}
                       </div>
                     </div>
                   </div>
