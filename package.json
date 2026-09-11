@@ -9,7 +9,7 @@
     "LICENSE",
     "README.md"
   ],
-  "version": "1.0.1",
+  "version": "2.0.0",
   "description": "Tactile Electron MCP bridge and orchestration engine for web AI sessions",
   "desktopName": "transgentic.desktop",
   "main": "dist-electron/main/index.js",
