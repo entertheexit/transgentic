@@ -1,5 +1,6 @@
 import { isCliProvider } from '../../shared/cli.js';
 import React, { useState, useEffect } from 'react';
+import { motion } from 'framer-motion';
 import {
   ModeRouteConfig,
   ProviderId,
@@ -391,20 +392,29 @@ export const RoutesSettings: React.FC<RoutesSettingsProps> = ({
       </div>
 
       {/* Top-Level Segmented Control: [ ⭐️ Main Agent ] | [ 🔀 Co-Agent ] */}
-      <div className="flex items-center gap-1 p-1 bg-black/40 rounded-xl border border-white/10">
+      <div className="relative flex items-center gap-1 p-1 bg-black/40 rounded-xl border border-white/10">
         <button
           onClick={() => {
             soundFx.playClick();
             setActivePipeline('main');
           }}
-          className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-xs font-mono font-semibold transition-all cursor-pointer min-h-[40px] ${
+          className={`relative z-10 flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-xs font-mono font-semibold transition-colors cursor-pointer min-h-[40px] select-none ${
             activePipeline === 'main'
-              ? 'bg-gradient-to-r from-cyan-500/30 to-blue-500/30 text-cyan-300 border border-cyan-500/50 shadow-[0_0_15px_rgba(6,182,212,0.25)]'
-              : 'text-slate-400 hover:text-slate-200 hover:bg-white/5 border border-transparent'
+              ? 'text-cyan-300'
+              : 'text-slate-400 hover:text-slate-200'
           }`}
         >
-          <Star className="w-3.5 h-3.5 text-cyan-400" />
-          <span>Main Agent</span>
+          {activePipeline === 'main' && (
+            <motion.div
+              layoutId="activePipelinePill"
+              className="absolute inset-0 rounded-lg bg-gradient-to-r from-cyan-500/30 to-blue-500/30 border border-cyan-500/50 shadow-[0_0_15px_rgba(6,182,212,0.25)]"
+              transition={{ type: 'spring', stiffness: 450, damping: 32 }}
+            />
+          )}
+          <span className="relative z-10 flex items-center gap-2">
+            <Star className="w-3.5 h-3.5 text-cyan-400" />
+            <span>Main Agent</span>
+          </span>
         </button>
 
         <button
@@ -412,13 +422,20 @@ export const RoutesSettings: React.FC<RoutesSettingsProps> = ({
             soundFx.playClick();
             setActivePipeline('co');
           }}
-          className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-xs font-mono font-semibold transition-all cursor-pointer min-h-[40px] ${
+          className={`relative z-10 flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-xs font-mono font-semibold transition-colors cursor-pointer min-h-[40px] select-none ${
             activePipeline === 'co'
-              ? 'bg-gradient-to-r from-amber-500/30 to-rose-500/30 text-amber-300 border border-amber-500/50 shadow-[0_0_15px_rgba(245,158,11,0.25)]'
-              : 'text-slate-400 hover:text-slate-200 hover:bg-white/5 border border-transparent'
+              ? 'text-amber-300'
+              : 'text-slate-400 hover:text-slate-200'
           }`}
         >
-          <div className="flex items-center gap-2">
+          {activePipeline === 'co' && (
+            <motion.div
+              layoutId="activePipelinePill"
+              className="absolute inset-0 rounded-lg bg-gradient-to-r from-amber-500/30 to-rose-500/30 border border-amber-500/50 shadow-[0_0_15px_rgba(245,158,11,0.25)]"
+              transition={{ type: 'spring', stiffness: 450, damping: 32 }}
+            />
+          )}
+          <div className="relative z-10 flex items-center gap-2">
             <GitFork className="w-3.5 h-3.5 text-amber-400" />
             <span>Co-Agent</span>
             <span
@@ -447,7 +464,9 @@ export const RoutesSettings: React.FC<RoutesSettingsProps> = ({
         </button>
       </div>
 
-      {/* Contextual Co-Agent Pipeline Banner */}
+      {/* Active Pipeline Content Container */}
+      <div key={activePipeline} className="provider-panel-enter space-y-4">
+        {/* Contextual Co-Agent Pipeline Banner */}
       {activePipeline === 'co' && (
         <div className={`flex items-start gap-2.5 p-3 rounded-xl border text-[11px] leading-relaxed transition-all ${
           isDoubleAgentEnabled && !isBalancedMode
@@ -1039,6 +1058,7 @@ export const RoutesSettings: React.FC<RoutesSettingsProps> = ({
             </div>
           );
         })()}
+      </div>
       </div>
 
       {/* Confirmation Modal for Resetting Routes */}

@@ -1,5 +1,6 @@
 import { isCliProvider } from '../shared/cli.js';
 import React, { useState, useEffect, useRef } from 'react';
+import { motion } from 'framer-motion';
 import { UPDATE_CHECK_INTERVAL_MS } from '../shared/release.js';
 import { version as appVersion } from '../../package.json';
 import { useTransgentic } from './hooks/useTransgentic.js';
@@ -580,47 +581,74 @@ export function App() {
                 </div>
 
                 {/* Center Tab Navigation */}
-                <div className="flex items-center gap-1 bg-black/40 p-0.5 rounded-lg border border-white/5 no-drag">
+                <div className="relative flex items-center gap-1 bg-black/40 p-0.5 rounded-lg border border-white/5 no-drag">
                   <button
                     onClick={() => handleTabChange('hub')}
-                    className={`px-2 py-1 rounded text-[10px] font-semibold flex items-center gap-1 transition-colors ${activeTab === 'hub' || activeTab === 'routes' || activeTab === 'settings'
-                      ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                    className={`relative z-10 px-2 py-1 rounded text-[10px] font-semibold flex items-center gap-1 transition-colors cursor-pointer select-none ${activeTab === 'hub' || activeTab === 'routes' || activeTab === 'settings'
+                      ? 'text-emerald-300'
                       : 'text-slate-400 hover:text-slate-200'
                       }`}
                     title="Tactile AI Hub"
                   >
-                    <Radio className={`w-3 h-3 ${coreStatus?.port > 0 ? 'text-emerald-400' : 'text-slate-400'}`} />
-                    <span>Hub</span>
+                    {(activeTab === 'hub' || activeTab === 'routes' || activeTab === 'settings') && (
+                      <motion.div
+                        layoutId="activeCenterTabPill"
+                        className="absolute inset-0 rounded bg-emerald-500/20 border border-emerald-500/40 shadow-[0_0_10px_rgba(16,185,129,0.15)]"
+                        transition={{ type: 'spring', stiffness: 450, damping: 32 }}
+                      />
+                    )}
+                    <span className="relative z-10 flex items-center gap-1">
+                      <Radio className={`w-3 h-3 ${coreStatus?.port > 0 ? 'text-emerald-400' : 'text-slate-400'}`} />
+                      <span>Hub</span>
+                    </span>
                   </button>
 
                   <button
                     onClick={() => handleTabChange('logs')}
-                    className={`px-2 py-1 rounded text-[10px] font-semibold flex items-center gap-1 transition-colors ${activeTab === 'logs'
-                      ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40'
+                    className={`relative z-10 px-2 py-1 rounded text-[10px] font-semibold flex items-center gap-1 transition-colors cursor-pointer select-none ${activeTab === 'logs'
+                      ? 'text-cyan-300'
                       : 'text-slate-400 hover:text-slate-200'
                       }`}
                     title="Live MCP Traffic Stream"
                   >
-                    <Activity className="w-3 h-3 text-cyan-400" />
-                    <span>Logs</span>
-                    {logs.length > 0 && (
-                      <span className="w-1.5 h-1.5 rounded-full bg-cyan-400" />
+                    {activeTab === 'logs' && (
+                      <motion.div
+                        layoutId="activeCenterTabPill"
+                        className="absolute inset-0 rounded bg-cyan-500/20 border border-cyan-500/40 shadow-[0_0_10px_rgba(6,182,212,0.15)]"
+                        transition={{ type: 'spring', stiffness: 450, damping: 32 }}
+                      />
                     )}
+                    <span className="relative z-10 flex items-center gap-1">
+                      <Activity className="w-3 h-3 text-cyan-400" />
+                      <span>Logs</span>
+                      {logs.length > 0 && (
+                        <span className="w-1.5 h-1.5 rounded-full bg-cyan-400" />
+                      )}
+                    </span>
                   </button>
 
                   <button
                     onClick={() => handleTabChange('mem')}
-                    className={`px-2 py-1 rounded text-[10px] font-semibold flex items-center gap-1 transition-colors ${activeTab === 'mem'
-                      ? 'bg-purple-500/20 text-purple-300 border border-purple-500/40'
+                    className={`relative z-10 px-2 py-1 rounded text-[10px] font-semibold flex items-center gap-1 transition-colors cursor-pointer select-none ${activeTab === 'mem'
+                      ? 'text-purple-300'
                       : 'text-slate-400 hover:text-slate-200'
                       }`}
                     title="Memory & Context Hub (Encrypted SQLite & Secret Vault)"
                   >
-                    <Brain className="w-3 h-3 text-purple-400" />
-                    <span>Memory</span>
-                    {secrets.length > 0 && (
-                      <span className="w-1.5 h-1.5 rounded-full bg-purple-400" />
+                    {activeTab === 'mem' && (
+                      <motion.div
+                        layoutId="activeCenterTabPill"
+                        className="absolute inset-0 rounded bg-purple-500/20 border border-purple-500/40 shadow-[0_0_10px_rgba(168,85,247,0.15)]"
+                        transition={{ type: 'spring', stiffness: 450, damping: 32 }}
+                      />
                     )}
+                    <span className="relative z-10 flex items-center gap-1">
+                      <Brain className="w-3 h-3 text-purple-400" />
+                      <span>Memory</span>
+                      {secrets.length > 0 && (
+                        <span className="w-1.5 h-1.5 rounded-full bg-purple-400" />
+                      )}
+                    </span>
                   </button>
                 </div>
 
@@ -662,112 +690,122 @@ export function App() {
               {/* Tab Content Area */}
               <div className="flex-1 min-h-0 overflow-clip relative">
                 {activeTab === 'hub' && (
-                  <RadialHub
-                    coreStatus={coreStatus}
-                    config={config}
-                    providers={providers}
-                    logs={logs}
-                    servicesManifest={servicesManifest}
-                    routeMatrix={routeMatrix}
-                    modeRoutes={modeRoutes}
-                    onProviderClick={handleSatelliteClick}
-                    onModeChange={setMode}
-                    onToggleBalancedMode={toggleBalancedMode}
-                    onToggleAgentGuard={toggleAgentGuard}
-                    onCoreClick={() => handleTabChange('logs')}
-                    onRoutesClick={() => handleTabChange('routes')}
-                    onSettingsClick={() => handleTabChange('settings')}
-                    onLocalLLMClick={() => {
-                      soundFx.playClick();
-                      setShowLocalLLMModal(true);
-                    }}
-                    localLLMEnabled={config.localLLM?.enabled ?? false}
-                    onSendPrompt={handleSendPrompt}
-                    onSelectFiles={(mode?: TaskMode): Promise<DesktopAttachmentSelection[]> => selectQuickPromptFiles(mode)}
-                    hasActiveSession={hasActiveSession}
-                    onClearSession={clearThreadSessions}
-                    onOpenAuthModal={() => {
-                      soundFx.playClick();
-                      setShowAuthModal(true);
-                    }}
-                  />
+                  <div key="hub" className="h-full w-full provider-panel-enter">
+                    <RadialHub
+                      coreStatus={coreStatus}
+                      config={config}
+                      providers={providers}
+                      logs={logs}
+                      servicesManifest={servicesManifest}
+                      routeMatrix={routeMatrix}
+                      modeRoutes={modeRoutes}
+                      onProviderClick={handleSatelliteClick}
+                      onModeChange={setMode}
+                      onToggleBalancedMode={toggleBalancedMode}
+                      onToggleAgentGuard={toggleAgentGuard}
+                      onCoreClick={() => handleTabChange('logs')}
+                      onRoutesClick={() => handleTabChange('routes')}
+                      onSettingsClick={() => handleTabChange('settings')}
+                      onLocalLLMClick={() => {
+                        soundFx.playClick();
+                        setShowLocalLLMModal(true);
+                      }}
+                      localLLMEnabled={config.localLLM?.enabled ?? false}
+                      onSendPrompt={handleSendPrompt}
+                      onSelectFiles={(mode?: TaskMode): Promise<DesktopAttachmentSelection[]> => selectQuickPromptFiles(mode)}
+                      hasActiveSession={hasActiveSession}
+                      onClearSession={clearThreadSessions}
+                      onOpenAuthModal={() => {
+                        soundFx.playClick();
+                        setShowAuthModal(true);
+                      }}
+                    />
+                  </div>
                 )}
                 {activeTab === 'routes' && (
-                  <RoutesSettings
-                    modeRoutes={modeRoutes}
-                    routeMatrix={routeMatrix}
-                    config={config}
-                    providers={providers}
-                    servicesManifest={servicesManifest}
-                    localLLMConfig={config.localLLM}
-                    initialPipeline={routesInitialPipeline}
-                    onUpdateRoute={updateModeRoute}
-                    onResetRoutes={resetModeRoutes}
-                    onBack={() => handleTabChange('hub')}
-                  />
+                  <div key="routes" className="h-full w-full provider-panel-enter">
+                    <RoutesSettings
+                      modeRoutes={modeRoutes}
+                      routeMatrix={routeMatrix}
+                      config={config}
+                      providers={providers}
+                      servicesManifest={servicesManifest}
+                      localLLMConfig={config.localLLM}
+                      initialPipeline={routesInitialPipeline}
+                      onUpdateRoute={updateModeRoute}
+                      onResetRoutes={resetModeRoutes}
+                      onBack={() => handleTabChange('hub')}
+                    />
+                  </div>
                 )}
                 {activeTab === 'settings' && (
-                  <SettingsView
-                    initialTab={settingsInitialTab}
-                    initialProvider={settingsInitialProvider}
-                    config={config}
-                    registry={registry}
-                    providers={providers}
-                    servicesManifest={servicesManifest}
-                    healingReports={healingReports}
-                    onAuditProviderDom={auditProviderDom}
-                    onHealProviderDom={healProviderDom}
-                    onUpdateHealingConfig={updateHealingConfig}
-                    onUpdateConfig={updateConfig}
-                    onToggleBalancedMode={toggleBalancedMode}
-                    onToggleDoubleAgent={toggleDoubleAgent}
-                    onToggleDoubleAgentMode={toggleDoubleAgentMode}
-                    onUpdateDoubleAgent={updateDoubleAgentConfig}
-                    onToggleAgentGuard={toggleAgentGuard}
-                    onUpdateRecallConfig={updateRecallConfig}
-                    onToggleRecallMode={toggleRecallMode}
-                    onUpdateProviderConfig={updateProviderConfig}
-                    onToggleModel={toggleModel}
-                    onToggleService={toggleService}
-                    onToggleExperimentalService={toggleExperimentalService}
-                    onAddCustomApiProvider={addCustomApiProvider}
-                    onUpdateCustomApiProvider={updateCustomApiProvider}
-                    onInstallRecipe={installRecipe}
-                    onDeleteProvider={deleteProvider}
-                    onUpdateServiceTitle={updateServiceTitle}
-                    onResyncModels={resyncModels}
-                    onSelectDirectory={selectDirectory}
-                    onApplyPort={applyPort}
-                    onApplyNetworkAccess={applyNetworkAccess}
-                    onClearBrowserStorage={clearBrowserStorage}
-                    onPurgeAllLocalStorage={purgeAllLocalStorage}
-                    onOpenAuthModal={() => {
-                      soundFx.playClick();
-                      setShowAuthModal(true);
-                    }}
-                    onNavigateToRoutes={handleNavigateToRoutes}
-                    onBack={() => handleTabChange('hub')}
-                  />
+                  <div key="settings" className="h-full w-full provider-panel-enter">
+                    <SettingsView
+                      initialTab={settingsInitialTab}
+                      initialProvider={settingsInitialProvider}
+                      config={config}
+                      registry={registry}
+                      providers={providers}
+                      servicesManifest={servicesManifest}
+                      healingReports={healingReports}
+                      onAuditProviderDom={auditProviderDom}
+                      onHealProviderDom={healProviderDom}
+                      onUpdateHealingConfig={updateHealingConfig}
+                      onUpdateConfig={updateConfig}
+                      onToggleBalancedMode={toggleBalancedMode}
+                      onToggleDoubleAgent={toggleDoubleAgent}
+                      onToggleDoubleAgentMode={toggleDoubleAgentMode}
+                      onUpdateDoubleAgent={updateDoubleAgentConfig}
+                      onToggleAgentGuard={toggleAgentGuard}
+                      onUpdateRecallConfig={updateRecallConfig}
+                      onToggleRecallMode={toggleRecallMode}
+                      onUpdateProviderConfig={updateProviderConfig}
+                      onToggleModel={toggleModel}
+                      onToggleService={toggleService}
+                      onToggleExperimentalService={toggleExperimentalService}
+                      onAddCustomApiProvider={addCustomApiProvider}
+                      onUpdateCustomApiProvider={updateCustomApiProvider}
+                      onInstallRecipe={installRecipe}
+                      onDeleteProvider={deleteProvider}
+                      onUpdateServiceTitle={updateServiceTitle}
+                      onResyncModels={resyncModels}
+                      onSelectDirectory={selectDirectory}
+                      onApplyPort={applyPort}
+                      onApplyNetworkAccess={applyNetworkAccess}
+                      onClearBrowserStorage={clearBrowserStorage}
+                      onPurgeAllLocalStorage={purgeAllLocalStorage}
+                      onOpenAuthModal={() => {
+                        soundFx.playClick();
+                        setShowAuthModal(true);
+                      }}
+                      onNavigateToRoutes={handleNavigateToRoutes}
+                      onBack={() => handleTabChange('hub')}
+                    />
+                  </div>
                 )}
                 {activeTab === 'logs' && (
-                  <LogStream
-                    logs={logs}
-                    totalLogsCount={totalLogsCount}
-                    onFetchMore={fetchMoreLogs}
-                    onClearLogs={clearLogs}
-                    onTerminateRequest={terminateRequest}
-                    onTerminateAllPending={terminateAllPendingRequests}
-                    servicesManifest={servicesManifest}
-                    providers={providers}
-                  />
+                  <div key="logs" className="h-full w-full provider-panel-enter">
+                    <LogStream
+                      logs={logs}
+                      totalLogsCount={totalLogsCount}
+                      onFetchMore={fetchMoreLogs}
+                      onClearLogs={clearLogs}
+                      onTerminateRequest={terminateRequest}
+                      onTerminateAllPending={terminateAllPendingRequests}
+                      servicesManifest={servicesManifest}
+                      providers={providers}
+                    />
+                  </div>
                 )}
                 {activeTab === 'mem' && (
-                  <MemoryHubView
-                    secrets={secrets}
-                    onClearVault={clearVault}
-                    onClearBrowserStorage={clearBrowserStorage}
-                    onPurgeAllLocalStorage={purgeAllLocalStorage}
-                  />
+                  <div key="mem" className="h-full w-full provider-panel-enter">
+                    <MemoryHubView
+                      secrets={secrets}
+                      onClearVault={clearVault}
+                      onClearBrowserStorage={clearBrowserStorage}
+                      onPurgeAllLocalStorage={purgeAllLocalStorage}
+                    />
+                  </div>
                 )}
               </div>
 

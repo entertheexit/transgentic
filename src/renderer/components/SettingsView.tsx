@@ -900,19 +900,28 @@ http_headers = { "Authorization" = "Bearer ${clientToken || 'YOUR_TOKEN'}" }`;
         </div>
 
         {/* Settings navigation */}
-        <div className="flex items-center gap-1 bg-black/40 p-0.5 rounded-lg border border-white/5">
+        <div className="relative flex items-center gap-1 bg-black/40 p-0.5 rounded-lg border border-white/5">
           <button
             onClick={() => {
               soundFx.playClick();
               setActiveTab('general');
             }}
-            className={`px-2.5 py-1 rounded-md text-[10px] font-semibold flex items-center gap-1 transition-colors cursor-pointer ${activeTab === 'general'
-                ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40'
+            className={`relative z-10 px-2.5 py-1 rounded-md text-[10px] font-semibold flex items-center gap-1 transition-colors cursor-pointer select-none ${activeTab === 'general'
+                ? 'text-cyan-300'
                 : 'text-slate-400 hover:text-slate-200'
               }`}
           >
-            <HardDrive className="w-3 h-3" />
-            <span>General</span>
+            {activeTab === 'general' && (
+              <motion.div
+                layoutId="activeSettingsTabPill"
+                className="absolute inset-0 rounded-md border border-cyan-500/40 bg-cyan-500/20 shadow-[0_0_10px_rgba(6,182,212,0.15)]"
+                transition={{ type: 'spring', stiffness: 450, damping: 32 }}
+              />
+            )}
+            <span className="relative z-10 flex items-center gap-1">
+              <HardDrive className="w-3 h-3" />
+              <span>General</span>
+            </span>
           </button>
 
           <button
@@ -920,20 +929,29 @@ http_headers = { "Authorization" = "Bearer ${clientToken || 'YOUR_TOKEN'}" }`;
               soundFx.playClick();
               setActiveTab('models');
             }}
-            className={`px-2.5 py-1 rounded-md text-[10px] font-semibold flex items-center gap-1 transition-colors cursor-pointer ${activeTab === 'models'
-                ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40'
+            className={`relative z-10 px-2.5 py-1 rounded-md text-[10px] font-semibold flex items-center gap-1 transition-colors cursor-pointer select-none ${activeTab === 'models'
+                ? 'text-cyan-300'
                 : 'text-slate-400 hover:text-slate-200'
               }`}
           >
-            <Sparkles className="w-3 h-3" />
-            <span>Providers</span>
+            {activeTab === 'models' && (
+              <motion.div
+                layoutId="activeSettingsTabPill"
+                className="absolute inset-0 rounded-md border border-cyan-500/40 bg-cyan-500/20 shadow-[0_0_10px_rgba(6,182,212,0.15)]"
+                transition={{ type: 'spring', stiffness: 450, damping: 32 }}
+              />
+            )}
+            <span className="relative z-10 flex items-center gap-1">
+              <Sparkles className="w-3 h-3" />
+              <span>Providers</span>
+            </span>
           </button>
         </div>
       </div>
 
       {/* 1. GENERAL & STORAGE TAB */}
       {activeTab === 'general' && (
-        <div className="space-y-4">
+        <div key="general" className="space-y-4 provider-panel-enter">
           {/* Balanced Mode Card */}
           <div className="tactile-core-card p-3.5 rounded-2xl border border-cyan-500/20 shadow-[0_0_20px_rgba(6,182,212,0.06)]">
             <div className="flex items-center justify-between">
@@ -2545,7 +2563,7 @@ http_headers = { "Authorization" = "Bearer ${clientToken || 'YOUR_TOKEN'}" }`;
 
       {/* 2. MODELS & PROVIDERS REGISTRY TAB */}
       {activeTab === 'models' && (
-        <div className="space-y-4">
+        <div key="models" className="space-y-4 provider-panel-enter">
           {/* Provider family and selected provider */}
           {(() => {
             const allServices = servicesManifest?.services || {};
