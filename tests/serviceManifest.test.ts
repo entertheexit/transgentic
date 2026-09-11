@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { ServiceManifestManager } from "../src/main/registry/serviceManifest.js";
 import { DynamicRouter } from "../src/main/mcp/router.js";
-import { ModeRouteConfig, TaskMode } from "../src/shared/types.js";
+import { ModeRouteConfig, RouteMode } from "../src/shared/types.js";
+import { normalizeModelEntryModes } from "../src/main/registry/modelRegistry.js";
 
 const TEST_WEBVIEW_ID = "webview_test_service";
 
@@ -23,11 +24,19 @@ describe("ServiceManifestManager", () => {
     expect(ServiceManifestManager.isModelEnabled("chatgpt", "gpt-4o")).toBe(true);
   });
 
+  it("normalizes stored Writing model capabilities into shared General capabilities without duplicates", () => {
+    const normalized = normalizeModelEntryModes({
+      id: "legacy", displayName: "Legacy", discoveredAvailable: true, userEnabled: true,
+      mode: "writing", modes: ["writing", "general", "coding"],
+    } as any);
+    expect(normalized.mode).toBe("general");
+    expect(normalized.modes).toEqual(["general", "coding"]);
+  });
+
   it("should detect route conflicts when an active route references a disabled service", () => {
-    const mockRoutes: Record<TaskMode, ModeRouteConfig> = {
+    const mockRoutes: Record<RouteMode, ModeRouteConfig> = {
       general: { mode: "general", primary: "chatgpt", fallbacks: ["claude"], outputFormat: "prose_markdown" },
       coding: { mode: "coding", primary: "claude", fallbacks: ["chatgpt"], outputFormat: "json_code" },
-      writing: { mode: "writing", primary: "chatgpt", fallbacks: [], outputFormat: "prose_markdown" },
       image: { mode: "image", primary: "grok", fallbacks: [], outputFormat: "file_download" },
       video: { mode: "video", primary: "grok", fallbacks: [], outputFormat: "file_download" },
       audio: { mode: "audio", primary: "gemini", fallbacks: [], outputFormat: "file_download" },
@@ -192,47 +201,42 @@ describe("ServiceManifestManager", () => {
       iconName: "Globe",
       supportsModelRouting: true,
       models: [
-        { id: "m1", displayName: "M1", enabled: true, discoveredAvailable: true, userEnabled: true, mode: "general", modes: ["general", "coding", "writing", "image", "video", "audio"] },
+        { id: "m1", displayName: "M1", enabled: true, discoveredAvailable: true, userEnabled: true, mode: "general", modes: ["general", "coding", "image", "video", "audio"] },
       ],
     };
     ServiceManifestManager.saveManifest(manifest);
 
-    // ChatGPT: supports general, coding, writing, image; not video, audio
+    // ChatGPT: supports general, coding, and image; not video or audio
     expect(ServiceManifestManager.providerSupportsMode("chatgpt", "general")).toBe(true);
     expect(ServiceManifestManager.providerSupportsMode("chatgpt", "coding")).toBe(true);
-    expect(ServiceManifestManager.providerSupportsMode("chatgpt", "writing")).toBe(true);
     expect(ServiceManifestManager.providerSupportsMode("chatgpt", "image")).toBe(true);
     expect(ServiceManifestManager.providerSupportsMode("chatgpt", "video")).toBe(false);
     expect(ServiceManifestManager.providerSupportsMode("chatgpt", "audio")).toBe(false);
 
-    // Claude: supports general, coding, writing; not image, video, audio
+    // Claude: supports general and coding; not media modes
     expect(ServiceManifestManager.providerSupportsMode("claude", "general")).toBe(true);
     expect(ServiceManifestManager.providerSupportsMode("claude", "coding")).toBe(true);
-    expect(ServiceManifestManager.providerSupportsMode("claude", "writing")).toBe(true);
     expect(ServiceManifestManager.providerSupportsMode("claude", "image")).toBe(false);
     expect(ServiceManifestManager.providerSupportsMode("claude", "video")).toBe(false);
     expect(ServiceManifestManager.providerSupportsMode("claude", "audio")).toBe(false);
 
-    // Gemini: supports all 6 modes (general, coding, writing, image, video, audio)
+    // Gemini supports all five canonical modes.
     expect(ServiceManifestManager.providerSupportsMode("gemini", "general")).toBe(true);
     expect(ServiceManifestManager.providerSupportsMode("gemini", "coding")).toBe(true);
-    expect(ServiceManifestManager.providerSupportsMode("gemini", "writing")).toBe(true);
     expect(ServiceManifestManager.providerSupportsMode("gemini", "image")).toBe(true);
     expect(ServiceManifestManager.providerSupportsMode("gemini", "video")).toBe(true);
     expect(ServiceManifestManager.providerSupportsMode("gemini", "audio")).toBe(true);
 
-    // Grok: supports general, coding, writing, image, video; not audio
+    // Grok supports general, coding, image, and video; not audio.
     expect(ServiceManifestManager.providerSupportsMode("grok", "general")).toBe(true);
     expect(ServiceManifestManager.providerSupportsMode("grok", "coding")).toBe(true);
-    expect(ServiceManifestManager.providerSupportsMode("grok", "writing")).toBe(true);
     expect(ServiceManifestManager.providerSupportsMode("grok", "image")).toBe(true);
     expect(ServiceManifestManager.providerSupportsMode("grok", "video")).toBe(true);
     expect(ServiceManifestManager.providerSupportsMode("grok", "audio")).toBe(false);
 
-    // Custom Webview with all modes: supports all 6 modes
+    // Custom Webview with all canonical modes
     expect(ServiceManifestManager.providerSupportsMode(TEST_WEBVIEW_ID as any, "general")).toBe(true);
     expect(ServiceManifestManager.providerSupportsMode(TEST_WEBVIEW_ID as any, "coding")).toBe(true);
-    expect(ServiceManifestManager.providerSupportsMode(TEST_WEBVIEW_ID as any, "writing")).toBe(true);
     expect(ServiceManifestManager.providerSupportsMode(TEST_WEBVIEW_ID as any, "image")).toBe(true);
     expect(ServiceManifestManager.providerSupportsMode(TEST_WEBVIEW_ID as any, "video")).toBe(true);
     expect(ServiceManifestManager.providerSupportsMode(TEST_WEBVIEW_ID as any, "audio")).toBe(true);

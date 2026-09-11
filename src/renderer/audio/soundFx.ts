@@ -60,20 +60,19 @@ class SoundFxEngine {
     const ctx = this.getContext();
     if (!ctx) return;
 
-    // 6 distinct ascending harmonic frequencies for each mode:
+    // 5 distinct ascending harmonic frequencies for each mode:
     // 0: General (523.25 Hz - C5)
     // 1: Coding (659.25 Hz - E5)
-    // 2: Writing (783.99 Hz - G5)
-    // 3: Image (880.00 Hz - A5)
-    // 4: Video (987.77 Hz - B5)
-    // 5: Audio (1318.51 Hz - E6, distinct high crystalline resonant tone)
-    const frequencies = [523.25, 659.25, 783.99, 880.0, 987.77, 1318.51];
+    // 2: Image (783.99 Hz - G5)
+    // 3: Video (987.77 Hz - B5)
+    // 4: Audio (1318.51 Hz - E6, distinct high crystalline resonant tone)
+    const frequencies = [523.25, 659.25, 783.99, 987.77, 1318.51];
     const freq = frequencies[modeIndex % frequencies.length];
 
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
 
-    osc.type = modeIndex === 5 ? 'sine' : 'triangle';
+    osc.type = modeIndex === 4 ? 'sine' : 'triangle';
     osc.frequency.setValueAtTime(freq, ctx.currentTime);
     osc.frequency.exponentialRampToValueAtTime(freq * 1.15, ctx.currentTime + 0.08);
 

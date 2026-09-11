@@ -154,7 +154,6 @@ describe('Double Agent Dispatch & Dual Pipeline Routing', () => {
           modes: {
             general: true,
             coding: false,
-            writing: true,
             image: true,
             video: true,
             audio: true,
@@ -166,18 +165,19 @@ describe('Double Agent Dispatch & Dual Pipeline Routing', () => {
       const codingScenario = determineDispatchScenario(config, undefined, 'coding');
       expect(codingScenario).toBe('standard_single');
 
-      // In writing mode, Double Agent is enabled -> scenario_2_dual_dispatch
-      const writingScenario = determineDispatchScenario(config, undefined, 'writing');
-      expect(writingScenario).toBe('scenario_2_dual_dispatch');
+      // Writing retains its backend mode but uses General's Double Agent setting.
+      const generalScenario = determineDispatchScenario(config, undefined, 'general');
+      expect(generalScenario).toBe('scenario_2_dual_dispatch');
+      expect(determineDispatchScenario(config, undefined, 'writing')).toBe(generalScenario);
 
       // In balanced mode with coding disabled -> standard_balanced
       config.balancedMode = true;
       const balancedCodingScenario = determineDispatchScenario(config, undefined, 'coding');
       expect(balancedCodingScenario).toBe('standard_balanced');
 
-      // In balanced mode with writing enabled -> scenario_1_balanced_double
-      const balancedWritingScenario = determineDispatchScenario(config, undefined, 'writing');
-      expect(balancedWritingScenario).toBe('scenario_1_balanced_double');
+      const balancedGeneralScenario = determineDispatchScenario(config, undefined, 'general');
+      expect(balancedGeneralScenario).toBe('scenario_1_balanced_double');
+      expect(determineDispatchScenario(config, undefined, 'writing')).toBe(balancedGeneralScenario);
     });
   });
 
@@ -302,7 +302,7 @@ describe('Double Agent Dispatch & Dual Pipeline Routing', () => {
 
     it('should enforce mutual exclusion between Main and Co primaries', () => {
       const matrix = DynamicRouter.getRouteMatrix();
-      const modes = ['general', 'coding', 'writing', 'image', 'video', 'audio'] as const;
+      const modes = ['general', 'coding', 'image', 'video', 'audio'] as const;
       for (const mode of modes) {
         const mainService = matrix.main[mode].defaultService;
         const coService = matrix.co[mode].defaultService;

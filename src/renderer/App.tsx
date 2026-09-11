@@ -419,8 +419,6 @@ export function App() {
     switch (mode) {
       case 'coding':
         return <Code2 className="w-3 h-3 text-cyan-400" />;
-      case 'writing':
-        return <PenTool className="w-3 h-3 text-purple-400" />;
       case 'image':
         return <ImageIcon className="w-3 h-3 text-blue-400" />;
       case 'video':

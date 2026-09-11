@@ -1,4 +1,4 @@
-import { ProviderId, TaskMode, TransgenticConfig, doubleAgentConfig } from '../../shared/types.js';
+import { ProviderId, TaskMode, TransgenticConfig, doubleAgentConfig, normalizeRouteMode } from '../../shared/types.js';
 import { ServiceManifestManager } from '../registry/serviceManifest.js';
 
 export const BALANCED_DOUBLE_AGENT_DIRECTIVE = `
@@ -146,7 +146,8 @@ export function determineDispatchScenario(
     daConfig = doubleAgent;
   }
 
-  const isModeActive = taskMode && daConfig?.modes ? (daConfig.modes[taskMode] ?? true) : true;
+  const routeMode = taskMode ? normalizeRouteMode(taskMode) : undefined;
+  const isModeActive = routeMode && daConfig?.modes ? (daConfig.modes[routeMode] ?? true) : true;
   const isDoubleAgent = Boolean(daConfig?.enabled) && isModeActive;
   if (isDoubleAgent && isBalanced) {
     return 'scenario_1_balanced_double';

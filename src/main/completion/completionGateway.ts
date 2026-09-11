@@ -10,8 +10,8 @@ import { globalLocalCompactManager } from '../localllm/localCompact.js';
 
 const ROUTE_MODELS: Array<{ id: string; mode: TaskMode; name: string }> = [
   { id: 'transgentic/general', mode: 'general', name: 'Transgentic General' },
-  { id: 'transgentic/coding', mode: 'coding', name: 'Transgentic Coding' },
   { id: 'transgentic/writing', mode: 'writing', name: 'Transgentic Writing' },
+  { id: 'transgentic/coding', mode: 'coding', name: 'Transgentic Coding' },
 ];
 
 function normalizeEndpoint(baseUrl: string): string {

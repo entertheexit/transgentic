@@ -22,8 +22,10 @@ Copy the access token from Transgentic, then configure the client:
 The stable route models are:
 
 - `transgentic/general`
-- `transgentic/coding`
 - `transgentic/writing`
+- `transgentic/coding`
+
+`transgentic/writing` is advertised as a stable backend mode for prose and long-form work. It keeps Writing-specific request identity and uses the General provider route, fallbacks, and per-mode policies. Completion Recall, compaction, and review remain controlled by their existing widgets.
 
 `GET /v1/models` also lists compatible direct providers as `transgentic/provider/<provider-id>`. A CLI appears there only while enabled, connected, and in Provider Mode. Webview providers stay unlisted until their recipe can verify temporary-chat or equivalent account-memory isolation.
 

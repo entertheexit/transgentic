@@ -39,8 +39,11 @@ import {
   ProviderConfig,
   ProviderId,
   RecallConfig,
+  RouteMode,
   TaskMode,
   TransgenticConfig,
+  normalizeModeFlags,
+  normalizeTaskMode,
 } from '../shared/types.js';
 import { getExtensionDownloadUrl } from '../shared/release.js';
 
@@ -110,7 +113,6 @@ function loadPersistedConfig(): TransgenticConfig {
       modes: {
         general: true,
         coding: true,
-        writing: true,
         image: true,
         video: true,
         audio: true,
@@ -130,7 +132,6 @@ function loadPersistedConfig(): TransgenticConfig {
       modes: {
         general: true,
         coding: true,
-        writing: true,
         image: true,
         video: true,
         audio: true,
@@ -139,7 +140,6 @@ function loadPersistedConfig(): TransgenticConfig {
     agentHaltGuard: {
       general: true,
       coding: true,
-      writing: true,
       image: true,
       video: true,
       audio: true,
@@ -182,25 +182,7 @@ function loadPersistedConfig(): TransgenticConfig {
       if (!parsed.recall) {
         parsed.recall = defaults.recall;
       } else {
-        if (!parsed.recall.modes) {
-          parsed.recall.modes = {
-            general: true,
-            coding: true,
-            writing: true,
-            image: true,
-            video: true,
-            audio: true,
-          };
-        } else {
-          parsed.recall.modes = {
-            general: parsed.recall.modes.general ?? true,
-            coding: parsed.recall.modes.coding ?? true,
-            writing: parsed.recall.modes.writing ?? true,
-            image: parsed.recall.modes.image ?? true,
-            video: parsed.recall.modes.video ?? true,
-            audio: parsed.recall.modes.audio ?? true,
-          };
-        }
+        parsed.recall.modes = normalizeModeFlags(parsed.recall.modes);
       }
       if (!parsed.agentHaltGuard) {
         parsed.agentHaltGuard = defaults.agentHaltGuard;
@@ -209,20 +191,12 @@ function loadPersistedConfig(): TransgenticConfig {
         parsed.agentHaltGuard = {
           general: val,
           coding: val,
-          writing: val,
           image: val,
           video: val,
           audio: val,
         };
       } else {
-        parsed.agentHaltGuard = {
-          general: parsed.agentHaltGuard.general ?? true,
-          coding: parsed.agentHaltGuard.coding ?? true,
-          writing: parsed.agentHaltGuard.writing ?? true,
-          image: parsed.agentHaltGuard.image ?? true,
-          video: parsed.agentHaltGuard.video ?? true,
-          audio: parsed.agentHaltGuard.audio ?? true,
-        };
+        parsed.agentHaltGuard = normalizeModeFlags(parsed.agentHaltGuard);
       }
       // Non-destructively preserve localLLM configuration (does not wipe endpoints/models on enabled: false)
       if (!parsed.localLLM) {
@@ -250,18 +224,16 @@ function loadPersistedConfig(): TransgenticConfig {
       if (!parsed.doubleAgent) {
         parsed.doubleAgent = defaults.doubleAgent;
       } else {
+        const legacyModes = parsed.doubleAgent.modes || {};
         parsed.doubleAgent = {
           ...defaults.doubleAgent,
           ...parsed.doubleAgent,
-          modes: {
-            ...(defaults.doubleAgent?.modes || {}),
-            ...(parsed.doubleAgent.modes || {}),
-          },
+          modes: normalizeModeFlags(legacyModes),
         };
       }
-      if (!parsed.routes) {
-        parsed.routes = DynamicRouter.getRouteMatrix();
-      }
+      parsed.routes = parsed.routes
+        ? DynamicRouter.migrateRouteMatrix(parsed.routes)
+        : DynamicRouter.getRouteMatrix();
       parsed.serverAccess = { ...defaults.serverAccess, ...(parsed.serverAccess || {}) };
       // Preserve opt-ins created by the first completion-gateway release while
       // moving each setting to the feature that owns it.
@@ -274,6 +246,7 @@ function loadPersistedConfig(): TransgenticConfig {
       // CLI configurations created before Provider/Agentic modes migrate to
       // Provider Mode. normalizeCliConfig also clears host permissions there.
       parsed.cli = normalizeCliConfig(parsed.cli);
+      parsed.defaultMode = normalizeTaskMode(parsed.defaultMode);
       return { ...defaults, ...parsed };
     }
   } catch {}
@@ -754,7 +727,6 @@ function setupIpcHandlers() {
       modes: {
         general: true,
         coding: true,
-        writing: true,
         image: true,
         video: true,
         audio: true,
@@ -796,11 +768,10 @@ function setupIpcHandlers() {
     }
     return nextVal;
   });
-  ipcMain.handle('config:toggle-double-agent-mode', (_, { mode, enabled }: { mode: TaskMode; enabled?: boolean }) => {
+  ipcMain.handle('config:toggle-double-agent-mode', (_, { mode, enabled }: { mode: RouteMode; enabled?: boolean }) => {
     const existingModes = currentConfig.doubleAgent?.modes || {
       general: true,
       coding: true,
-      writing: true,
       image: true,
       video: true,
       audio: true,
@@ -829,7 +800,6 @@ function setupIpcHandlers() {
     const existingModes = currentConfig.recall?.modes || {
       general: true,
       coding: true,
-      writing: true,
       image: true,
       video: true,
       audio: true,
@@ -862,11 +832,10 @@ function setupIpcHandlers() {
     savePersistedConfig(currentConfig);
     return nextVal;
   });
-  ipcMain.handle('recall:toggle-mode', (_, { mode, enabled }: { mode: TaskMode; enabled?: boolean }) => {
+  ipcMain.handle('recall:toggle-mode', (_, { mode, enabled }: { mode: RouteMode; enabled?: boolean }) => {
     const currentModes = currentConfig.recall?.modes || {
       general: true,
       coding: true,
-      writing: true,
       image: true,
       video: true,
       audio: true,
@@ -894,7 +863,6 @@ function setupIpcHandlers() {
     modes: {
       general: true,
       coding: true,
-      writing: true,
       image: true,
       video: true,
       audio: true,
@@ -902,10 +870,10 @@ function setupIpcHandlers() {
   });
 
   // Agent Halt Guard IPC Handlers
-  ipcMain.handle('config:toggle-agent-guard', (_, { mode, enabled }: { mode: TaskMode; enabled?: boolean }) => {
+  ipcMain.handle('config:toggle-agent-guard', (_, { mode, enabled }: { mode: RouteMode; enabled?: boolean }) => {
     const currentMap = (typeof currentConfig.agentHaltGuard === 'object' && currentConfig.agentHaltGuard !== null)
       ? currentConfig.agentHaltGuard
-      : { general: true, coding: true, writing: true, image: true, video: true, audio: true };
+      : { general: true, coding: true, image: true, video: true, audio: true };
     const currentVal = currentMap[mode] ?? true;
     const nextVal = enabled !== undefined ? enabled : !currentVal;
     currentConfig = {
@@ -927,7 +895,7 @@ function setupIpcHandlers() {
   ipcMain.handle('config:update-agent-guard', (_, guardCfg: Partial<AgentHaltGuardConfig>) => {
     const currentMap = (typeof currentConfig.agentHaltGuard === 'object' && currentConfig.agentHaltGuard !== null)
       ? currentConfig.agentHaltGuard
-      : { general: true, coding: true, writing: true, image: true, video: true, audio: true };
+      : { general: true, coding: true, image: true, video: true, audio: true };
     currentConfig = {
       ...currentConfig,
       agentHaltGuard: {
@@ -966,7 +934,7 @@ function setupIpcHandlers() {
 
   ipcMain.handle('get-route-matrix', () => DynamicRouter.getRouteMatrix());
   ipcMain.handle('get-mode-routes', () => DynamicRouter.getAllRouteConfigs());
-  ipcMain.handle('update-mode-route', (_, { mode, config, pipeline }: { mode: TaskMode; config: any; pipeline?: 'main' | 'co' }) => {
+  ipcMain.handle('update-mode-route', (_, { mode, config, pipeline }: { mode: RouteMode; config: any; pipeline?: 'main' | 'co' }) => {
     const res = DynamicRouter.updateRouteConfig(mode, config, pipeline);
     const win = globalWindowManager.getMainWindow();
     if (win && !win.isDestroyed()) {
@@ -1363,8 +1331,8 @@ function setupIpcHandlers() {
     globalWindowManager.setDrawerState(false);
   });
 
-  ipcMain.handle('set-mode', (_, mode: TaskMode) => {
-    globalMcpServer.setMode(mode);
+  ipcMain.handle('set-mode', (_, mode: TaskMode | 'writing' | 'music') => {
+    globalMcpServer.setMode(normalizeTaskMode(mode));
   });
 
   ipcMain.handle('set-compact-mode', (_, compact: boolean) => globalWindowManager.setCompactMode(compact));

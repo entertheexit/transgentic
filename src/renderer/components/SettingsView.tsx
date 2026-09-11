@@ -9,6 +9,7 @@ import {
   RegistryStore,
   TransgenticConfig,
   ServicesManifest,
+  RouteMode,
   TaskMode,
 } from '../../shared/types.js';
 import {
@@ -88,11 +89,11 @@ interface SettingsViewProps {
   onUpdateConfig?: (config: Partial<TransgenticConfig>) => Promise<any>;
   onToggleBalancedMode?: (enabled?: boolean) => Promise<any>;
   onToggleDoubleAgent?: (enabled?: boolean) => Promise<any>;
-  onToggleDoubleAgentMode?: (mode: TaskMode, enabled?: boolean) => Promise<any>;
+  onToggleDoubleAgentMode?: (mode: RouteMode, enabled?: boolean) => Promise<any>;
   onUpdateDoubleAgent?: (config: Partial<import('../../shared/types.js').DoubleAgentConfig>) => Promise<any>;
-  onToggleAgentGuard?: (mode: TaskMode, enabled?: boolean) => Promise<any>;
+  onToggleAgentGuard?: (mode: RouteMode, enabled?: boolean) => Promise<any>;
   onUpdateRecallConfig?: (config: Partial<import('../../shared/types.js').RecallConfig>) => Promise<any>;
-  onToggleRecallMode?: (mode: TaskMode, enabled?: boolean) => Promise<any>;
+  onToggleRecallMode?: (mode: RouteMode, enabled?: boolean) => Promise<any>;
   onUpdateProviderConfig: (providerId: ProviderId, config: Partial<ProviderConfig>) => Promise<any>;
   onToggleModel: (providerId: ProviderId, modelId: string, enabled: boolean) => Promise<any>;
   onToggleService: (providerId: ProviderId, enabled: boolean) => Promise<any>;
@@ -717,14 +718,13 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     }
   };
 
-  const handleToggleRecallMode = async (mode: TaskMode, enabled: boolean) => {
+  const handleToggleRecallMode = async (mode: RouteMode, enabled: boolean) => {
     if (onToggleRecallMode) {
       await onToggleRecallMode(mode, enabled);
     } else {
       const currentModes = config.recall?.modes || {
         general: true,
         coding: true,
-        writing: true,
         image: true,
         video: true,
         audio: true,
@@ -1076,18 +1076,17 @@ http_headers = { "Authorization" = "Bearer ${clientToken || 'YOUR_TOKEN'}" }`;
                 <label className="text-[10px] font-mono uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
                   <span>Active Double Agent Modes:</span>
                   <span className="text-[9px] text-amber-400 font-bold uppercase">
-                    {Object.values(config.doubleAgent?.modes || { general: true, coding: true, writing: true, image: true, video: true, audio: true }).filter(Boolean).length}/6 Enabled
+                    {Object.values(config.doubleAgent?.modes || { general: true, coding: true, image: true, video: true, audio: true }).filter(Boolean).length}/5 Enabled
                   </span>
                 </label>
               </div>
-              <div className="grid grid-cols-6 gap-1.5 pt-1">
+              <div className="grid grid-cols-5 gap-1.5 pt-1">
                 {[
-                  { mode: 'general' as TaskMode, label: 'General', icon: Sparkles },
-                  { mode: 'coding' as TaskMode, label: 'Coding', icon: Code2 },
-                  { mode: 'writing' as TaskMode, label: 'Writing', icon: PenTool },
-                  { mode: 'image' as TaskMode, label: 'Image', icon: ImageIcon },
-                  { mode: 'video' as TaskMode, label: 'Video', icon: Video },
-                  { mode: 'audio' as TaskMode, label: 'Audio', icon: Volume2 },
+                  { mode: 'general' as RouteMode, label: 'General', icon: Sparkles },
+                  { mode: 'coding' as RouteMode, label: 'Coding', icon: Code2 },
+                  { mode: 'image' as RouteMode, label: 'Image', icon: ImageIcon },
+                  { mode: 'video' as RouteMode, label: 'Video', icon: Video },
+                  { mode: 'audio' as RouteMode, label: 'Audio', icon: Volume2 },
                 ].map(({ mode, label, icon: Icon }) => {
                   const isModeActive = config.doubleAgent?.modes
                     ? (config.doubleAgent.modes[mode] ?? true)
@@ -1163,14 +1162,13 @@ http_headers = { "Authorization" = "Bearer ${clientToken || 'YOUR_TOKEN'}" }`;
               </div>
             </div>
 
-            <div className="grid grid-cols-6 gap-1.5 pt-1">
+            <div className="grid grid-cols-5 gap-1.5 pt-1">
               {[
-                { mode: 'general' as TaskMode, label: 'General', icon: Sparkles },
-                { mode: 'coding' as TaskMode, label: 'Coding', icon: Code2 },
-                { mode: 'writing' as TaskMode, label: 'Writing', icon: PenTool },
-                { mode: 'image' as TaskMode, label: 'Image', icon: ImageIcon },
-                { mode: 'video' as TaskMode, label: 'Video', icon: Video },
-                { mode: 'audio' as TaskMode, label: 'Audio', icon: Volume2 },
+                { mode: 'general' as RouteMode, label: 'General', icon: Sparkles },
+                { mode: 'coding' as RouteMode, label: 'Coding', icon: Code2 },
+                { mode: 'image' as RouteMode, label: 'Image', icon: ImageIcon },
+                { mode: 'video' as RouteMode, label: 'Video', icon: Video },
+                { mode: 'audio' as RouteMode, label: 'Audio', icon: Volume2 },
               ].map(({ mode, label, icon: Icon }) => {
                 const isGuardActive = typeof config.agentHaltGuard === 'object' && config.agentHaltGuard !== null
                   ? (config.agentHaltGuard[mode] ?? true)
@@ -1323,7 +1321,7 @@ http_headers = { "Authorization" = "Bearer ${clientToken || 'YOUR_TOKEN'}" }`;
                 <label className="text-[10px] font-mono uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
                   <span>Active Recall Modes:</span>
                   <span className="text-[9px] text-purple-400 font-bold uppercase">
-                    {Object.values(config.recall?.modes || { general: true, coding: true, writing: true, image: true, video: true, audio: true }).filter(Boolean).length}/6 Enabled
+                    {Object.values(config.recall?.modes || { general: true, coding: true, image: true, video: true, audio: true }).filter(Boolean).length}/5 Enabled
                   </span>
                 </label>
                 <span className="text-[9px] text-slate-500 font-sans">
@@ -1331,14 +1329,13 @@ http_headers = { "Authorization" = "Bearer ${clientToken || 'YOUR_TOKEN'}" }`;
                 </span>
               </div>
 
-              <div className="grid grid-cols-6 gap-1.5 pt-1">
+              <div className="grid grid-cols-5 gap-1.5 pt-1">
                 {[
-                  { mode: 'general' as TaskMode, label: 'General', icon: Sparkles },
-                  { mode: 'coding' as TaskMode, label: 'Coding', icon: Code2 },
-                  { mode: 'writing' as TaskMode, label: 'Writing', icon: PenTool },
-                  { mode: 'image' as TaskMode, label: 'Image', icon: ImageIcon },
-                  { mode: 'video' as TaskMode, label: 'Video', icon: Video },
-                  { mode: 'audio' as TaskMode, label: 'Audio', icon: Volume2 },
+                  { mode: 'general' as RouteMode, label: 'General', icon: Sparkles },
+                  { mode: 'coding' as RouteMode, label: 'Coding', icon: Code2 },
+                  { mode: 'image' as RouteMode, label: 'Image', icon: ImageIcon },
+                  { mode: 'video' as RouteMode, label: 'Video', icon: Video },
+                  { mode: 'audio' as RouteMode, label: 'Audio', icon: Volume2 },
                 ].map(({ mode, label, icon: Icon }) => {
                   const isModeActive = config.recall?.modes ? (config.recall.modes[mode] ?? true) : true;
                   const isMasterEnabled = config.recall?.enabled ?? true;
@@ -2152,7 +2149,7 @@ http_headers = { "Authorization" = "Bearer ${clientToken || 'YOUR_TOKEN'}" }`;
 
                   <div className="rounded-xl border border-cyan-500/15 bg-cyan-500/[0.045] p-2.5">
                     <div className="flex flex-wrap gap-1.5 font-mono text-[9px]">
-                      {['transgentic/general', 'transgentic/coding', 'transgentic/writing'].map(model => <span key={model} className="rounded-md border border-cyan-500/20 bg-cyan-500/10 px-1.5 py-0.5 text-cyan-300">{model}</span>)}
+                      {['transgentic/general', 'transgentic/writing', 'transgentic/coding'].map(model => <span key={model} className="rounded-md border border-cyan-500/20 bg-cyan-500/10 px-1.5 py-0.5 text-cyan-300">{model}</span>)}
                     </div>
                     <p className="mt-2 text-[9.5px] leading-relaxed text-slate-400">Send <code className="text-cyan-300">Authorization: Bearer &lt;access token&gt;</code>. Provider Mode CLIs can appear in the model list; Agentic Mode CLIs remain available through MCP.</p>
                   </div>
@@ -2238,7 +2235,8 @@ http_headers = { "Authorization" = "Bearer ${clientToken || 'YOUR_TOKEN'}" }`;
                       </p>
                       <div className="font-mono text-[9px] text-slate-300 bg-black/50 p-2 rounded border border-white/5 space-y-0.5">
                         <div>• <b>prompt</b> (string, required): The prompt to execute.</div>
-                        <div>• <b>mode</b> (enum): general | coding | writing | image | video | audio</div>
+                        <div>• <b>mode</b> (enum): general | writing | coding | image | video | audio</div>
+                        <div>• <b>writing</b>: Keeps Writing guidance and identity while using General route settings.</div>
                         <div>• <b>provider</b> (enum): chatgpt | claude | gemini | grok</div>
                         <div>• <b>model</b> (string): e.g. 'gpt-4o', 'o1', 'claude-3-5-sonnet', 'grok-3'</div>
                         <div>• <b>threadId</b> (string): Conversation session ID for stateful multi-turn memory.</div>
@@ -2428,7 +2426,7 @@ http_headers = { "Authorization" = "Bearer ${clientToken || 'YOUR_TOKEN'}" }`;
                       </div>
                     </div>
 
-                    {/* Writing & Prose Mode */}
+                    {/* Writing backend mode */}
                     <div className="p-2.5 rounded-xl bg-black/40 border border-white/5 space-y-1.5">
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
@@ -2443,8 +2441,8 @@ http_headers = { "Authorization" = "Bearer ${clientToken || 'YOUR_TOKEN'}" }`;
                         </button>
                       </div>
                       <div className="flex items-center justify-between text-[10px] text-slate-400 font-sans">
-                        <span><strong className="text-slate-200 font-normal">Writing & Prose Mode</strong></span>
-                        <span className="text-[9px] font-mono text-amber-400 bg-amber-500/10 px-1.5 py-0.2 rounded border border-amber-500/20">Prose / Markdown</span>
+                        <span><strong className="text-slate-200 font-normal">Writing Mode</strong> uses General route settings</span>
+                        <span className="text-[9px] font-mono text-amber-400 bg-amber-500/10 px-1.5 py-0.2 rounded border border-amber-500/20">Prose / Long-form</span>
                       </div>
                     </div>
                   </div>

@@ -3,7 +3,39 @@ import type { CustomRecipe } from './types/recipe.js';
 
 export type ProviderId = 'chatgpt' | 'claude' | 'gemini' | 'grok' | 'localllm' | (string & {});
 
-export type TaskMode = 'general' | 'coding' | 'writing' | 'image' | 'video' | 'audio';
+export const TASK_MODES = ['general', 'coding', 'image', 'video', 'audio'] as const;
+export type RouteMode = typeof TASK_MODES[number];
+export type TaskMode = RouteMode | 'writing';
+export type LegacyTaskMode = 'music';
+export type AcceptedTaskMode = TaskMode | LegacyTaskMode;
+export type TaskIntent = 'writing';
+
+export function normalizeTaskMode(mode?: AcceptedTaskMode | string | null): TaskMode {
+  if (mode === 'writing') return 'writing';
+  if (mode === 'music') return 'audio';
+  return (TASK_MODES as readonly string[]).includes(mode || '') ? mode as RouteMode : 'general';
+}
+
+/** Writing is a backend task mode that deliberately shares General's route and policy settings. */
+export function normalizeRouteMode(mode?: AcceptedTaskMode | string | null): RouteMode {
+  const taskMode = normalizeTaskMode(mode);
+  return taskMode === 'writing' ? 'general' : taskMode;
+}
+
+export function normalizeModeFlags(
+  input?: Partial<Record<AcceptedTaskMode, boolean>> | null,
+  fallback = true,
+): Record<RouteMode, boolean> {
+  const source = input || {};
+  const hasGeneral = Object.prototype.hasOwnProperty.call(source, 'general');
+  return {
+    general: hasGeneral ? source.general ?? fallback : source.writing ?? fallback,
+    coding: source.coding ?? fallback,
+    image: source.image ?? fallback,
+    video: source.video ?? fallback,
+    audio: source.audio ?? fallback,
+  };
+}
 
 export type ProviderStatusState = 'ready' | 'rate_limited' | 'disconnected' | 'busy' | 'cooling_down';
 
@@ -38,6 +70,7 @@ export interface McpRequestLog {
   id: string;
   timestamp: number;
   mode: TaskMode;
+  intent?: TaskIntent;
   targetProvider: ProviderId;
   fallbackProvider?: ProviderId;
   modelUsed?: string;
@@ -86,7 +119,7 @@ export interface ModePipelineConfig {
   defaultService: string;             // e.g., "chatgpt", "claude", "localllm"
   fallbackChain: string[];            // Ordered provider IDs
   modelRouting?: Record<string, any>;
-  mode?: TaskMode;
+  mode?: RouteMode;
   primary?: ProviderId;
   fallbacks?: ProviderId[];
   outputFormat?: 'prose_markdown' | 'json_code' | 'file_download';
@@ -97,7 +130,6 @@ export interface RouteMatrix {
   main: {
     general: ModePipelineConfig;
     coding: ModePipelineConfig;
-    writing: ModePipelineConfig;
     image: ModePipelineConfig;
     video: ModePipelineConfig;
     audio: ModePipelineConfig;
@@ -105,7 +137,6 @@ export interface RouteMatrix {
   co: {
     general: ModePipelineConfig;
     coding: ModePipelineConfig;
-    writing: ModePipelineConfig;
     image: ModePipelineConfig;
     video: ModePipelineConfig;
     audio: ModePipelineConfig;
@@ -116,12 +147,12 @@ export interface doubleAgentConfig {
   enabled: boolean;                   // Master toggle (independent)
   includeLocalLlm: boolean;
   completionReviewEnabled?: boolean;  // Explicit Co-route review for text-only completion requests
-  modes?: Record<TaskMode, boolean>;  // Per-mode toggle for Double Agent
+  modes?: Record<RouteMode, boolean>;  // Per-route toggle for Double Agent; Writing uses General
 }
 
 export interface ModeRouteConfig {
   cliWorkspaces?: Partial<Record<import('./cli.js').CliProviderId, string>>;
-  mode: TaskMode;
+  mode: RouteMode;
   primary: ProviderId;
   fallbacks: ProviderId[];
   outputFormat: 'prose_markdown' | 'json_code' | 'file_download';
@@ -140,8 +171,8 @@ export interface ModelEntry {
   userEnabled: boolean;         // User manual checkbox override
   requiresTier?: string;
   lastSeen?: string;
-  mode?: TaskMode;
-  modes?: TaskMode[];
+  mode?: RouteMode;
+  modes?: RouteMode[];
 }
 
 export interface ProviderConfig {
@@ -171,7 +202,6 @@ export interface CodingModeConfig {
 export interface RecallModesConfig {
   general: boolean;
   coding: boolean;
-  writing: boolean;
   image: boolean;
   video: boolean;
   audio: boolean;
@@ -180,7 +210,6 @@ export interface RecallModesConfig {
 export const DEFAULT_RECALL_MODES: RecallModesConfig = {
   general: true,
   coding: true,
-  writing: true,
   image: true,
   video: true,
   audio: true,
@@ -191,7 +220,7 @@ export interface RecallConfig {
   strategy: 'single-pass' | 'two-stage'; // single-pass default for speed
   autoTriggerKeywords: boolean;
   completionEnabled?: boolean; // Explicit Recall opt-in for text-only completion requests
-  modes?: RecallModesConfig; // Per-mode enabling (general, coding, writing, image, video, audio)
+  modes?: RecallModesConfig; // Per-mode enabling (general, coding, image, video, audio)
 }
 
 export function isRecallEnabledForMode(
@@ -204,13 +233,12 @@ export function isRecallEnabledForMode(
     : (config as RecallConfig);
   if (!recallCfg || !recallCfg.enabled) return false;
   if (!recallCfg.modes) return true;
-  return recallCfg.modes[mode] ?? true;
+  return recallCfg.modes[normalizeRouteMode(mode)] ?? true;
 }
 
 export interface AgentHaltGuardConfig {
   general: boolean;
   coding: boolean;
-  writing: boolean;
   image: boolean;
   video: boolean;
   audio: boolean;
@@ -219,7 +247,6 @@ export interface AgentHaltGuardConfig {
 export const DEFAULT_AGENT_HALT_GUARD: AgentHaltGuardConfig = {
   general: true,
   coding: true,
-  writing: true,
   image: true,
   video: true,
   audio: true,
@@ -234,7 +261,7 @@ export function isAgentHaltGuardEnabled(
     return config.agentHaltGuard;
   }
   if (config.agentHaltGuard && typeof config.agentHaltGuard === 'object') {
-    return config.agentHaltGuard[mode] ?? true;
+    return config.agentHaltGuard[normalizeRouteMode(mode)] ?? true;
   }
   return true;
 }
@@ -316,8 +343,8 @@ export interface ServiceModelDef {
   discoveredAvailable?: boolean;
   userEnabled?: boolean;
   requiresTier?: string;
-  mode?: TaskMode;
-  modes?: TaskMode[];
+  mode?: RouteMode;
+  modes?: RouteMode[];
 }
 
 export interface ServiceThemeConfig {
@@ -357,7 +384,7 @@ export interface ServicesManifest {
 }
 
 export interface ServiceRouteConflict {
-  mode: TaskMode;
+  mode: RouteMode;
   role: 'primary' | 'fallback';
   provider: ProviderId;
   providerName: string;
@@ -409,15 +436,15 @@ export interface IpcApi {
   updateBalancedMode?: (balanced: boolean) => Promise<TransgenticConfig>;
   updateDoubleAgent?: (config: Partial<doubleAgentConfig>) => Promise<TransgenticConfig>;
   toggleDoubleAgent?: (enabled?: boolean) => Promise<boolean>;
-  toggleDoubleAgentMode?: (mode: TaskMode, enabled?: boolean) => Promise<boolean>;
+  toggleDoubleAgentMode?: (mode: RouteMode, enabled?: boolean) => Promise<boolean>;
   updateRecallConfig?: (config: Partial<RecallConfig>) => Promise<TransgenticConfig>;
   toggleRecall?: (enabled?: boolean) => Promise<boolean>;
-  toggleRecallMode?: (mode: TaskMode, enabled?: boolean) => Promise<boolean>;
-  toggleAgentGuard?: (mode: TaskMode, enabled?: boolean) => Promise<boolean>;
+  toggleRecallMode?: (mode: RouteMode, enabled?: boolean) => Promise<boolean>;
+  toggleAgentGuard?: (mode: RouteMode, enabled?: boolean) => Promise<boolean>;
   updateAgentGuard?: (config: any) => Promise<any>;
-  getModeRoutes: () => Promise<Record<TaskMode, ModeRouteConfig>>;
+  getModeRoutes: () => Promise<Record<RouteMode, ModeRouteConfig>>;
   getRouteMatrix?: () => Promise<RouteMatrix>;
-  updateModeRoute: (mode: TaskMode, config: Partial<ModeRouteConfig> | Partial<ModePipelineConfig>, pipeline?: 'main' | 'co') => Promise<any>;
+  updateModeRoute: (mode: RouteMode, config: Partial<ModeRouteConfig> | Partial<ModePipelineConfig>, pipeline?: 'main' | 'co') => Promise<any>;
   resetModeRoutes: () => Promise<any>;
   getModelsState: () => Promise<RegistryStore>;
   updateProviderConfig: (providerId: ProviderId, config: Partial<ProviderConfig>) => Promise<ProviderConfig>;

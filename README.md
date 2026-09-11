@@ -46,12 +46,14 @@ Its two main uses are carrying available planning context into a task through **
 
 | Use it from | Configure where work goes | Receive |
 | :--- | :--- | :--- |
-| OpenAI-compatible clients such as Cline | General, Coding, and Writing routes across eligible API, CLI, and Local LLM services | Chat completions and tool calls; the client owns project actions |
+| OpenAI-compatible clients such as Cline | General and Coding route settings across eligible API, CLI, and Local LLM services; Writing uses General | Chat completions and tool calls; the client owns project actions |
 | Agentic IDEs and MCP clients | Local models, APIs, built-in CLI services, web adapters, or custom recipes | Model answers with caller-appropriate guidance |
 | Scripts and custom applications | Per-mode Main and Co-Agent routes with configured fallbacks | Text, code, saved-media paths, and structured outcomes |
 | Desktop Quick Prompt | The same provider and routing settings | In-app answers without IDE workflow reminders |
 
-**Task modes:** `General` · `Coding` · `Writing` · `Image` · `Video` · `Audio`
+**Configurable routes:** `General` · `Coding` · `Image` · `Video` · `Audio`
+
+Writing remains a distinct backend mode for prose and long-form work. It has its own MCP endpoints, explicit mode value, completion model, writing guidance, and log identity, while provider routing and per-mode policies use the General configuration. For a novel project, files such as `novel.md`, chapter Markdown files, or structured story JSON remain caller-owned artifacts. An agentic client edits those files with its own tools while Transgentic handles the request as Writing through the General route.
 
 The gateway runs locally; requests can still leave your machine through a configured web provider or remote model endpoint. Provider access, model capabilities, and output quality depend on your account and configuration.
 
@@ -147,7 +149,7 @@ For scripts and terminal-based workflows, see the [command-line request examples
 | API key | Your Transgentic access token |
 | Model | `transgentic/coding` |
 
-The stable route models are `transgentic/general`, `transgentic/coding`, and `transgentic/writing`. Enabled API providers, enabled Local LLM, and enabled, connected CLI services in Provider Mode also appear as direct `transgentic/provider/<provider-id>` models in `GET /v1/models`. Webview services are excluded until their recipes can verify temporary-chat or equivalent memory isolation. See the [completion gateway guide](docs/COMPLETION_GATEWAY.md).
+The stable route models are `transgentic/general`, `transgentic/writing`, and `transgentic/coding`. Writing retains its backend mode and prose guidance while using the General route configuration. Enabled API providers, enabled Local LLM, and enabled, connected CLI services in Provider Mode also appear as direct `transgentic/provider/<provider-id>` models in `GET /v1/models`. Webview services are excluded until their recipes can verify temporary-chat or equivalent memory isolation. See the [completion gateway guide](docs/COMPLETION_GATEWAY.md).
 
 ### 4. Check the result
 
@@ -205,11 +207,13 @@ Choose a mode-specific connection when an application consistently performs one 
 | Task mode | Streamable HTTP | SSE |
 | :--- | :--- | :--- |
 | General | `http://127.0.0.1:58420/general/mcp` | `http://127.0.0.1:58420/general/sse` |
-| Coding | `http://127.0.0.1:58420/coding/mcp` | `http://127.0.0.1:58420/coding/sse` |
 | Writing | `http://127.0.0.1:58420/writing/mcp` | `http://127.0.0.1:58420/writing/sse` |
+| Coding | `http://127.0.0.1:58420/coding/mcp` | `http://127.0.0.1:58420/coding/sse` |
 | Image | `http://127.0.0.1:58420/image/mcp` | `http://127.0.0.1:58420/image/sse` |
 | Video | `http://127.0.0.1:58420/video/mcp` | `http://127.0.0.1:58420/video/sse` |
 | Audio | `http://127.0.0.1:58420/audio/mcp` | `http://127.0.0.1:58420/audio/sse` |
+
+Writing is a first-class backend mode. `/writing/mcp`, `/writing/sse`, explicit `mode: "writing"`, and `transgentic/writing` preserve Writing guidance and request identity, while all provider selection and per-mode policy settings resolve through General.
 
 Endpoint choices supply routing context, not permission boundaries. Explicit tool choices or mode arguments can change the request's target or mode; keep them consistent. A media endpoint does not guarantee generation or a saved file.
 
@@ -249,7 +253,7 @@ For transport details, selection examples, and plain-client configuration, see [
 
 - **Per-mode routing:**
 
-  Configure Main and Co-Agent providers, model choices, and fallback order across six task modes.
+  Configure Main and Co-Agent providers, model choices, and fallback order across five task modes.
 
 - **Quick Prompt and CLI providers:**
 

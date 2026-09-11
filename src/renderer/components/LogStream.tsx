@@ -246,6 +246,12 @@ export const LogStream: React.FC<LogStreamProps> = ({
                       {log.mode}
                     </span>
 
+                    {log.intent === 'writing' && (
+                      <span className="text-[8.5px] font-mono text-amber-300 bg-amber-500/10 px-1 py-0.5 rounded border border-amber-500/20" title="Writing backend mode using the General route configuration">
+                        writing intent
+                      </span>
+                    )}
+
                     {log.balancedModeApplied && (
                       <span className="text-[9px] font-mono font-bold text-cyan-300 bg-cyan-500/20 px-1.5 py-0.5 rounded border border-cyan-500/40 flex items-center gap-1">
                         <Zap className="w-2.5 h-2.5 text-cyan-400" />

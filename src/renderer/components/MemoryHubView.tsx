@@ -45,15 +45,31 @@ export const MemoryHubView: React.FC<MemoryHubViewProps> = ({
   const getTypeIcon = (type: BlindedTokenMap['type']) => {
     switch (type) {
       case 'api_key':
-        return <Key className="w-3.5 h-3.5 text-amber-400" />;
+        return (
+          <div className="p-1.5 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-400 shadow-[0_0_10px_rgba(245,158,11,0.15)] shrink-0">
+            <Key className="w-3.5 h-3.5" />
+          </div>
+        );
       case 'ip':
-        return <Globe className="w-3.5 h-3.5 text-blue-400" />;
+        return (
+          <div className="p-1.5 rounded-lg bg-blue-500/10 border border-blue-500/30 text-blue-400 shadow-[0_0_10px_rgba(59,130,246,0.15)] shrink-0">
+            <Globe className="w-3.5 h-3.5" />
+          </div>
+        );
       case 'email':
-        return <Mail className="w-3.5 h-3.5 text-cyan-400" />;
+        return (
+          <div className="p-1.5 rounded-lg bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 shadow-[0_0_10px_rgba(6,182,212,0.15)] shrink-0">
+            <Mail className="w-3.5 h-3.5" />
+          </div>
+        );
       case 'jwt':
       case 'generic_secret':
       default:
-        return <FileCode className="w-3.5 h-3.5 text-purple-400" />;
+        return (
+          <div className="p-1.5 rounded-lg bg-purple-500/10 border border-purple-500/30 text-purple-400 shadow-[0_0_10px_rgba(168,85,247,0.15)] shrink-0">
+            <FileCode className="w-3.5 h-3.5" />
+          </div>
+        );
     }
   };
 
@@ -172,46 +188,54 @@ export const MemoryHubView: React.FC<MemoryHubViewProps> = ({
 
       {/* Memory Status Metrics Bar */}
       <div className="grid grid-cols-3 gap-2">
-        <div className="p-2.5 rounded-xl bg-white/[0.02] border border-white/5 flex flex-col gap-1">
-          <div className="flex items-center gap-1.5 text-slate-400 text-[10px] font-mono">
-            <Database className="w-3 h-3 text-cyan-400" />
-            <span>SQLite Storage</span>
+        <div className="p-2.5 rounded-xl bg-white/[0.02] border border-white/5 flex items-start gap-2.5">
+          <div className="p-1.5 rounded-lg bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 shadow-[0_0_10px_rgba(6,182,212,0.15)] shrink-0 mt-0.5">
+            <Database className="w-3.5 h-3.5" />
           </div>
-          <div className="text-xs font-semibold text-slate-200">Encrypted DB</div>
-          <span className="text-[9px] text-emerald-400 font-mono flex items-center gap-1">
-            <Lock className="w-2.5 h-2.5" />
-            <span>transgentic_memory.db</span>
-          </span>
+          <div className="flex flex-col gap-0.5 min-w-0 flex-1">
+            <div className="text-slate-400 text-[10px] font-mono truncate">SQLite Storage</div>
+            <div className="text-xs font-semibold text-slate-200 truncate">Encrypted DB</div>
+            <span className="text-[9px] text-emerald-400 font-mono flex items-center gap-1 truncate">
+              <Lock className="w-2.5 h-2.5 shrink-0" />
+              <span className="truncate">transgentic_memory.db</span>
+            </span>
+          </div>
         </div>
 
-        <div className="p-2.5 rounded-xl bg-white/[0.02] border border-white/5 flex flex-col gap-1">
-          <div className="flex items-center gap-1.5 text-slate-400 text-[10px] font-mono">
-            <Shield className="w-3 h-3 text-purple-400" />
-            <span>Active Secrets</span>
+        <div className="p-2.5 rounded-xl bg-white/[0.02] border border-white/5 flex items-start gap-2.5">
+          <div className="p-1.5 rounded-lg bg-purple-500/10 border border-purple-500/30 text-purple-400 shadow-[0_0_10px_rgba(168,85,247,0.15)] shrink-0 mt-0.5">
+            <Shield className="w-3.5 h-3.5" />
           </div>
-          <div className="text-xs font-semibold text-slate-200">
-            {secrets.length} {secrets.length === 1 ? 'Secret' : 'Secrets'} in RAM
+          <div className="flex flex-col gap-0.5 min-w-0 flex-1">
+            <div className="text-slate-400 text-[10px] font-mono truncate">Active Secrets</div>
+            <div className="text-xs font-semibold text-slate-200 truncate">
+              {secrets.length} {secrets.length === 1 ? 'Secret' : 'Secrets'} in RAM
+            </div>
+            <span className="text-[9px] text-slate-400 font-mono truncate">
+              {secrets.length === 0 ? 'Zero lingering credentials' : 'Blinded in volatile memory'}
+            </span>
           </div>
-          <span className="text-[9px] text-slate-400 font-mono">
-            {secrets.length === 0 ? 'Zero lingering credentials' : 'Blinded in volatile memory'}
-          </span>
         </div>
 
-        <div className="p-2.5 rounded-xl bg-white/[0.02] border border-white/5 flex flex-col gap-1">
-          <div className="flex items-center gap-1.5 text-slate-400 text-[10px] font-mono">
-            <Zap className="w-3 h-3 text-amber-400" />
-            <span>Auto-Purge</span>
+        <div className="p-2.5 rounded-xl bg-white/[0.02] border border-white/5 flex items-start gap-2.5">
+          <div className="p-1.5 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-400 shadow-[0_0_10px_rgba(245,158,11,0.15)] shrink-0 mt-0.5">
+            <Zap className="w-3.5 h-3.5" />
           </div>
-          <div className="text-xs font-semibold text-emerald-300">Auto-Wipe Active</div>
-          <span className="text-[9px] text-slate-400 font-mono">Purged upon response return</span>
+          <div className="flex flex-col gap-0.5 min-w-0 flex-1">
+            <div className="text-slate-400 text-[10px] font-mono truncate">Auto-Purge</div>
+            <div className="text-xs font-semibold text-emerald-300 truncate">Auto-Wipe Active</div>
+            <span className="text-[9px] text-slate-400 font-mono truncate">Purged upon response return</span>
+          </div>
         </div>
       </div>
 
       {/* Storage & Data Privacy Management Card */}
-      <div className="p-3.5 rounded-2xl bg-black/40 border border-white/5 space-y-3">
+      <div className="tactile-core-card p-3.5 rounded-2xl border border-amber-500/20 shadow-[0_0_20px_rgba(245,158,11,0.06)] space-y-3">
         <div className="flex items-center justify-between pb-2 border-b border-white/5">
-          <div className="flex items-center gap-2">
-            <HardDrive className="w-4 h-4 text-amber-400" />
+          <div className="flex items-center gap-2.5">
+            <div className="p-2 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-400 shadow-[0_0_12px_rgba(245,158,11,0.15)] shrink-0">
+              <HardDrive className="w-4 h-4" />
+            </div>
             <div>
               <h3 className="text-xs font-bold text-slate-200 uppercase tracking-wider font-mono">
                 Storage & Data Privacy Clearance
@@ -221,7 +245,7 @@ export const MemoryHubView: React.FC<MemoryHubViewProps> = ({
               </p>
             </div>
           </div>
-          <span className="flex items-center gap-1 text-[9px] font-mono text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-500/20 font-semibold">
+          <span className="flex items-center gap-1 text-[9px] font-mono text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-500/20 font-semibold shrink-0">
             <Fingerprint className="w-3 h-3" />
             Privacy First
           </span>
@@ -230,9 +254,11 @@ export const MemoryHubView: React.FC<MemoryHubViewProps> = ({
         <div className="grid grid-cols-2 gap-3">
           {/* Card 1: App Local Storage & Memory */}
           <div className="p-3 rounded-xl bg-white/[0.02] border border-white/5 flex flex-col justify-between space-y-2.5">
-            <div className="space-y-1">
-              <div className="flex items-center gap-1.5 text-slate-200 font-semibold text-xs">
-                <Database className="w-3.5 h-3.5 text-purple-400" />
+            <div className="space-y-1.5">
+              <div className="flex items-center gap-2 text-slate-200 font-semibold text-xs">
+                <div className="p-1.5 rounded-lg bg-purple-500/10 border border-purple-500/30 text-purple-400 shadow-[0_0_10px_rgba(168,85,247,0.15)] shrink-0">
+                  <Database className="w-3.5 h-3.5" />
+                </div>
                 <span>App Local Storage & Memory</span>
               </div>
               <p className="text-[10px] text-slate-400 leading-relaxed">
@@ -253,9 +279,11 @@ export const MemoryHubView: React.FC<MemoryHubViewProps> = ({
 
           {/* Card 2: Browser Storage & Partitions */}
           <div className="p-3 rounded-xl bg-white/[0.02] border border-white/5 flex flex-col justify-between space-y-2.5">
-            <div className="space-y-1">
-              <div className="flex items-center gap-1.5 text-slate-200 font-semibold text-xs">
-                <Cookie className="w-3.5 h-3.5 text-cyan-400" />
+            <div className="space-y-1.5">
+              <div className="flex items-center gap-2 text-slate-200 font-semibold text-xs">
+                <div className="p-1.5 rounded-lg bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 shadow-[0_0_10px_rgba(6,182,212,0.15)] shrink-0">
+                  <Cookie className="w-3.5 h-3.5" />
+                </div>
                 <span>Browser Storage & Cookies</span>
               </div>
               <p className="text-[10px] text-slate-400 leading-relaxed">
@@ -277,15 +305,22 @@ export const MemoryHubView: React.FC<MemoryHubViewProps> = ({
       </div>
 
       {/* In-Memory Secret Vault Card */}
-      <div className="p-3.5 rounded-2xl bg-black/40 border border-white/5 space-y-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <ShieldCheck className="w-4 h-4 text-purple-400" />
-            <h3 className="text-xs font-bold text-slate-200 uppercase tracking-wider font-mono">
-              In-Memory Secret Vault
-            </h3>
+      <div className="tactile-core-card p-3.5 rounded-2xl border border-purple-500/20 shadow-[0_0_15px_rgba(168,85,247,0.05)] space-y-3">
+        <div className="flex items-center justify-between pb-2 border-b border-white/5">
+          <div className="flex items-center gap-2.5">
+            <div className="p-2 rounded-xl bg-purple-500/10 border border-purple-500/30 text-purple-400 shadow-[0_0_12px_rgba(168,85,247,0.15)] shrink-0">
+              <ShieldCheck className="w-4 h-4" />
+            </div>
+            <div>
+              <h3 className="text-xs font-bold text-slate-200 uppercase tracking-wider font-mono">
+                In-Memory Secret Vault
+              </h3>
+              <p className="text-[10px] text-slate-400">
+                Automatic real-time token blinding and cryptographic secret obfuscation.
+              </p>
+            </div>
           </div>
-          <span className="text-[10px] font-mono text-slate-400">
+          <span className="text-[10px] font-mono text-purple-300 bg-purple-500/10 px-2 py-0.5 rounded-full border border-purple-500/20 font-semibold shrink-0">
             {secrets.length} Active Token{secrets.length === 1 ? '' : 's'}
           </span>
         </div>
@@ -293,7 +328,7 @@ export const MemoryHubView: React.FC<MemoryHubViewProps> = ({
         <div className="p-2.5 bg-white/[0.02] border border-white/5 rounded-xl text-[11px] text-slate-400 leading-relaxed">
           <span className="text-purple-300 font-semibold">Automatic Secret Blinding:</span> Sensitive API keys, tokens, and credentials in prompts are replaced with <code className="text-cyan-300 font-mono font-semibold">[[TG_SECRET_XX]]</code> before reaching external AI providers.
           <div className="mt-1 text-[10px] text-slate-400 font-mono flex items-center gap-1.5">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" />
             <span>Secrets are automatically purged from memory & SQLite immediately after unblinding into responses.</span>
           </div>
         </div>
@@ -302,7 +337,9 @@ export const MemoryHubView: React.FC<MemoryHubViewProps> = ({
         <div className="space-y-2 max-h-[160px] overflow-y-auto pr-1">
           {secrets.length === 0 ? (
             <div className="flex flex-col items-center justify-center text-center p-6 text-slate-500 bg-white/[0.01] rounded-xl border border-dashed border-white/5">
-              <ShieldCheck className="w-7 h-7 text-emerald-400/50 mb-2" />
+              <div className="p-2 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 shadow-[0_0_12px_rgba(16,185,129,0.12)] mb-2">
+                <ShieldCheck className="w-5 h-5" />
+              </div>
               <p className="text-xs font-semibold text-slate-400">Zero active secrets in storage</p>
               <p className="text-[10px] text-slate-500 mt-1 max-w-sm">
                 All blinded tokens have been securely mapped back to agent responses and automatically wiped.
@@ -315,9 +352,7 @@ export const MemoryHubView: React.FC<MemoryHubViewProps> = ({
                 className="p-2.5 bg-black/30 border border-white/5 rounded-xl flex items-center justify-between hover:border-purple-500/30 transition-colors"
               >
                 <div className="flex items-center gap-2.5">
-                  <div className="p-1.5 rounded-lg bg-white/5 border border-white/5">
-                    {getTypeIcon(s.type)}
-                  </div>
+                  {getTypeIcon(s.type)}
                   <div>
                     <div className="flex items-center gap-2">
                       <span className="font-mono text-xs font-bold text-cyan-300">{s.token}</span>
@@ -344,15 +379,22 @@ export const MemoryHubView: React.FC<MemoryHubViewProps> = ({
       </div>
 
       {/* Memory Modules Card */}
-      <div className="p-3.5 rounded-2xl bg-black/40 border border-white/5 space-y-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Layers className="w-4 h-4 text-cyan-400" />
-            <h3 className="text-xs font-bold text-slate-200 uppercase tracking-wider font-mono">
-              Memory & Context Engine
-            </h3>
+      <div className="tactile-core-card p-3.5 rounded-2xl border border-cyan-500/20 shadow-[0_0_15px_rgba(6,182,212,0.05)] space-y-3">
+        <div className="flex items-center justify-between pb-2 border-b border-white/5">
+          <div className="flex items-center gap-2.5">
+            <div className="p-2 rounded-xl bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 shadow-[0_0_12px_rgba(6,182,212,0.15)] shrink-0">
+              <Layers className="w-4 h-4" />
+            </div>
+            <div>
+              <h3 className="text-xs font-bold text-slate-200 uppercase tracking-wider font-mono">
+                Memory & Context Engine
+              </h3>
+              <p className="text-[10px] text-slate-400">
+                Persistent knowledge graph, SQLite schemas, and cross-provider context recall modules.
+              </p>
+            </div>
           </div>
-          <span className="flex items-center gap-1 text-[10px] font-mono text-cyan-400 bg-cyan-500/10 px-2 py-0.5 rounded-full border border-cyan-500/20 font-semibold">
+          <span className="flex items-center gap-1 text-[10px] font-mono text-cyan-400 bg-cyan-500/10 px-2 py-0.5 rounded-full border border-cyan-500/20 font-semibold shrink-0">
             <Layers2 className="w-3 h-3" />
             Modular Ready
           </span>
@@ -361,11 +403,13 @@ export const MemoryHubView: React.FC<MemoryHubViewProps> = ({
         <div className="grid grid-cols-2 gap-2.5">
           <div className="p-3 rounded-xl bg-white/[0.02] border border-white/5 flex flex-col gap-1.5">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-slate-200 flex items-center gap-1.5">
-                <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+              <div className="flex items-center gap-2 text-xs font-semibold text-slate-200">
+                <div className="p-1.5 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-400 shadow-[0_0_10px_rgba(245,158,11,0.15)] shrink-0">
+                  <Sparkles className="w-3.5 h-3.5" />
+                </div>
                 <span>Conversation Recall</span>
-              </span>
-              <span className="text-[9px] font-mono text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded">
+              </div>
+              <span className="text-[9px] font-mono text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20">
                 Active
               </span>
             </div>
@@ -376,11 +420,13 @@ export const MemoryHubView: React.FC<MemoryHubViewProps> = ({
 
           <div className="p-3 rounded-xl bg-white/[0.02] border border-white/5 flex flex-col gap-1.5">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-slate-200 flex items-center gap-1.5">
-                <Cpu className="w-3.5 h-3.5 text-purple-400" />
+              <div className="flex items-center gap-2 text-xs font-semibold text-slate-200">
+                <div className="p-1.5 rounded-lg bg-purple-500/10 border border-purple-500/30 text-purple-400 shadow-[0_0_10px_rgba(168,85,247,0.15)] shrink-0">
+                  <Cpu className="w-3.5 h-3.5" />
+                </div>
                 <span>Entity & Long-Term Memory</span>
-              </span>
-              <span className="text-[9px] font-mono text-purple-300 bg-purple-500/10 px-1.5 py-0.5 rounded">
+              </div>
+              <span className="text-[9px] font-mono text-purple-300 bg-purple-500/10 px-1.5 py-0.5 rounded border border-purple-500/20">
                 SQLite Ready
               </span>
             </div>
@@ -396,7 +442,7 @@ export const MemoryHubView: React.FC<MemoryHubViewProps> = ({
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="relative w-full max-w-md bg-slate-900 border border-white/10 rounded-2xl p-5 shadow-2xl space-y-4">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0">
+              <div className="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 shadow-[0_0_15px_rgba(245,158,11,0.2)] shrink-0">
                 <AlertTriangle className="w-5 h-5" />
               </div>
               <div>

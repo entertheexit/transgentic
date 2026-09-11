@@ -20,6 +20,7 @@ import {
   LocalLLMConfig,
   HealingConfig,
   RouteMatrix,
+  RouteMode,
   ModePipelineConfig,
   DoubleAgentConfig,
 } from '../../shared/types.js';
@@ -40,10 +41,10 @@ const DEFAULT_REGISTRY: RegistryStore = {
     hourlyLimit: 30,
     cooldownSeconds: 6,
     models: [
-      { id: 'gpt-4o', displayName: 'GPT-4o (Omni & Multimodal)', discoveredAvailable: true, userEnabled: true, requiresTier: 'Free/Plus', mode: 'general', modes: ['general', 'coding', 'writing', 'image'] },
-      { id: 'o1', displayName: 'o1 (Deep Reasoning)', discoveredAvailable: true, userEnabled: true, requiresTier: 'Plus/Pro', mode: 'general', modes: ['general', 'coding', 'writing'] },
-      { id: 'o3-mini', displayName: 'o3-mini (High Speed Reasoning)', discoveredAvailable: true, userEnabled: true, requiresTier: 'Free/Plus', mode: 'coding', modes: ['coding', 'general', 'writing'] },
-      { id: 'gpt-4o-mini', displayName: 'GPT-4o mini (Lightweight)', discoveredAvailable: true, userEnabled: true, requiresTier: 'Free', mode: 'general', modes: ['general', 'coding', 'writing'] },
+      { id: 'gpt-4o', displayName: 'GPT-4o (Omni & Multimodal)', discoveredAvailable: true, userEnabled: true, requiresTier: 'Free/Plus', mode: 'general', modes: ['general', 'coding', 'image'] },
+      { id: 'o1', displayName: 'o1 (Deep Reasoning)', discoveredAvailable: true, userEnabled: true, requiresTier: 'Plus/Pro', mode: 'general', modes: ['general', 'coding'] },
+      { id: 'o3-mini', displayName: 'o3-mini (High Speed Reasoning)', discoveredAvailable: true, userEnabled: true, requiresTier: 'Free/Plus', mode: 'coding', modes: ['coding', 'general'] },
+      { id: 'gpt-4o-mini', displayName: 'GPT-4o mini (Lightweight)', discoveredAvailable: true, userEnabled: true, requiresTier: 'Free', mode: 'general', modes: ['general', 'coding'] },
     ],
   },
   claude: {
@@ -54,9 +55,9 @@ const DEFAULT_REGISTRY: RegistryStore = {
     hourlyLimit: 35,
     cooldownSeconds: 6,
     models: [
-      { id: 'claude-3-5-sonnet', displayName: 'Claude 3.5 Sonnet (Coding & Reasoning)', discoveredAvailable: true, userEnabled: true, requiresTier: 'Free/Pro', mode: 'coding', modes: ['general', 'coding', 'writing'] },
-      { id: 'claude-3-opus', displayName: 'Claude 3 Opus (High Intelligence)', discoveredAvailable: true, userEnabled: true, requiresTier: 'Pro', mode: 'writing', modes: ['general', 'coding', 'writing'] },
-      { id: 'claude-3-5-haiku', displayName: 'Claude 3.5 Haiku (Lightning Fast)', discoveredAvailable: true, userEnabled: true, requiresTier: 'Free/Pro', mode: 'general', modes: ['general', 'coding', 'writing'] },
+      { id: 'claude-3-5-sonnet', displayName: 'Claude 3.5 Sonnet (Coding & Reasoning)', discoveredAvailable: true, userEnabled: true, requiresTier: 'Free/Pro', mode: 'coding', modes: ['general', 'coding'] },
+      { id: 'claude-3-opus', displayName: 'Claude 3 Opus (High Intelligence)', discoveredAvailable: true, userEnabled: true, requiresTier: 'Pro', mode: 'general', modes: ['general', 'coding'] },
+      { id: 'claude-3-5-haiku', displayName: 'Claude 3.5 Haiku (Lightning Fast)', discoveredAvailable: true, userEnabled: true, requiresTier: 'Free/Pro', mode: 'general', modes: ['general', 'coding'] },
     ],
   },
   gemini: {
@@ -67,10 +68,10 @@ const DEFAULT_REGISTRY: RegistryStore = {
     hourlyLimit: 50,
     cooldownSeconds: 5,
     models: [
-      { id: 'gemini-2-0-flash', displayName: 'Gemini 2.0 Flash (Next-Gen Multimodal)', discoveredAvailable: true, userEnabled: true, requiresTier: 'Free/Advanced', mode: 'general', modes: ['general', 'coding', 'writing', 'image', 'video', 'audio'] },
-      { id: 'gemini-2-0-pro', displayName: 'Gemini 2.0 Pro Experimental', discoveredAvailable: true, userEnabled: true, requiresTier: 'Advanced', mode: 'general', modes: ['general', 'coding', 'writing', 'image', 'video', 'audio'] },
-      { id: 'gemini-1-5-flash', displayName: 'Gemini 1.5 Flash (Fast)', discoveredAvailable: true, userEnabled: true, requiresTier: 'Free', mode: 'general', modes: ['general', 'coding', 'writing', 'video', 'audio'] },
-      { id: 'gemini-1-5-pro', displayName: 'Gemini 1.5 Pro (2M Context)', discoveredAvailable: true, userEnabled: true, requiresTier: 'Free/Advanced', mode: 'general', modes: ['general', 'coding', 'writing', 'video', 'audio'] },
+      { id: 'gemini-2-0-flash', displayName: 'Gemini 2.0 Flash (Next-Gen Multimodal)', discoveredAvailable: true, userEnabled: true, requiresTier: 'Free/Advanced', mode: 'general', modes: ['general', 'coding', 'image', 'video', 'audio'] },
+      { id: 'gemini-2-0-pro', displayName: 'Gemini 2.0 Pro Experimental', discoveredAvailable: true, userEnabled: true, requiresTier: 'Advanced', mode: 'general', modes: ['general', 'coding', 'image', 'video', 'audio'] },
+      { id: 'gemini-1-5-flash', displayName: 'Gemini 1.5 Flash (Fast)', discoveredAvailable: true, userEnabled: true, requiresTier: 'Free', mode: 'general', modes: ['general', 'coding', 'video', 'audio'] },
+      { id: 'gemini-1-5-pro', displayName: 'Gemini 1.5 Pro (2M Context)', discoveredAvailable: true, userEnabled: true, requiresTier: 'Free/Advanced', mode: 'general', modes: ['general', 'coding', 'video', 'audio'] },
     ],
   },
   grok: {
@@ -81,9 +82,9 @@ const DEFAULT_REGISTRY: RegistryStore = {
     hourlyLimit: 40,
     cooldownSeconds: 6,
     models: [
-      { id: 'grok-3', displayName: 'Grok 3 (State-of-the-Art)', discoveredAvailable: true, userEnabled: true, requiresTier: 'Premium', mode: 'general', modes: ['general', 'coding', 'writing', 'video'] },
-      { id: 'grok-3-think', displayName: 'Grok 3 Think / DeepSearch', discoveredAvailable: true, userEnabled: true, requiresTier: 'Premium+', mode: 'general', modes: ['general', 'coding', 'writing', 'video'] },
-      { id: 'grok-2', displayName: 'Grok 2 (Speed & Coding)', discoveredAvailable: true, userEnabled: true, requiresTier: 'Premium', mode: 'coding', modes: ['general', 'coding', 'writing'] },
+      { id: 'grok-3', displayName: 'Grok 3 (State-of-the-Art)', discoveredAvailable: true, userEnabled: true, requiresTier: 'Premium', mode: 'general', modes: ['general', 'coding', 'video'] },
+      { id: 'grok-3-think', displayName: 'Grok 3 Think / DeepSearch', discoveredAvailable: true, userEnabled: true, requiresTier: 'Premium+', mode: 'general', modes: ['general', 'coding', 'video'] },
+      { id: 'grok-2', displayName: 'Grok 2 (Speed & Coding)', discoveredAvailable: true, userEnabled: true, requiresTier: 'Premium', mode: 'coding', modes: ['general', 'coding'] },
       { id: 'grok-2-vision', displayName: 'Grok 2 Vision / Imagine', discoveredAvailable: true, userEnabled: true, requiresTier: 'Premium', mode: 'image', modes: ['image', 'video', 'general'] },
     ],
   },
@@ -146,10 +147,9 @@ export function useTransgentic() {
   const [totalLogsCount, setTotalLogsCount] = useState<number>(0);
   const [secrets, setSecrets] = useState<BlindedTokenMap[]>([]);
   const [registry, setRegistry] = useState<RegistryStore>(DEFAULT_REGISTRY);
-  const [modeRoutes, setModeRoutes] = useState<Record<TaskMode, ModeRouteConfig>>({
+  const [modeRoutes, setModeRoutes] = useState<Record<RouteMode, ModeRouteConfig>>({
     general: { mode: 'general', primary: 'chatgpt', fallbacks: ['claude', 'gemini', 'grok'], outputFormat: 'prose_markdown' },
     coding: { mode: 'coding', primary: 'claude', fallbacks: ['chatgpt', 'gemini', 'grok'], outputFormat: 'json_code' },
-    writing: { mode: 'writing', primary: 'chatgpt', fallbacks: ['claude', 'grok', 'gemini'], outputFormat: 'prose_markdown' },
     image: { mode: 'image', primary: 'grok', fallbacks: ['chatgpt', 'gemini'], outputFormat: 'file_download' },
     video: { mode: 'video', primary: 'grok', fallbacks: ['gemini'], outputFormat: 'file_download' },
     audio: { mode: 'audio', primary: 'gemini', fallbacks: [], outputFormat: 'file_download' },
@@ -193,7 +193,7 @@ export function useTransgentic() {
       });
     }
     if (api.getModeRoutes) {
-      api.getModeRoutes().then((routes: Record<TaskMode, ModeRouteConfig>) => {
+      api.getModeRoutes().then((routes: Record<RouteMode, ModeRouteConfig>) => {
         if (routes) setModeRoutes(routes);
       });
     }
@@ -293,7 +293,7 @@ export function useTransgentic() {
     }
   }, [api]);
 
-  const updateModeRoute = useCallback(async (mode: TaskMode, routeCfg: Partial<ModeRouteConfig> | Partial<ModePipelineConfig>, pipeline: 'main' | 'co' = 'main') => {
+  const updateModeRoute = useCallback(async (mode: RouteMode, routeCfg: Partial<ModeRouteConfig> | Partial<ModePipelineConfig>, pipeline: 'main' | 'co' = 'main') => {
     if (api?.updateModeRoute) {
       await api.updateModeRoute(mode, routeCfg, pipeline);
       if (api.getRouteMatrix) {
@@ -634,11 +634,10 @@ export function useTransgentic() {
     return nextVal;
   }, [api, config.doubleAgent]);
 
-  const toggleDoubleAgentMode = useCallback(async (mode: TaskMode, enabled?: boolean) => {
+  const toggleDoubleAgentMode = useCallback(async (mode: RouteMode, enabled?: boolean) => {
     const currentModes = config.doubleAgent?.modes || {
       general: true,
       coding: true,
-      writing: true,
       image: true,
       video: true,
       audio: true,
@@ -709,11 +708,10 @@ export function useTransgentic() {
     return nextVal;
   }, [api, config.recall]);
 
-  const toggleRecallMode = useCallback(async (mode: TaskMode, enabled?: boolean) => {
+  const toggleRecallMode = useCallback(async (mode: RouteMode, enabled?: boolean) => {
     const currentModes = config.recall?.modes || {
       general: true,
       coding: true,
-      writing: true,
       image: true,
       video: true,
       audio: true,
@@ -767,10 +765,10 @@ export function useTransgentic() {
     }));
   }, [api, config.recall]);
 
-  const toggleAgentGuard = useCallback(async (mode: TaskMode, enabled?: boolean) => {
+  const toggleAgentGuard = useCallback(async (mode: RouteMode, enabled?: boolean) => {
     const currentMap = (typeof config.agentHaltGuard === 'object' && config.agentHaltGuard !== null)
       ? config.agentHaltGuard
-      : { general: true, coding: true, writing: true, image: true, video: true, audio: true };
+      : { general: true, coding: true, image: true, video: true, audio: true };
     const currentVal = currentMap[mode] ?? true;
     const nextVal = enabled !== undefined ? enabled : !currentVal;
 
@@ -789,7 +787,7 @@ export function useTransgentic() {
       agentHaltGuard: {
         ...((typeof prev.agentHaltGuard === 'object' && prev.agentHaltGuard !== null)
           ? prev.agentHaltGuard
-          : { general: true, coding: true, writing: true, image: true, video: true, audio: true }),
+          : { general: true, coding: true, image: true, video: true, audio: true }),
         [mode]: nextVal,
       },
     }));

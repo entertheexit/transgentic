@@ -10,7 +10,7 @@ describe('DomObserver Multi-Provider & Media Scraping Tests', () => {
     'grok',
     'claude',
   ];
-  const modes: TaskMode[] = ['general', 'coding', 'writing', 'image', 'video', 'audio'];
+  const modes: TaskMode[] = ['general', 'coding', 'image', 'video', 'audio'];
 
   it('should generate valid async executable JavaScript for every provider and mode combination', () => {
     for (const provider of providers) {

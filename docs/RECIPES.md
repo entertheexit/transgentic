@@ -115,7 +115,7 @@ The field reference below covers commonly used fields, not a complete validation
       "id": "enterprise-v2",
       "displayName": "Enterprise V2 (Reasoning)",
       "mode": "general",
-      "modes": ["general", "coding", "writing"]
+      "modes": ["general", "coding"]
     }
   ]
 }

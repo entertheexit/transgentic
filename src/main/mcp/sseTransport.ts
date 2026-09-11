@@ -1,11 +1,11 @@
 import { Response } from 'express';
-import { ProviderId, TaskMode } from '../../shared/types.js';
+import { AcceptedTaskMode, ProviderId } from '../../shared/types.js';
 
 export interface SseClientConnection {
   id: string;
   res: Response;
   targetProvider?: ProviderId;
-  targetMode?: TaskMode;
+  targetMode?: AcceptedTaskMode;
   connectedAt: number;
   lastActivityAt: number;
   heartbeatTimer: NodeJS.Timeout | null;
@@ -27,7 +27,7 @@ export class SseTransportManager {
     messageEndpoint: string = '/messages',
     onAbort?: () => void,
     authToken?: string,
-    targetMode?: TaskMode
+    targetMode?: AcceptedTaskMode
   ): SseClientConnection {
     // Set standard SSE HTTP headers
     res.setHeader('Content-Type', 'text/event-stream');

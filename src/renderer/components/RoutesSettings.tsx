@@ -5,7 +5,7 @@ import {
   ProviderId,
   ProviderStatus,
   ServicesManifest,
-  TaskMode,
+  RouteMode,
   LocalLLMConfig,
   RouteMatrix,
   ModePipelineConfig,
@@ -39,14 +39,14 @@ import { soundFx } from '../audio/soundFx.js';
 import { getProviderTheme, getProviderDisplayName } from '../utils/providerTheme.js';
 
 interface RoutesSettingsProps {
-  modeRoutes: Record<TaskMode, ModeRouteConfig>;
+  modeRoutes: Record<RouteMode, ModeRouteConfig>;
   routeMatrix?: RouteMatrix | null;
   config?: TransgenticConfig;
   providers: Record<ProviderId, ProviderStatus>;
   servicesManifest?: ServicesManifest | null;
   localLLMConfig?: LocalLLMConfig;
   initialPipeline?: 'main' | 'co';
-  onUpdateRoute: (mode: TaskMode, config: Partial<ModeRouteConfig> | Partial<ModePipelineConfig>, pipeline?: 'main' | 'co') => void;
+  onUpdateRoute: (mode: RouteMode, config: Partial<ModeRouteConfig> | Partial<ModePipelineConfig>, pipeline?: 'main' | 'co') => void;
   onResetRoutes: () => void;
   onBack?: () => void;
 }
@@ -66,7 +66,7 @@ export const RoutesSettings: React.FC<RoutesSettingsProps> = ({
   onBack,
 }) => {
   const [activePipeline, setActivePipeline] = useState<'main' | 'co'>(initialPipeline || 'main');
-  const [selectedMode, setSelectedMode] = useState<TaskMode>('general');
+  const [selectedMode, setSelectedMode] = useState<RouteMode>('general');
   const [fallbackToAdd, setFallbackToAdd] = useState<ProviderId | ''>('');
   const [showResetConfirm, setShowResetConfirm] = useState<boolean>(false);
 
@@ -126,14 +126,12 @@ export const RoutesSettings: React.FC<RoutesSettingsProps> = ({
     return getProviderDisplayName(id, servicesManifest, providers);
   };
 
-  const getModeIcon = (mode: TaskMode) => {
+  const getModeIcon = (mode: RouteMode) => {
     switch (mode) {
       case 'general':
         return <Sparkles className="w-3 h-3" />;
       case 'coding':
         return <Code2 className="w-3 h-3" />;
-      case 'writing':
-        return <PenTool className="w-3 h-3" />;
       case 'image':
         return <ImageIcon className="w-3 h-3" />;
       case 'video':
@@ -220,14 +218,14 @@ export const RoutesSettings: React.FC<RoutesSettingsProps> = ({
 
   const [modelFallbackToAdd, setModelFallbackToAdd] = useState<Record<string, string>>({});
 
-  const getProviderModelsForMode = (providerId: ProviderId, mode: TaskMode) => {
+  const getProviderModelsForMode = (providerId: ProviderId, mode: RouteMode) => {
     const s = servicesManifest?.services?.[providerId];
     if (!s) return [];
     const isApi = s.providerType === 'api' || providerId.startsWith('api_');
     if (!Array.isArray(s.models) || s.models.length === 0) {
-      if (isApi && (mode === 'general' || mode === 'coding' || mode === 'writing')) {
+      if (isApi && (mode === 'general' || mode === 'coding')) {
         const defaultModel = s.defaultModelId || 'default';
-        return [{ id: defaultModel, displayName: defaultModel, enabled: true, mode: 'general', modes: ['general', 'coding', 'writing'], requiresTier: undefined }];
+        return [{ id: defaultModel, displayName: defaultModel, enabled: true, mode: 'general', modes: ['general', 'coding'], requiresTier: undefined }];
       }
       return [];
     }
@@ -235,30 +233,30 @@ export const RoutesSettings: React.FC<RoutesSettingsProps> = ({
       if (m.mode === mode) return true;
       if (Array.isArray(m.modes) && m.modes.includes(mode)) return true;
       if (mode === 'general' && !m.mode && (!m.modes || m.modes.length === 0)) return true;
-      if (isApi && (mode === 'general' || mode === 'coding' || mode === 'writing') && (!m.modes || m.modes.length === 0)) return true;
+      if (isApi && (mode === 'general' || mode === 'coding') && (!m.modes || m.modes.length === 0)) return true;
       return false;
     });
-    if (filtered.length === 0 && isApi && (mode === 'general' || mode === 'coding' || mode === 'writing')) {
+    if (filtered.length === 0 && isApi && (mode === 'general' || mode === 'coding')) {
       return s.models;
     }
     return filtered;
   };
 
-  const doesProviderSupportMode = (providerId: ProviderId, mode: TaskMode): boolean => {
+  const doesProviderSupportMode = (providerId: ProviderId, mode: RouteMode): boolean => {
     if (providerId === 'localllm') {
-      return mode === 'general' || mode === 'coding' || mode === 'writing';
+      return mode === 'general' || mode === 'coding';
     }
     const s = servicesManifest?.services?.[providerId];
     const isCustom = s?.providerType === 'api' || s?.providerType === 'webview' || providerId.startsWith('api_') || providerId.startsWith('custom_') || providerId.startsWith('webview_');
     if (isCustom) {
       const models = getProviderModelsForMode(providerId, mode);
       if (models.length > 0) return true;
-      return mode === 'general' || mode === 'coding' || mode === 'writing';
+      return mode === 'general' || mode === 'coding';
     }
     return getProviderModelsForMode(providerId, mode).length > 0;
   };
 
-  const getDefaultModelForProviderMode = (providerId: ProviderId, mode: TaskMode) => {
+  const getDefaultModelForProviderMode = (providerId: ProviderId, mode: RouteMode) => {
     const configured = currentRoute.providerModels?.[providerId]?.defaultModelId;
     if (configured) return configured;
     const available = getProviderModelsForMode(providerId, mode);
@@ -489,7 +487,7 @@ export const RoutesSettings: React.FC<RoutesSettingsProps> = ({
 
       {/* Mode Selector Tabs */}
       <div className="grid grid-cols-6 gap-1 bg-black/40 p-1 rounded-xl border border-white/5">
-        {(['general', 'coding', 'writing', 'image', 'video', 'audio'] as TaskMode[]).map((mode) => (
+        {(['general', 'coding', 'image', 'video', 'audio'] as RouteMode[]).map((mode) => (
           <button
             key={mode}
             onClick={() => {
@@ -1059,7 +1057,7 @@ export const RoutesSettings: React.FC<RoutesSettingsProps> = ({
             </div>
 
             <p className="text-xs text-slate-300 leading-relaxed font-sans bg-black/40 p-3 rounded-xl border border-white/5">
-              This will restore default primary providers and candidate fallback chains for all 6 task modes (General, Coding, Writing, Image, Video, Audio).
+              This will restore default primary providers and candidate fallback chains for all 5 task modes (General, Coding, Image, Video, Audio).
             </p>
 
             <div className="flex items-center justify-end gap-2 pt-1">

@@ -39,7 +39,7 @@ export interface CliModelDiscovery {
 }
 export interface CliState { config: CliConfig; statuses: Partial<Record<CliProviderId, CliStatus>>; sandboxAvailable: boolean }
 export const defaultCliService = (): CliServiceConfig => ({ ...NO_CLI_PERMISSIONS, timeoutSeconds: 300, workMode: 'provider' });
-export function cliSupportsMode(mode: TaskMode): boolean { return ['general', 'coding', 'writing'].includes(mode); }
+export function cliSupportsMode(mode: TaskMode): boolean { return mode === 'general' || mode === 'writing' || mode === 'coding'; }
 export function builtInCliServices(): Record<string, ServiceManifestEntry> {
   return Object.fromEntries(CLI_IDS.map(id => [id, {
     id, name: CLI_DEFINITIONS[id].name, company: CLI_DEFINITIONS[id].company,
@@ -47,6 +47,6 @@ export function builtInCliServices(): Record<string, ServiceManifestEntry> {
     partition: '', defaultModelId: 'default', supportsModelRouting: true,
     accentColor: 'cyan', iconName: 'Terminal',
     models: [{ id: 'default', displayName: 'CLI default', enabled: true, userEnabled: true,
-      discoveredAvailable: false, modes: ['general', 'coding', 'writing'] }],
+      discoveredAvailable: false, modes: ['general', 'coding'] }],
   } satisfies ServiceManifestEntry]));
 }

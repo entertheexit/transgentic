@@ -100,7 +100,7 @@ USAGE:
   transgentic-cli status [flags]                    Query system health, rate limits, and model registry
 
 FLAGS:
-  -m, --mode <mode>        Task mode hint: image | video | audio | coding | writing | general
+  -m, --mode <mode>        Task mode: general | writing | coding | image | video | audio
   -p, --provider <name>    Provider: chatgpt | claude | gemini | grok | cli_codex | cli_claude_code | cli_antigravity | cli_grok
       --model <modelId>    Specific model ID (e.g. dall-e-3, o1, claude-3-5-sonnet)
       --workspace <id>     Registered CLI workspace with a local MCP grant

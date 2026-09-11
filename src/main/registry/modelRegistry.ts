@@ -1,9 +1,17 @@
 import fs from 'fs';
 import path from 'path';
 import { app } from 'electron';
-import { ModelEntry, ProviderConfig, ProviderId, RegistryStore } from '../../shared/types.js';
+import { ModelEntry, ProviderConfig, ProviderId, RegistryStore, normalizeRouteMode } from '../../shared/types.js';
 import { globalRateLimiter } from '../mcp/rateLimiter.js';
 import { ServiceManifestManager } from './serviceManifest.js';
+
+export function normalizeModelEntryModes<T extends ModelEntry>(model: T): T {
+  return {
+    ...model,
+    ...(model.mode ? { mode: normalizeRouteMode(model.mode) } : {}),
+    ...(model.modes ? { modes: Array.from(new Set(model.modes.map(normalizeRouteMode))) } : {}),
+  };
+}
 
 export class ModelRegistryManager {
   private static readonly DEFAULT_REGISTRY: RegistryStore = {
@@ -15,10 +23,10 @@ export class ModelRegistryManager {
       hourlyLimit: 30,
       cooldownSeconds: 6,
       models: [
-        { id: 'gpt-4o', displayName: 'GPT-4o (Omni & Multimodal)', discoveredAvailable: true, userEnabled: true, requiresTier: 'Free/Plus', mode: 'general', modes: ['general', 'coding', 'writing', 'image'] },
-        { id: 'o1', displayName: 'o1 (Deep Reasoning)', discoveredAvailable: true, userEnabled: true, requiresTier: 'Plus/Pro', mode: 'general', modes: ['general', 'coding', 'writing'] },
-        { id: 'o3-mini', displayName: 'o3-mini (High Speed Reasoning)', discoveredAvailable: true, userEnabled: true, requiresTier: 'Free/Plus', mode: 'coding', modes: ['coding', 'general', 'writing'] },
-        { id: 'gpt-4o-mini', displayName: 'GPT-4o mini (Lightweight)', discoveredAvailable: true, userEnabled: true, requiresTier: 'Free', mode: 'general', modes: ['general', 'coding', 'writing'] },
+        { id: 'gpt-4o', displayName: 'GPT-4o (Omni & Multimodal)', discoveredAvailable: true, userEnabled: true, requiresTier: 'Free/Plus', mode: 'general', modes: ['general', 'coding', 'image'] },
+        { id: 'o1', displayName: 'o1 (Deep Reasoning)', discoveredAvailable: true, userEnabled: true, requiresTier: 'Plus/Pro', mode: 'general', modes: ['general', 'coding'] },
+        { id: 'o3-mini', displayName: 'o3-mini (High Speed Reasoning)', discoveredAvailable: true, userEnabled: true, requiresTier: 'Free/Plus', mode: 'coding', modes: ['coding', 'general'] },
+        { id: 'gpt-4o-mini', displayName: 'GPT-4o mini (Lightweight)', discoveredAvailable: true, userEnabled: true, requiresTier: 'Free', mode: 'general', modes: ['general', 'coding'] },
       ],
     },
     claude: {
@@ -29,9 +37,9 @@ export class ModelRegistryManager {
       hourlyLimit: 35,
       cooldownSeconds: 6,
       models: [
-        { id: 'claude-3-5-sonnet', displayName: 'Claude 3.5 Sonnet (Coding & Reasoning)', discoveredAvailable: true, userEnabled: true, requiresTier: 'Free/Pro', mode: 'coding', modes: ['general', 'coding', 'writing'] },
-        { id: 'claude-3-opus', displayName: 'Claude 3 Opus (High Intelligence)', discoveredAvailable: true, userEnabled: true, requiresTier: 'Pro', mode: 'writing', modes: ['general', 'coding', 'writing'] },
-        { id: 'claude-3-5-haiku', displayName: 'Claude 3.5 Haiku (Lightning Fast)', discoveredAvailable: true, userEnabled: true, requiresTier: 'Free/Pro', mode: 'general', modes: ['general', 'coding', 'writing'] },
+        { id: 'claude-3-5-sonnet', displayName: 'Claude 3.5 Sonnet (Coding & Reasoning)', discoveredAvailable: true, userEnabled: true, requiresTier: 'Free/Pro', mode: 'coding', modes: ['general', 'coding'] },
+        { id: 'claude-3-opus', displayName: 'Claude 3 Opus (High Intelligence)', discoveredAvailable: true, userEnabled: true, requiresTier: 'Pro', mode: 'general', modes: ['general', 'coding'] },
+        { id: 'claude-3-5-haiku', displayName: 'Claude 3.5 Haiku (Lightning Fast)', discoveredAvailable: true, userEnabled: true, requiresTier: 'Free/Pro', mode: 'general', modes: ['general', 'coding'] },
       ],
     },
     gemini: {
@@ -42,10 +50,10 @@ export class ModelRegistryManager {
       hourlyLimit: 50,
       cooldownSeconds: 5,
       models: [
-        { id: 'gemini-2-0-flash', displayName: 'Gemini 2.0 Flash (Next-Gen Multimodal)', discoveredAvailable: true, userEnabled: true, requiresTier: 'Free/Advanced', mode: 'general', modes: ['general', 'coding', 'writing', 'image', 'video', 'audio'] },
-        { id: 'gemini-2-0-pro', displayName: 'Gemini 2.0 Pro Experimental', discoveredAvailable: true, userEnabled: true, requiresTier: 'Advanced', mode: 'general', modes: ['general', 'coding', 'writing', 'image', 'video', 'audio'] },
-        { id: 'gemini-1-5-flash', displayName: 'Gemini 1.5 Flash (Fast)', discoveredAvailable: true, userEnabled: true, requiresTier: 'Free', mode: 'general', modes: ['general', 'coding', 'writing', 'video', 'audio'] },
-        { id: 'gemini-1-5-pro', displayName: 'Gemini 1.5 Pro (2M Context)', discoveredAvailable: true, userEnabled: true, requiresTier: 'Free/Advanced', mode: 'general', modes: ['general', 'coding', 'writing', 'video', 'audio'] },
+        { id: 'gemini-2-0-flash', displayName: 'Gemini 2.0 Flash (Next-Gen Multimodal)', discoveredAvailable: true, userEnabled: true, requiresTier: 'Free/Advanced', mode: 'general', modes: ['general', 'coding', 'image', 'video', 'audio'] },
+        { id: 'gemini-2-0-pro', displayName: 'Gemini 2.0 Pro Experimental', discoveredAvailable: true, userEnabled: true, requiresTier: 'Advanced', mode: 'general', modes: ['general', 'coding', 'image', 'video', 'audio'] },
+        { id: 'gemini-1-5-flash', displayName: 'Gemini 1.5 Flash (Fast)', discoveredAvailable: true, userEnabled: true, requiresTier: 'Free', mode: 'general', modes: ['general', 'coding', 'video', 'audio'] },
+        { id: 'gemini-1-5-pro', displayName: 'Gemini 1.5 Pro (2M Context)', discoveredAvailable: true, userEnabled: true, requiresTier: 'Free/Advanced', mode: 'general', modes: ['general', 'coding', 'video', 'audio'] },
       ],
     },
     grok: {
@@ -56,9 +64,9 @@ export class ModelRegistryManager {
       hourlyLimit: 40,
       cooldownSeconds: 6,
       models: [
-        { id: 'grok-3', displayName: 'Grok 3 (State-of-the-Art)', discoveredAvailable: true, userEnabled: true, requiresTier: 'Premium', mode: 'general', modes: ['general', 'coding', 'writing', 'video'] },
-        { id: 'grok-3-think', displayName: 'Grok 3 Think / DeepSearch', discoveredAvailable: true, userEnabled: true, requiresTier: 'Premium+', mode: 'general', modes: ['general', 'coding', 'writing', 'video'] },
-        { id: 'grok-2', displayName: 'Grok 2 (Speed & Coding)', discoveredAvailable: true, userEnabled: true, requiresTier: 'Premium', mode: 'coding', modes: ['general', 'coding', 'writing'] },
+        { id: 'grok-3', displayName: 'Grok 3 (State-of-the-Art)', discoveredAvailable: true, userEnabled: true, requiresTier: 'Premium', mode: 'general', modes: ['general', 'coding', 'video'] },
+        { id: 'grok-3-think', displayName: 'Grok 3 Think / DeepSearch', discoveredAvailable: true, userEnabled: true, requiresTier: 'Premium+', mode: 'general', modes: ['general', 'coding', 'video'] },
+        { id: 'grok-2', displayName: 'Grok 2 (Speed & Coding)', discoveredAvailable: true, userEnabled: true, requiresTier: 'Premium', mode: 'coding', modes: ['general', 'coding'] },
         { id: 'grok-2-vision', displayName: 'Grok 2 Vision / Imagine', discoveredAvailable: true, userEnabled: true, requiresTier: 'Premium', mode: 'image', modes: ['image', 'video', 'general'] },
       ],
     },
@@ -99,6 +107,10 @@ export class ModelRegistryManager {
       }
     } catch {
       this.currentRegistry = JSON.parse(JSON.stringify(this.DEFAULT_REGISTRY));
+    }
+
+    for (const config of Object.values(this.currentRegistry)) {
+      if (config?.models) config.models = config.models.map(normalizeModelEntryModes);
     }
 
     // Ensure serviceEnabled aligns with ServiceManifestManager
@@ -145,6 +157,9 @@ export class ModelRegistryManager {
 
   public static savePersistedRegistry(): void {
     try {
+      for (const config of Object.values(this.currentRegistry)) {
+        if (config?.models) config.models = config.models.map(normalizeModelEntryModes);
+      }
       const filePath = this.getStoragePath();
       const dir = path.dirname(filePath);
       if (!fs.existsSync(dir)) {

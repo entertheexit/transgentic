@@ -18,10 +18,10 @@ describe('Route Matrix Local LLM Integration Tests', () => {
   });
 
   describe('Mode Capability Restrictions', () => {
-    it('should support general, coding, and writing modes for Local LLM', () => {
+    it('should support General, Writing, and Coding through the text routes for Local LLM', () => {
       expect(DynamicRouter.isLocalLlmSupportedForMode('general')).toBe(true);
-      expect(DynamicRouter.isLocalLlmSupportedForMode('coding')).toBe(true);
       expect(DynamicRouter.isLocalLlmSupportedForMode('writing')).toBe(true);
+      expect(DynamicRouter.isLocalLlmSupportedForMode('coding')).toBe(true);
     });
 
     it('should strictly prohibit image, video, and audio modes for Local LLM', () => {

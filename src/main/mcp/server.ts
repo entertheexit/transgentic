@@ -62,7 +62,10 @@ import {
   McpRequestLog,
   ProviderId,
   TaskMode,
+  AcceptedTaskMode,
+  TaskIntent,
   TransgenticConfig,
+  normalizeTaskMode,
   isAgentHaltGuardEnabled,
   isRecallEnabledForMode,
 } from '../../shared/types.js';
@@ -348,7 +351,7 @@ export class TransgenticMcpServer {
     }
 
     // 3. Dedicated Mode Gateways (e.g. /image/sse, /video/sse, /audio/sse, /coding/sse, /writing/sse)
-    const modes: TaskMode[] = ['image', 'video', 'audio', 'coding', 'writing', 'general'];
+    const modes: AcceptedTaskMode[] = ['image', 'video', 'audio', 'coding', 'writing', 'general'];
     for (const m of modes) {
       this.app.get(`/${m}/mcp`, (req, res) => {
         this.handleSseConnect(req, res, undefined, `/${m}/mcp`, m);
@@ -373,7 +376,7 @@ export class TransgenticMcpServer {
     res: Response,
     targetProvider?: ProviderId,
     messageEndpoint: string = '/messages',
-    defaultMode?: TaskMode
+    defaultMode?: AcceptedTaskMode
   ): void {
     const sessionId = crypto.randomUUID();
     const requestedProfile = parseResponseProfile(req.query?.response_profile);
@@ -390,9 +393,9 @@ export class TransgenticMcpServer {
     const effectiveProvider: ProviderId | undefined = targetProvider || (queryProvider as ProviderId) || undefined;
 
     const rawMode = (req.query.mode as string | undefined) || defaultMode;
-    let effectiveMode: TaskMode | undefined = undefined;
+    let effectiveMode: AcceptedTaskMode | undefined = undefined;
     if (rawMode && ['general', 'coding', 'writing', 'image', 'video', 'audio', 'music'].includes(rawMode)) {
-      effectiveMode = rawMode === 'music' ? 'audio' : (rawMode as TaskMode);
+      effectiveMode = rawMode as AcceptedTaskMode;
     }
 
     SseTransportManager.registerClient(sessionId, res, effectiveProvider, messageEndpoint, undefined, token, effectiveMode);
@@ -408,7 +411,7 @@ export class TransgenticMcpServer {
     sseClient: any,
     directProvider?: ProviderId,
     sessionId: string = '',
-    defaultMode?: TaskMode,
+    defaultMode?: AcceptedTaskMode,
     progressSink?: (message: any) => void
   ): Promise<any> {
     if (!body || typeof body !== 'object') {
@@ -678,7 +681,7 @@ export class TransgenticMcpServer {
     }
   }
 
-  private async handleClientMessage(req: Request, res: Response, directProvider?: ProviderId, defaultMode?: TaskMode): Promise<void> {
+  private async handleClientMessage(req: Request, res: Response, directProvider?: ProviderId, defaultMode?: AcceptedTaskMode): Promise<void> {
     const sessionId = (req.query.sessionId as string) || (req.headers['mcp-session-id'] as string) || crypto.randomUUID();
     for (const [key, value] of this.clientProfiles) {
       if (Date.now() - value.lastUsed > 24 * 60 * 60 * 1000 && !SseTransportManager.getClient(key)) this.clientProfiles.delete(key);
@@ -687,9 +690,9 @@ export class TransgenticMcpServer {
     const body = req.body;
 
     const queryMode = (req.query.mode as string | undefined) || defaultMode || sseClient?.targetMode;
-    let resolvedMode: TaskMode | undefined = undefined;
+    let resolvedMode: AcceptedTaskMode | undefined = undefined;
     if (queryMode && ['general', 'coding', 'writing', 'image', 'video', 'audio', 'music'].includes(queryMode)) {
-      resolvedMode = queryMode === 'music' ? 'audio' : (queryMode as TaskMode);
+      resolvedMode = queryMode as AcceptedTaskMode;
     }
 
     res.setHeader('Content-Type', 'application/json');
@@ -780,7 +783,7 @@ export class TransgenticMcpServer {
     const modeProperty = {
       type: 'string',
       enum: ['general', 'coding', 'writing', 'image', 'video', 'audio'],
-      description: 'Optional task mode hint affecting model routing & output structuring.',
+      description: 'Optional task mode hint affecting routing and output structure. Writing is a backend mode with prose guidance that uses the General route configuration.',
     };
 
     return [
@@ -977,7 +980,7 @@ export class TransgenticMcpServer {
     args: any,
     directProvider?: ProviderId,
     abortSignal?: AbortSignal,
-    defaultMode?: TaskMode,
+    defaultMode?: AcceptedTaskMode,
     caller?: CallerContext
   ): Promise<any> {
     if (name === 'get_status') {
@@ -1008,7 +1011,7 @@ export class TransgenticMcpServer {
     const threadId = args.thread_id || args.threadId;
     const newThread = Boolean(args.new_thread ?? args.newThread ?? false);
 
-    let mode: TaskMode = defaultMode || 'general';
+    let mode: AcceptedTaskMode = defaultMode || 'general';
     let provider: ProviderId | undefined = directProvider || args.provider;
     const requestedModel: string | undefined = args.model;
     let isStrictExplicitMode = Boolean(defaultMode);
@@ -1048,6 +1051,7 @@ export class TransgenticMcpServer {
   private async executePipelineCandidateChain(params: {
     candidateProviders: ProviderId[];
     effectiveMode: TaskMode;
+    taskIntent?: TaskIntent;
     maskedText: string;
     contextId: string;
     projectName?: string;
@@ -1081,6 +1085,7 @@ export class TransgenticMcpServer {
     const {
       candidateProviders,
       effectiveMode,
+      taskIntent,
       maskedText,
       projectName,
       requestedModel,
@@ -1121,7 +1126,7 @@ export class TransgenticMcpServer {
           : undefined;
         const cliRequest = { ...params.cliRequest, workspaceId: params.cliRequest?.workspaceId ?? routeWorkspace };
         try {
-          if (!cliSupportsMode(effectiveMode)) throw new Error('CLI services support general, coding and writing modes.');
+          if (!cliSupportsMode(effectiveMode)) throw new Error('CLI services support General, Writing, and Coding text modes. Writing uses the General route configuration.');
           const cfg = ModelRegistryManager.getProviderConfig(providerId);
           if (!ServiceManifestManager.isServiceEnabled(providerId) || cfg?.serviceEnabled === false) throw new Error('CLI service is disabled. Enable it in Settings.');
           if (globalRateLimiter.isRateLimited(providerId)) throw new Error('[RATE_LIMIT] CLI service is cooling down.');
@@ -1204,9 +1209,9 @@ export class TransgenticMcpServer {
             if (isAgenticClient && (isBalanced || (effectiveMode === 'coding' && isLocalMicroTaskEnabled && microTask.isMicroTask))) {
               llmPrompt = microTask.isMicroTask
                 ? wrapBalancedLocalLlmPrompt(llmPrompt, microTask.category)
-                : wrapBalancedAgenticPrompt(llmPrompt, effectiveMode);
+                : wrapBalancedAgenticPrompt(llmPrompt, taskIntent || effectiveMode);
             } else if (isAgenticClient) {
-              llmPrompt = wrapUnbalancedAgenticPrompt(llmPrompt, effectiveMode);
+              llmPrompt = wrapUnbalancedAgenticPrompt(llmPrompt, taskIntent || effectiveMode);
             }
             if (this.config?.recall) {
               llmPrompt = applyRecallPipeline(llmPrompt, this.config.recall, effectiveMode);
@@ -1412,9 +1417,9 @@ export class TransgenticMcpServer {
           let promptToSend = maskedText;
           if (isNewChat) {
             if (isAgenticClient && isBalanced) {
-              promptToSend = wrapBalancedAgenticPrompt(promptToSend, effectiveMode);
+              promptToSend = wrapBalancedAgenticPrompt(promptToSend, taskIntent || effectiveMode);
             } else if (isAgenticClient) {
-              promptToSend = wrapUnbalancedAgenticPrompt(promptToSend, effectiveMode);
+              promptToSend = wrapUnbalancedAgenticPrompt(promptToSend, taskIntent || effectiveMode);
             }
             if (this.config?.recall) {
               promptToSend = applyRecallPipeline(promptToSend, this.config.recall, effectiveMode);
@@ -1451,9 +1456,9 @@ export class TransgenticMcpServer {
                 wasRolledOver = true;
                 let rolloverPrompt = maskedText;
                 if (isAgenticClient && isBalanced) {
-                  rolloverPrompt = wrapBalancedAgenticPrompt(rolloverPrompt, effectiveMode);
+                  rolloverPrompt = wrapBalancedAgenticPrompt(rolloverPrompt, taskIntent || effectiveMode);
                 } else if (isAgenticClient) {
-                  rolloverPrompt = wrapUnbalancedAgenticPrompt(rolloverPrompt, effectiveMode);
+                  rolloverPrompt = wrapUnbalancedAgenticPrompt(rolloverPrompt, taskIntent || effectiveMode);
                 }
                 if (this.config?.recall) {
                   rolloverPrompt = applyRecallPipeline(rolloverPrompt, this.config.recall, effectiveMode);
@@ -1644,7 +1649,7 @@ export class TransgenticMcpServer {
 
   public async orchestratePrompt(
     rawPrompt: string,
-    mode: TaskMode,
+    mode: AcceptedTaskMode,
     forcedProvider?: ProviderId,
     projectName?: string,
     requestedModel?: string,
@@ -1666,12 +1671,12 @@ export class TransgenticMcpServer {
     let reqAbortController: AbortController | null = null;
     const responseProfile: ResponseProfile = isQuickPrompt ? 'plain' : (caller?.profile || 'agentic');
     const isAgenticClient = responseProfile === 'agentic';
-    let effectiveResponseMode = mode;
+    let effectiveResponseMode: TaskMode = normalizeTaskMode(mode);
     let detachAbort: (() => void) | undefined;
 
     try {
       // 2. Intelligent Intent Classification
-      const { mode: effectiveMode, isAutoDetected } = DynamicRouter.classifyMode(rawPrompt, mode, isStrictExplicitMode);
+      const { mode: effectiveMode, intent: taskIntent, isAutoDetected } = DynamicRouter.classifyMode(rawPrompt, mode, isStrictExplicitMode);
       effectiveResponseMode = effectiveMode;
       throwIfCancelled(abortSignal);
       const balancedModeConfig = this.config?.balancedMode ?? this.config?.coding?.balancedMode ?? true;
@@ -1746,6 +1751,7 @@ export class TransgenticMcpServer {
           id: reqId,
           timestamp: startTime,
           mode: effectiveMode,
+          ...(taskIntent ? { intent: taskIntent } : {}),
           targetProvider: 'none',
           status: isAgenticClient ? 'success' : 'failed',
           outcome: isAgenticClient ? 'handoff' : 'failed',
@@ -1780,6 +1786,7 @@ export class TransgenticMcpServer {
         id: reqId,
         timestamp: startTime,
         mode: effectiveMode,
+        ...(taskIntent ? { intent: taskIntent } : {}),
         targetProvider: initialProvider,
         accountProfileId: initialAccount?.id,
         accountAlias: initialAccount?.alias,
@@ -1833,6 +1840,7 @@ export class TransgenticMcpServer {
           () => this.executePipelineCandidateChain({
             candidateProviders: mainCandidates,
             effectiveMode,
+            taskIntent,
             maskedText,
             contextId,
             projectName,
@@ -1857,6 +1865,7 @@ export class TransgenticMcpServer {
           () => this.executePipelineCandidateChain({
             candidateProviders: coCandidates,
             effectiveMode,
+            taskIntent,
             maskedText,
             contextId,
             projectName,
@@ -1911,6 +1920,7 @@ export class TransgenticMcpServer {
         const pipelineResult = await this.executePipelineCandidateChain({
           candidateProviders,
           effectiveMode,
+          taskIntent,
           maskedText,
           contextId,
           projectName,
@@ -2040,6 +2050,7 @@ export class TransgenticMcpServer {
           providerUsed: executionResult.provider,
           modelUsed: executionResult.modelUsed,
           mode: effectiveMode,
+          ...(taskIntent ? { intent: taskIntent } : {}),
           accountUsed: successfulAccount.alias,
           maskedSecretsCount: replacementsCount,
           durationMs: Date.now() - startTime,
@@ -2085,7 +2096,7 @@ export class TransgenticMcpServer {
           ],
           metadata: {
             providerUsed: providerId,
-            mode,
+            mode: effectiveResponseMode,
             agentHaltTriggered: true,
             durationMs: Date.now() - startTime,
           },

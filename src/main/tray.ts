@@ -1,7 +1,7 @@
 import { app, Menu, Tray, nativeImage, NativeImage } from 'electron';
 import { globalMcpServer } from './mcp/server.js';
 import { globalSessionManager } from './webviews/sessionManager.js';
-import { TaskMode } from '../shared/types.js';
+import { RouteMode } from '../shared/types.js';
 
 export class TrayManager {
   private tray: Tray | null = null;
@@ -41,7 +41,7 @@ export class TrayManager {
       };
     });
 
-    const modes: TaskMode[] = ['general', 'coding', 'writing', 'image', 'video', 'audio'];
+    const modes: RouteMode[] = ['general', 'coding', 'image', 'video', 'audio'];
     const modeItems = modes.map((m) => ({
       label: m.toUpperCase(),
       type: 'radio' as const,

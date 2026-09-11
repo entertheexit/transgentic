@@ -3,7 +3,7 @@ import { ServiceManifestManager } from '../src/main/registry/serviceManifest.js'
 import { globalMcpServer } from '../src/main/mcp/server.js';
 import { globalLogStorage } from '../src/main/storage/logStorage.js';
 import { LocalLlmClient } from '../src/main/localllm/localLlmClient.js';
-import { TaskMode, ModeRouteConfig, McpRequestLog } from '../src/shared/types.js';
+import { RouteMode, ModeRouteConfig, McpRequestLog } from '../src/shared/types.js';
 
 describe('Service Manifest & Local LLM Conflict Validation', () => {
   it('should recognize localllm as an enabled first-class service', () => {
@@ -11,11 +11,10 @@ describe('Service Manifest & Local LLM Conflict Validation', () => {
     expect(ServiceManifestManager.getServiceName('localllm')).toBe('Local LLM');
   });
 
-  it('should not produce route conflicts when localllm is configured in general, coding, or writing mode', () => {
-    const mockRoutes: Record<TaskMode, ModeRouteConfig> = {
+  it('should not produce route conflicts when localllm is configured in General or Coding', () => {
+    const mockRoutes: Record<RouteMode, ModeRouteConfig> = {
       general: { primary: 'localllm', fallbacks: ['chatgpt'] },
       coding: { primary: 'localllm', fallbacks: ['claude'] },
-      writing: { primary: 'localllm', fallbacks: ['gemini'] },
       image: { primary: 'chatgpt', fallbacks: [] },
       video: { primary: 'chatgpt', fallbacks: [] },
       audio: { primary: 'gemini', fallbacks: [] },

@@ -72,8 +72,7 @@
       "displayName": "Assistant 1.0 (Standard)",
       "mode": "general",
       "modes": [
-        "general",
-        "writing"
+        "general"
       ]
     },
     {

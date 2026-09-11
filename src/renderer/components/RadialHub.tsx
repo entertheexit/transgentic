@@ -9,7 +9,9 @@ import {
   ServicesManifest,
   isAgentHaltGuardEnabled,
   RouteMatrix,
+  RouteMode,
   ModeRouteConfig,
+  normalizeRouteMode,
 } from '../../shared/types.js';
 import {
   Bot,
@@ -53,9 +55,9 @@ interface RadialHubProps {
   providers: Record<ProviderId, ProviderStatus>;
   logs?: McpRequestLog[];
   onProviderClick: (id: ProviderId) => void;
-  onModeChange: (mode: TaskMode) => void;
+  onModeChange: (mode: RouteMode) => void;
   onToggleBalancedMode?: (enabled?: boolean) => void;
-  onToggleAgentGuard?: (mode: TaskMode, enabled?: boolean) => void;
+  onToggleAgentGuard?: (mode: RouteMode, enabled?: boolean) => void;
   onCoreClick?: () => void;
   onRoutesClick?: () => void;
   onSettingsClick?: () => void;
@@ -67,7 +69,7 @@ interface RadialHubProps {
   servicesManifest?: ServicesManifest | null;
   onOpenAuthModal?: () => void;
   routeMatrix?: RouteMatrix | null;
-  modeRoutes?: Record<TaskMode, ModeRouteConfig>;
+  modeRoutes?: Record<RouteMode, ModeRouteConfig>;
 }
 
 const PROVIDERS_CONFIG: Array<{
@@ -186,11 +188,12 @@ export const RadialHub: React.FC<RadialHubProps> = ({
   });
 
   const isModeServiceSelected = (() => {
-    const mainRoute = routeMatrix?.main?.[coreStatus.activeMode];
+    const routeMode = normalizeRouteMode(coreStatus.activeMode);
+    const mainRoute = routeMatrix?.main?.[routeMode];
     if (mainRoute && mainRoute.defaultService !== undefined) {
       return Boolean(mainRoute.defaultService);
     }
-    const legacyRoute = modeRoutes?.[coreStatus.activeMode];
+    const legacyRoute = modeRoutes?.[routeMode];
     if (legacyRoute && legacyRoute.primary !== undefined) {
       return Boolean(legacyRoute.primary);
     }
@@ -384,7 +387,7 @@ export const RadialHub: React.FC<RadialHubProps> = ({
                         className="sr-only peer"
                       />
                       <div className="w-6 h-3.5 bg-slate-700/80 peer-checked:bg-cyan-500 rounded-full transition-colors border border-white/10 shadow-inner"></div>
-                      <div className="absolute left-[1px] top-[1px] w-2.5 h-2.5 bg-white rounded-full transition-transform peer-checked:translate-x-2.5 pointer-events-none shadow-sm"></div>
+                      <div className="absolute left-[2px] top-[2px] w-2.5 h-2.5 bg-white rounded-full transition-transform peer-checked:translate-x-2.5 pointer-events-none shadow-sm"></div>
                     </div>
                     <span className={`text-[10px] font-mono font-semibold tracking-tight transition-colors ${
                       isBalancedMode ? 'text-cyan-300' : 'text-slate-400 hover:text-slate-300'
@@ -418,12 +421,12 @@ export const RadialHub: React.FC<RadialHubProps> = ({
                         checked={isAgentGuard}
                         onChange={(e) => {
                           soundFx.playClick();
-                          if (onToggleAgentGuard) onToggleAgentGuard(coreStatus.activeMode, e.target.checked);
+                          if (onToggleAgentGuard) onToggleAgentGuard(normalizeRouteMode(coreStatus.activeMode), e.target.checked);
                         }}
                         className="sr-only peer"
                       />
                       <div className="w-6 h-3.5 bg-slate-700/80 peer-checked:bg-emerald-500 rounded-full transition-colors border border-white/10 shadow-inner"></div>
-                      <div className="absolute left-[1px] top-[1px] w-2.5 h-2.5 bg-white rounded-full transition-transform peer-checked:translate-x-2.5 pointer-events-none shadow-sm"></div>
+                      <div className="absolute left-[2px] top-[2px] w-2.5 h-2.5 bg-white rounded-full transition-transform peer-checked:translate-x-2.5 pointer-events-none shadow-sm"></div>
                     </div>
                     <span className={`text-[10px] font-mono font-semibold tracking-tight transition-colors ${
                       isAgentGuard ? 'text-emerald-300' : 'text-slate-400 hover:text-slate-300'
@@ -446,7 +449,7 @@ export const RadialHub: React.FC<RadialHubProps> = ({
                 </div>
 
                 {/* 3. Dual-Consumption Warning Badge (Scenario 2 Active) */}
-                {config?.doubleAgent?.enabled && !isBalancedMode && (config?.doubleAgent?.modes?.[coreStatus.activeMode] ?? true) && (
+                {config?.doubleAgent?.enabled && !isBalancedMode && (config?.doubleAgent?.modes?.[normalizeRouteMode(coreStatus.activeMode)] ?? true) && (
                   <div
                     className="flex items-center gap-1 text-[9.5px] font-mono text-amber-300 bg-amber-500/15 px-2 py-0.5 rounded-md border border-amber-500/30 animate-pulse shadow-[0_0_10px_rgba(245,158,11,0.2)] select-none"
                     title="Scenario 2 Active: Dual Concurrent Dispatch (Main + Co) will consume quota from both services simultaneously."

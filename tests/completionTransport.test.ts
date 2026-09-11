@@ -29,8 +29,14 @@ describe('OpenAI-compatible completion transport', () => {
     expect(response.status).toBe(200);
     const data: any = await response.json();
     const modelIds = data.data.map((model: any) => model.id);
-    expect(modelIds).toEqual(expect.arrayContaining(['transgentic/general', 'transgentic/coding', 'transgentic/writing', 'transgentic/provider/cli_codex']));
+    expect(modelIds).toEqual(expect.arrayContaining(['transgentic/general', 'transgentic/writing', 'transgentic/coding', 'transgentic/provider/cli_codex']));
     expect(new Set(modelIds).size).toBe(modelIds.length);
+  });
+
+  it('advertises Writing as a backend model that uses the General route configuration', async () => {
+    const response = await fetch(`http://127.0.0.1:${port}/v1/chat/completions`, { method: 'POST', headers: { Authorization: 'Bearer transport-token', 'Content-Type': 'application/json' }, body: JSON.stringify({ model: 'transgentic/writing', messages: [{ role: 'user', content: 'Draft a scene' }] }) });
+    expect(response.status).toBe(200);
+    expect(DynamicRouter.getRule).toHaveBeenCalledWith('writing', 'main');
   });
 
   it('starts a fresh CLI completion and returns an OpenAI response', async () => {

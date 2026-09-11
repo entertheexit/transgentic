@@ -44,7 +44,7 @@ describe('Recall & Context Memory Engine Handler', () => {
     expect(output).toContain(samplePrompt);
   });
 
-  it('respects per-mode recall configuration (general, coding, writing, image, video, audio)', () => {
+  it('respects per-mode recall configuration across the five canonical modes', () => {
     const config: RecallConfig = {
       enabled: true,
       strategy: 'single-pass',
@@ -52,7 +52,6 @@ describe('Recall & Context Memory Engine Handler', () => {
       modes: {
         general: true,
         coding: true,
-        writing: false,
         image: false,
         video: true,
         audio: false,
@@ -63,6 +62,7 @@ describe('Recall & Context Memory Engine Handler', () => {
     const generalOutput = applyRecallPipeline(samplePrompt, config, 'general');
     expect(generalOutput).toContain('[SYSTEM DIRECTIVE: RECALL & HISTORICAL CONTEXT]');
     expect(generalOutput).toContain(samplePrompt);
+    expect(applyRecallPipeline(samplePrompt, config, 'writing')).toBe(generalOutput);
 
     const codingOutput = applyRecallPipeline(samplePrompt, config, 'coding');
     expect(codingOutput).toContain('[SYSTEM DIRECTIVE: RECALL & HISTORICAL CONTEXT]');
@@ -71,9 +71,6 @@ describe('Recall & Context Memory Engine Handler', () => {
     expect(videoOutput).toContain('[SYSTEM DIRECTIVE: RECALL & HISTORICAL CONTEXT]');
 
     // Disabled modes return rawPrompt unchanged
-    const writingOutput = applyRecallPipeline(samplePrompt, config, 'writing');
-    expect(writingOutput).toBe(samplePrompt);
-
     const imageOutput = applyRecallPipeline(samplePrompt, config, 'image');
     expect(imageOutput).toBe(samplePrompt);
 
@@ -89,7 +86,6 @@ describe('Recall & Context Memory Engine Handler', () => {
       modes: {
         general: true,
         coding: true,
-        writing: true,
         image: true,
         video: true,
         audio: true,

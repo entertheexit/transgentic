@@ -3,7 +3,7 @@ import { globalCliRuntime } from '../cli/cliRuntimeManager.js';
 import fs from 'fs';
 import path from 'path';
 import { app } from 'electron';
-import { ModeRouteConfig, ProviderId, TaskMode, LocalLLMConfig, ModePipelineConfig, RouteMatrix } from '../../shared/types.js';
+import { ModeRouteConfig, ProviderId, TaskMode, LocalLLMConfig, ModePipelineConfig, RouteMatrix, TASK_MODES, TaskIntent, normalizeTaskMode, normalizeRouteMode, type AcceptedTaskMode, type RouteMode } from '../../shared/types.js';
 import { globalRateLimiter } from './rateLimiter.js';
 import { globalCircuitBreaker } from './circuitBreaker.js';
 import { ServiceManifestManager } from '../registry/serviceManifest.js';
@@ -28,16 +28,6 @@ export class DynamicRouter {
         fallbackChain: ['chatgpt', 'gemini', 'grok'],
         fallbacks: ['chatgpt', 'gemini', 'grok'],
         outputFormat: 'json_code',
-        modelRouting: {},
-        providerModels: {},
-      },
-      writing: {
-        mode: 'writing',
-        defaultService: 'chatgpt',
-        primary: 'chatgpt',
-        fallbackChain: ['claude', 'grok', 'gemini'],
-        fallbacks: ['claude', 'grok', 'gemini'],
-        outputFormat: 'prose_markdown',
         modelRouting: {},
         providerModels: {},
       },
@@ -89,14 +79,6 @@ export class DynamicRouter {
         fallbacks: ['gemini', 'grok'],
         outputFormat: 'json_code',
       },
-      writing: {
-        mode: 'writing',
-        defaultService: 'claude',
-        primary: 'claude',
-        fallbackChain: ['grok', 'gemini'],
-        fallbacks: ['grok', 'gemini'],
-        outputFormat: 'prose_markdown',
-      },
       image: {
         mode: 'image',
         defaultService: 'chatgpt',
@@ -137,42 +119,51 @@ export class DynamicRouter {
     return path.join(process.cwd(), 'mode_routes.json');
   }
 
+  public static migrateRouteMatrix(raw: any): RouteMatrix {
+    const defaults: RouteMatrix = JSON.parse(JSON.stringify(this.DEFAULT_ROUTE_MATRIX));
+    const isMatrix = Boolean(raw?.main || raw?.co);
+    const legacyMain = isMatrix ? { ...(raw?.main || {}) } : { ...(raw || {}) };
+    const legacyCo = isMatrix ? { ...(raw?.co || {}) } : {};
+
+    const migratePipeline = (source: Record<string, any>, fallback: RouteMatrix['main']): RouteMatrix['main'] => {
+      const migrated: any = JSON.parse(JSON.stringify(fallback));
+      if (!Object.prototype.hasOwnProperty.call(source, 'general') && source.writing) {
+        source.general = source.writing;
+      }
+      for (const mode of TASK_MODES) {
+        const existing = migrated[mode];
+        const candidate = source[mode] || existing;
+        const primary = candidate.primary || candidate.defaultService || existing.primary;
+        const fallbacks = candidate.fallbacks || candidate.fallbackChain || existing.fallbacks || [];
+        migrated[mode] = {
+          ...existing,
+          ...candidate,
+          mode,
+          primary,
+          defaultService: primary,
+          fallbacks,
+          fallbackChain: fallbacks,
+          modelRouting: candidate.modelRouting || candidate.providerModels || existing.modelRouting || {},
+          providerModels: candidate.providerModels || candidate.modelRouting || existing.providerModels || {},
+        };
+      }
+      return migrated;
+    };
+
+    return {
+      main: migratePipeline(legacyMain, defaults.main),
+      co: migratePipeline(legacyCo, defaults.co),
+    };
+  }
+
   public static loadPersistedRoutes(): void {
     try {
       const filePath = this.getStoragePath();
       if (fs.existsSync(filePath)) {
         const raw = fs.readFileSync(filePath, 'utf-8');
         const parsed = JSON.parse(raw);
-        if (parsed.main && parsed.co) {
-          // New format
-          this.currentRoutes = {
-            main: { ...this.DEFAULT_ROUTE_MATRIX.main, ...parsed.main },
-            co: { ...this.DEFAULT_ROUTE_MATRIX.co, ...parsed.co },
-          };
-          this.normalizeMatrix();
-        } else if (parsed.general || parsed.coding) {
-          // Legacy format migration
-          const migratedMain: any = { ...this.DEFAULT_ROUTE_MATRIX.main };
-          for (const mode of Object.keys(this.DEFAULT_ROUTE_MATRIX.main) as TaskMode[]) {
-            if (parsed[mode]) {
-              const primary = parsed[mode].primary || parsed[mode].defaultService || migratedMain[mode].primary;
-              const fallbacks = parsed[mode].fallbacks || parsed[mode].fallbackChain || migratedMain[mode].fallbacks;
-              migratedMain[mode] = {
-                ...migratedMain[mode],
-                ...parsed[mode],
-                primary,
-                defaultService: primary,
-                fallbacks,
-                fallbackChain: fallbacks,
-                modelRouting: parsed[mode].modelRouting || parsed[mode].providerModels,
-                providerModels: parsed[mode].providerModels || parsed[mode].modelRouting,
-              };
-            }
-          }
-          this.currentRoutes = {
-            main: migratedMain,
-            co: JSON.parse(JSON.stringify(this.DEFAULT_ROUTE_MATRIX.co)),
-          };
+        if (parsed.main || parsed.co || parsed.general || parsed.coding || parsed.writing) {
+          this.currentRoutes = this.migrateRouteMatrix(parsed);
           this.normalizeMatrix();
           this.savePersistedRoutes();
         } else {
@@ -186,7 +177,7 @@ export class DynamicRouter {
     }
   }
 
-  public static enforceMutualExclusion(mode: TaskMode): void {
+  public static enforceMutualExclusion(mode: RouteMode): void {
     const mainPrimary = this.currentRoutes.main[mode].defaultService !== undefined
       ? this.currentRoutes.main[mode].defaultService
       : this.currentRoutes.main[mode].primary;
@@ -209,8 +200,7 @@ export class DynamicRouter {
   }
 
   public static normalizeMatrix(): void {
-    const modes: TaskMode[] = ['general', 'coding', 'writing', 'image', 'video', 'audio'];
-    for (const mode of modes) {
+    for (const mode of TASK_MODES) {
       // Normalize Main
       const m = this.currentRoutes.main[mode];
       const mPrimary = (m.defaultService !== undefined ? m.defaultService : (m.primary !== undefined ? m.primary : 'chatgpt')) as ProviderId;
@@ -254,17 +244,18 @@ export class DynamicRouter {
     return JSON.parse(JSON.stringify(this.currentRoutes));
   }
 
-  public static getAllRouteConfigs(): Record<TaskMode, ModeRouteConfig> {
+  public static getAllRouteConfigs(): Record<RouteMode, ModeRouteConfig> {
     return JSON.parse(JSON.stringify(this.currentRoutes.main));
   }
 
   public static getRule(mode: TaskMode, pipeline: 'main' | 'co' = 'main'): ModePipelineConfig {
     const matrix = this.currentRoutes[pipeline] || this.currentRoutes.main;
-    return matrix[mode] || matrix.general || this.DEFAULT_ROUTE_MATRIX[pipeline].general;
+    const routeMode = normalizeRouteMode(mode);
+    return matrix[routeMode] || matrix.general || this.DEFAULT_ROUTE_MATRIX[pipeline].general;
   }
 
   public static updateRouteConfig(
-    mode: TaskMode,
+    mode: RouteMode,
     config: Partial<ModePipelineConfig> | Partial<ModeRouteConfig>,
     pipeline: 'main' | 'co' = 'main'
   ): ModePipelineConfig {
@@ -326,8 +317,8 @@ export class DynamicRouter {
    */
   public static removeProviderFromAllRoutes(providerId: string): void {
     if (!this.currentRoutes) return;
-    const cleanSection = (section: Record<TaskMode, ModePipelineConfig>) => {
-      for (const mode of Object.keys(section) as TaskMode[]) {
+    const cleanSection = (section: Record<RouteMode, ModePipelineConfig>) => {
+      for (const mode of Object.keys(section) as RouteMode[]) {
         const config = section[mode];
         if (config.primary === providerId || config.defaultService === providerId) {
           const fallback = config.fallbacks?.find((f) => f !== providerId) ||
@@ -403,7 +394,7 @@ export class DynamicRouter {
     }
 
     // 4. Check manifest for any enabled model matching this mode
-    const modeModels = ServiceManifestManager.getModelsForMode(providerId, mode);
+    const modeModels = ServiceManifestManager.getModelsForMode(providerId, normalizeRouteMode(mode));
     const availableModeModel = modeModels.find((m) => m.enabled !== false);
     if (availableModeModel) {
       return availableModeModel.id;
@@ -414,7 +405,7 @@ export class DynamicRouter {
     return manifest.services[providerId]?.defaultModelId || null;
   }
 
-  public static resetRoutes(): Record<TaskMode, ModeRouteConfig> {
+  public static resetRoutes(): Record<RouteMode, ModeRouteConfig> {
     this.currentRoutes = JSON.parse(JSON.stringify(this.DEFAULT_ROUTE_MATRIX));
     this.savePersistedRoutes();
     return JSON.parse(JSON.stringify(this.currentRoutes.main));
@@ -436,7 +427,8 @@ export class DynamicRouter {
   }
 
   public static isLocalLlmSupportedForMode(mode: TaskMode): boolean {
-    return mode === 'general' || mode === 'coding' || mode === 'writing';
+    const routeMode = normalizeRouteMode(mode);
+    return routeMode === 'general' || routeMode === 'coding';
   }
 
   public static isProviderEnabled(p: ProviderId, mode?: TaskMode): boolean {
@@ -455,7 +447,7 @@ export class DynamicRouter {
     if (p === 'localllm') {
       return this.isLocalLlmSupportedForMode(mode);
     }
-    return ServiceManifestManager.providerSupportsMode(p, mode);
+    return ServiceManifestManager.providerSupportsMode(p, normalizeRouteMode(mode));
   }
 
   /**
@@ -571,13 +563,14 @@ export class DynamicRouter {
    */
   public static classifyMode(
     prompt: string,
-    explicitMode?: TaskMode | 'auto',
+    explicitMode?: AcceptedTaskMode | 'auto',
     isStrictExplicit: boolean = false
-  ): { mode: TaskMode; isAutoDetected: boolean } {
-    const normalizedExplicit = explicitMode === ('music' as any) ? 'audio' : explicitMode;
-    if (normalizedExplicit && normalizedExplicit !== 'auto') {
-      if (isStrictExplicit || normalizedExplicit !== 'general') {
-        return { mode: normalizedExplicit as TaskMode, isAutoDetected: false };
+  ): { mode: TaskMode; intent?: TaskIntent; isAutoDetected: boolean } {
+    const explicitIntent = explicitMode === 'writing' ? 'writing' : undefined;
+    const normalizedExplicit = explicitMode === 'auto' ? 'auto' : normalizeTaskMode(explicitMode);
+    if (explicitMode && normalizedExplicit !== 'auto') {
+      if (isStrictExplicit || normalizedExplicit !== 'general' || explicitIntent) {
+        return { mode: normalizedExplicit, ...(explicitIntent ? { intent: explicitIntent } : {}), isAutoDetected: false };
       }
     }
 
@@ -589,6 +582,17 @@ export class DynamicRouter {
     const hasDevTerms = /\b(refactor|debug|fix\s+bug|syntax\s+error|stack\s+trace|compile|build\s+error|pull\s+request|git\s+diff|ast|typescript|javascript|python|rust|golang|c\+\+|flutter|dart|react|vitest|jest|pytest|dockerfile|package\.json|cargo\.toml|tsconfig)\b/.test(p);
     const hasFileExtensions = /\b[\w-]+\.(ts|tsx|js|jsx|py|rs|go|dart|cpp|h|c|json|yaml|yml|html|css|sql|sh|toml)\b/.test(prompt);
     const hasThaiCoding = /(เขียนโค้ด|แก้บั๊ก|แก้โค้ด|เขียนโปรแกรม|ช่วยเขียนโค้ด|เขียนสคริปต์|ช่วยดีบั๊ก)/.test(prompt);
+
+    // Writing keeps its backend identity while sharing General's route. Check it
+    // before file extensions so novel.md and structured novel.json remain writing
+    // artifacts. Explicit development language still wins.
+    const hasWritingAction = /\b(write|draft|summarize|rewrite|proofread|translate|compose|edit)\b[\s\S]{0,48}\b(essay|article|blog\s+post|story|email|cover\s+letter|poem|script|novel|chapter|manuscript|book|outline|synopsis|prose|markdown|character\s+(?:profile|biography))\b/.test(p);
+    const hasWritingArtifact = /\.(?:md|markdown|json)\b/i.test(prompt) && /\b(novel|chapter|manuscript|story|book|outline|synopsis|prose|character)\b/.test(p);
+    const hasThaiWriting = /(เขียนบทความ|เขียนเรียงความ|แปลภาษา|ตรวจคำผิด|สรุปบทความ|เขียนอีเมล|เขียนนิยาย|เขียนเรื่อง|เขียนบท|ร่างบท)/.test(prompt);
+
+    if ((hasWritingAction || hasWritingArtifact || hasThaiWriting) && !hasCodeBlock && !hasDevTerms && !hasThaiCoding) {
+      return { mode: 'writing', intent: 'writing', isAutoDetected: true };
+    }
 
     if (hasCodeBlock || (hasCodeKeywords && hasDevTerms) || hasDevTerms || hasFileExtensions || hasThaiCoding) {
       return { mode: 'coding', isAutoDetected: true };
@@ -622,15 +626,7 @@ export class DynamicRouter {
       return { mode: 'audio', isAutoDetected: true };
     }
 
-    // 5. Writing intent
-    const hasWritingAction = /\b(write|draft|summarize|rewrite|proofread|translate|compose)\s+(an?\s+)?(essay|article|blog\s+post|story|email|cover\s+letter|poem|script)\b/.test(p);
-    const hasThaiWriting = /(เขียนบทความ|เขียนเรียงความ|แปลภาษา|ตรวจคำผิด|สรุปบทความ|เขียนอีเมล)/.test(prompt);
-
-    if (hasWritingAction || hasThaiWriting) {
-      return { mode: 'writing', isAutoDetected: true };
-    }
-
-    return { mode: (normalizedExplicit as TaskMode) || 'general', isAutoDetected: false };
+    return { mode: normalizedExplicit === 'auto' ? 'general' : normalizedExplicit, isAutoDetected: false };
   }
 }
 

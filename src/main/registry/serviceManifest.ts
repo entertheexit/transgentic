@@ -3,10 +3,21 @@ import { builtInCliServices } from '../../shared/cli.js';
 import path from "path";
 import { fileURLToPath } from "url";
 import { app } from "electron";
-import { ModeRouteConfig, ProviderId, ServiceManifestEntry, ServiceModelDef, ServiceRouteConflict, ServicesManifest, TaskMode } from "../../shared/types.js";
+import { ModeRouteConfig, ProviderId, ServiceManifestEntry, ServiceModelDef, ServiceRouteConflict, ServicesManifest, RouteMode, normalizeRouteMode } from "../../shared/types.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+function normalizeModelModes<T extends ServiceModelDef>(model: T): T {
+  const modes = Array.isArray(model.modes)
+    ? Array.from(new Set(model.modes.map(normalizeRouteMode)))
+    : model.modes;
+  return {
+    ...model,
+    mode: model.mode ? normalizeRouteMode(model.mode) : model.mode,
+    ...(modes ? { modes } : {}),
+  } as T;
+}
 
 export class ServiceManifestManager {
   private static readonly DEFAULT_MANIFEST: ServicesManifest = {
@@ -34,10 +45,10 @@ export class ServiceManifestManager {
           glowClass: "shadow-[0_0_15px_rgba(16,185,129,0.15)]",
         },
         models: [
-          { id: "gpt-4o", displayName: "GPT-4o (Omni & Multimodal)", enabled: true, discoveredAvailable: true, userEnabled: true, requiresTier: "Free/Plus", mode: "general", modes: ["general", "coding", "writing", "image"] },
-          { id: "o1", displayName: "o1 (Deep Reasoning)", enabled: true, discoveredAvailable: true, userEnabled: true, requiresTier: "Plus/Pro", mode: "general", modes: ["general", "coding", "writing"] },
-          { id: "o3-mini", displayName: "o3-mini (High Speed Reasoning)", enabled: true, discoveredAvailable: true, userEnabled: true, requiresTier: "Free/Plus", mode: "coding", modes: ["coding", "general", "writing"] },
-          { id: "gpt-4o-mini", displayName: "GPT-4o mini (Lightweight)", enabled: true, discoveredAvailable: true, userEnabled: true, requiresTier: "Free", mode: "general", modes: ["general", "coding", "writing"] },
+          { id: "gpt-4o", displayName: "GPT-4o (Omni & Multimodal)", enabled: true, discoveredAvailable: true, userEnabled: true, requiresTier: "Free/Plus", mode: "general", modes: ["general", "coding", "image"] },
+          { id: "o1", displayName: "o1 (Deep Reasoning)", enabled: true, discoveredAvailable: true, userEnabled: true, requiresTier: "Plus/Pro", mode: "general", modes: ["general", "coding"] },
+          { id: "o3-mini", displayName: "o3-mini (High Speed Reasoning)", enabled: true, discoveredAvailable: true, userEnabled: true, requiresTier: "Free/Plus", mode: "coding", modes: ["coding", "general"] },
+          { id: "gpt-4o-mini", displayName: "GPT-4o mini (Lightweight)", enabled: true, discoveredAvailable: true, userEnabled: true, requiresTier: "Free", mode: "general", modes: ["general", "coding"] },
         ],
       },
       claude: {
@@ -61,9 +72,9 @@ export class ServiceManifestManager {
           glowClass: "shadow-[0_0_15px_rgba(245,158,11,0.15)]",
         },
         models: [
-          { id: "claude-3-5-sonnet", displayName: "Claude 3.5 Sonnet (Coding & Reasoning)", enabled: true, discoveredAvailable: true, userEnabled: true, requiresTier: "Free/Pro", mode: "coding", modes: ["general", "coding", "writing"] },
-          { id: "claude-3-opus", displayName: "Claude 3 Opus (High Intelligence)", enabled: true, discoveredAvailable: true, userEnabled: true, requiresTier: "Pro", mode: "writing", modes: ["general", "coding", "writing"] },
-          { id: "claude-3-5-haiku", displayName: "Claude 3.5 Haiku (Lightning Fast)", enabled: true, discoveredAvailable: true, userEnabled: true, requiresTier: "Free/Pro", mode: "general", modes: ["general", "coding", "writing"] },
+          { id: "claude-3-5-sonnet", displayName: "Claude 3.5 Sonnet (Coding & Reasoning)", enabled: true, discoveredAvailable: true, userEnabled: true, requiresTier: "Free/Pro", mode: "coding", modes: ["general", "coding"] },
+          { id: "claude-3-opus", displayName: "Claude 3 Opus (High Intelligence)", enabled: true, discoveredAvailable: true, userEnabled: true, requiresTier: "Pro", mode: "general", modes: ["general", "coding"] },
+          { id: "claude-3-5-haiku", displayName: "Claude 3.5 Haiku (Lightning Fast)", enabled: true, discoveredAvailable: true, userEnabled: true, requiresTier: "Free/Pro", mode: "general", modes: ["general", "coding"] },
         ],
       },
       gemini: {
@@ -87,10 +98,10 @@ export class ServiceManifestManager {
           glowClass: "shadow-[0_0_15px_rgba(59,130,246,0.15)]",
         },
         models: [
-          { id: "gemini-2-0-flash", displayName: "Gemini 2.0 Flash (Next-Gen Multimodal)", enabled: true, discoveredAvailable: true, userEnabled: true, requiresTier: "Free/Advanced", mode: "general", modes: ["general", "coding", "writing", "image", "video", "audio"] },
-          { id: "gemini-2-0-pro", displayName: "Gemini 2.0 Pro Experimental", enabled: true, discoveredAvailable: true, userEnabled: true, requiresTier: "Advanced", mode: "general", modes: ["general", "coding", "writing", "image", "video", "audio"] },
-          { id: "gemini-1-5-flash", displayName: "Gemini 1.5 Flash (Fast)", enabled: true, discoveredAvailable: true, userEnabled: true, requiresTier: "Free", mode: "general", modes: ["general", "coding", "writing", "video", "audio"] },
-          { id: "gemini-1-5-pro", displayName: "Gemini 1.5 Pro (2M Context)", enabled: true, discoveredAvailable: true, userEnabled: true, requiresTier: "Free/Advanced", mode: "general", modes: ["general", "coding", "writing", "video", "audio"] },
+          { id: "gemini-2-0-flash", displayName: "Gemini 2.0 Flash (Next-Gen Multimodal)", enabled: true, discoveredAvailable: true, userEnabled: true, requiresTier: "Free/Advanced", mode: "general", modes: ["general", "coding", "image", "video", "audio"] },
+          { id: "gemini-2-0-pro", displayName: "Gemini 2.0 Pro Experimental", enabled: true, discoveredAvailable: true, userEnabled: true, requiresTier: "Advanced", mode: "general", modes: ["general", "coding", "image", "video", "audio"] },
+          { id: "gemini-1-5-flash", displayName: "Gemini 1.5 Flash (Fast)", enabled: true, discoveredAvailable: true, userEnabled: true, requiresTier: "Free", mode: "general", modes: ["general", "coding", "video", "audio"] },
+          { id: "gemini-1-5-pro", displayName: "Gemini 1.5 Pro (2M Context)", enabled: true, discoveredAvailable: true, userEnabled: true, requiresTier: "Free/Advanced", mode: "general", modes: ["general", "coding", "video", "audio"] },
         ],
       },
       grok: {
@@ -114,9 +125,9 @@ export class ServiceManifestManager {
           glowClass: "shadow-[0_0_15px_rgba(168,85,247,0.15)]",
         },
         models: [
-          { id: "grok-3", displayName: "Grok 3 (State-of-the-Art)", enabled: true, discoveredAvailable: true, userEnabled: true, requiresTier: "Premium", mode: "general", modes: ["general", "coding", "writing", "video"] },
-          { id: "grok-3-think", displayName: "Grok 3 Think / DeepSearch", enabled: true, discoveredAvailable: true, userEnabled: true, requiresTier: "Premium+", mode: "general", modes: ["general", "coding", "writing", "video"] },
-          { id: "grok-2", displayName: "Grok 2 (Speed & Coding)", enabled: true, discoveredAvailable: true, userEnabled: true, requiresTier: "Premium", mode: "coding", modes: ["general", "coding", "writing"] },
+          { id: "grok-3", displayName: "Grok 3 (State-of-the-Art)", enabled: true, discoveredAvailable: true, userEnabled: true, requiresTier: "Premium", mode: "general", modes: ["general", "coding", "video"] },
+          { id: "grok-3-think", displayName: "Grok 3 Think / DeepSearch", enabled: true, discoveredAvailable: true, userEnabled: true, requiresTier: "Premium+", mode: "general", modes: ["general", "coding", "video"] },
+          { id: "grok-2", displayName: "Grok 2 (Speed & Coding)", enabled: true, discoveredAvailable: true, userEnabled: true, requiresTier: "Premium", mode: "coding", modes: ["general", "coding"] },
           { id: "grok-2-vision", displayName: "Grok 2 Vision / Imagine", enabled: true, discoveredAvailable: true, userEnabled: true, requiresTier: "Premium", mode: "image", modes: ["image", "video", "general"] },
         ],
       },
@@ -142,7 +153,7 @@ export class ServiceManifestManager {
           glowClass: "shadow-[0_0_15px_rgba(6,182,212,0.15)]",
         },
         models: [
-          { id: "default", displayName: "Local Model (Auto-detected)", enabled: true, discoveredAvailable: true, userEnabled: true, requiresTier: "Local", mode: "general", modes: ["general", "coding", "writing"] },
+          { id: "default", displayName: "Local Model (Auto-detected)", enabled: true, discoveredAvailable: true, userEnabled: true, requiresTier: "Local", mode: "general", modes: ["general", "coding"] },
         ],
       },
     },
@@ -228,8 +239,8 @@ export class ServiceManifestManager {
                 const userService = srvData as any;
                 
                 // Merge models: ensure all preset models from ai_services.json are preserved
-                const baseModels = Array.isArray(baseService.models) ? baseService.models : [];
-                const userModels = Array.isArray(userService.models) ? userService.models : [];
+                const baseModels = Array.isArray(baseService.models) ? baseService.models.map(normalizeModelModes) : [];
+                const userModels = Array.isArray(userService.models) ? userService.models.map(normalizeModelModes) : [];
                 
                 const mergedModelsMap = new Map<string, any>();
                 // Seed with authoritative baseline models from ai_services.json
@@ -258,6 +269,7 @@ export class ServiceManifestManager {
                 };
               } else if (srvId.startsWith('api_') || srvId.startsWith('webview_') || srvId.startsWith('custom_') || srvId.startsWith('recipe_')) {
                 const srv = { ...(srvData as any) };
+                if (Array.isArray(srv.models)) srv.models = srv.models.map(normalizeModelModes);
                 if (srv.providerType === 'api' || srvId.startsWith('api_')) {
                   if (srv.iconName === 'Key' || srv.iconName === 'Server' || !srv.iconName) {
                     srv.iconName = 'Braces';
@@ -274,6 +286,9 @@ export class ServiceManifestManager {
       console.warn("[ServiceManifestManager] User data ai_services.json read warning:", err.message);
     }
 
+    for (const service of Object.values(baseManifest.services)) {
+      if (Array.isArray(service.models)) service.models = service.models.map(normalizeModelModes);
+    }
     this.currentManifest = baseManifest;
     this.notify();
     return this.currentManifest;
@@ -282,6 +297,9 @@ export class ServiceManifestManager {
   public static saveManifest(newManifest?: ServicesManifest): void {
     if (newManifest) {
       this.currentManifest = newManifest;
+    }
+    for (const service of Object.values(this.currentManifest.services)) {
+      if (Array.isArray(service.models)) service.models = service.models.map(normalizeModelModes);
     }
     const savePath = this.getUserDataFilePath();
     try {
@@ -490,7 +508,7 @@ export class ServiceManifestManager {
           discoveredAvailable: true,
           userEnabled: true,
           mode: "general",
-          modes: ["general", "coding", "writing"],
+          modes: ["general", "coding"],
         },
       ],
     };
@@ -523,7 +541,7 @@ export class ServiceManifestManager {
             discoveredAvailable: true,
             userEnabled: true,
             mode: "general",
-            modes: ["general", "coding", "writing"],
+            modes: ["general", "coding"],
           });
         }
       }
@@ -608,14 +626,14 @@ export class ServiceManifestManager {
     return service?.supportsModelRouting === true;
   }
 
-  public static getModelsForMode(id: ProviderId, mode: TaskMode): ServiceModelDef[] {
+  public static getModelsForMode(id: ProviderId, mode: RouteMode): ServiceModelDef[] {
     const service = this.currentManifest.services[id];
     if (!service) return [];
     const isApi = service.providerType === 'api' || id.startsWith('api_');
     if (!Array.isArray(service.models) || service.models.length === 0) {
-      if (isApi && (mode === 'general' || mode === 'coding' || mode === 'writing')) {
+      if (isApi && (mode === 'general' || mode === 'coding')) {
         const defaultModel = service.defaultModelId || 'default';
-        return [{ id: defaultModel, displayName: defaultModel, enabled: true, discoveredAvailable: true, userEnabled: true, mode: 'general', modes: ['general', 'coding', 'writing'] }];
+        return [{ id: defaultModel, displayName: defaultModel, enabled: true, discoveredAvailable: true, userEnabled: true, mode: 'general', modes: ['general', 'coding'] }];
       }
       return [];
     }
@@ -624,16 +642,16 @@ export class ServiceManifestManager {
       if (Array.isArray(m.modes) && m.modes.includes(mode)) return true;
       // If mode is 'general' and no explicit mode is defined, include it
       if (mode === 'general' && !m.mode && (!m.modes || m.modes.length === 0)) return true;
-      if (isApi && (mode === 'general' || mode === 'coding' || mode === 'writing') && (!m.modes || m.modes.length === 0)) return true;
+      if (isApi && (mode === 'general' || mode === 'coding') && (!m.modes || m.modes.length === 0)) return true;
       return false;
     });
-    if (matched.length === 0 && isApi && (mode === 'general' || mode === 'coding' || mode === 'writing')) {
+    if (matched.length === 0 && isApi && (mode === 'general' || mode === 'coding')) {
       return service.models;
     }
     return matched;
   }
 
-  public static providerSupportsMode(providerId: ProviderId, mode: TaskMode): boolean {
+  public static providerSupportsMode(providerId: ProviderId, mode: RouteMode): boolean {
     const models = this.getModelsForMode(providerId, mode);
     return models.length > 0;
   }
@@ -666,10 +684,10 @@ export class ServiceManifestManager {
   /**
    * Checks for conflicts between user routes and developer-disabled services.
    */
-  public static checkRouteConflicts(modeRoutes: Record<TaskMode, ModeRouteConfig>): ServiceRouteConflict[] {
+  public static checkRouteConflicts(modeRoutes: Record<RouteMode, ModeRouteConfig>): ServiceRouteConflict[] {
     const conflicts: ServiceRouteConflict[] = [];
 
-    for (const [modeKey, route] of Object.entries(modeRoutes) as Array<[TaskMode, ModeRouteConfig]>) {
+    for (const [modeKey, route] of Object.entries(modeRoutes) as Array<[RouteMode, ModeRouteConfig]>) {
       if (!route) continue;
 
       // Check primary provider

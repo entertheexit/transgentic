@@ -1,24 +1,23 @@
 import React from 'react';
-import { TaskMode } from '../../shared/types.js';
-import { Sparkles, Code, PenTool, Image, Video, Volume2 } from 'lucide-react';
+import { RouteMode, TaskMode } from '../../shared/types.js';
+import { Sparkles, Code, Image, Video, Volume2 } from 'lucide-react';
 import { soundFx } from '../audio/soundFx.js';
 
 interface ModeSelectorProps {
   activeMode: TaskMode;
-  onChange: (mode: TaskMode) => void;
+  onChange: (mode: RouteMode) => void;
 }
 
-const MODES: Array<{ id: TaskMode; label: string; icon: React.ComponentType<{ className?: string }> }> = [
+const MODES: Array<{ id: RouteMode; label: string; icon: React.ComponentType<{ className?: string }> }> = [
   { id: 'general', label: 'General', icon: Sparkles },
   { id: 'coding', label: 'Coding', icon: Code },
-  { id: 'writing', label: 'Writing', icon: PenTool },
   { id: 'image', label: 'Image', icon: Image },
   { id: 'video', label: 'Video', icon: Video },
   { id: 'audio', label: 'Audio', icon: Volume2 },
 ];
 
 export const ModeSelector: React.FC<ModeSelectorProps> = ({ activeMode, onChange }) => {
-  const handleSelect = (mode: TaskMode, idx: number) => {
+  const handleSelect = (mode: RouteMode, idx: number) => {
     soundFx.playModeSwitch(idx);
     onChange(mode);
   };
@@ -26,7 +25,7 @@ export const ModeSelector: React.FC<ModeSelectorProps> = ({ activeMode, onChange
     <div className="w-full px-4">
       <div className="bg-black/50 backdrop-blur-md p-1 rounded-2xl border border-white/10 flex items-center justify-between shadow-inner gap-0.5">
         {MODES.map(({ id, label, icon: Icon }, idx) => {
-          const isActive = activeMode === id;
+          const isActive = activeMode === id || (activeMode === 'writing' && id === 'general');
           return (
             <button
               key={id}

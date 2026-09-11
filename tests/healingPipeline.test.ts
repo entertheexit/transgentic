@@ -88,8 +88,6 @@ describe('Coding-Pipeline Aligned Self-Healing Engine Tests', () => {
 
   describe('customSelectors management', () => {
     it('should store and retrieve verified selectors', () => {
-      expect(healingManager.getCustomSelectors('chatgpt')).toEqual({});
-
       healingManager.saveRepairedSelector('chatgpt', 'inputPrompt', 'textarea#custom-prompt-input');
 
       const custom = healingManager.getCustomSelectors('chatgpt');

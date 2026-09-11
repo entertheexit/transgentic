@@ -105,19 +105,21 @@ These connections supply a default task mode while leaving provider selection to
 | Mode | Purpose and reason to choose it | Streamable HTTP | SSE |
 | :--- | :--- | :--- | :--- |
 | General | Text questions and discussion using the general route. | `/general/mcp` | `/general/sse` |
+| Writing | Prose and long-form work with Writing guidance using the General route configuration. | `/writing/mcp` | `/writing/sse` |
 | Coding | Code, tests, and technical review using the coding route. | `/coding/mcp` | `/coding/sse` |
-| Writing | Drafting and editing prose using the writing route. | `/writing/mcp` | `/writing/sse` |
 | Image | Image or storyboard requests that need image-mode routing rather than a text-only answer. | `/image/mcp` | `/image/sse` |
 | Video | Video requests using configured video-capable candidates and extraction rules. | `/video/mcp` | `/video/sse` |
 | Audio | Audio or music requests using configured audio-capable candidates and extraction rules. | `/audio/mcp` | `/audio/sse` |
 
 For example, a storyboard application can connect to `/image/mcp` and call `prompt_model` without repeating the image mode on every request. Routing still depends on your enabled providers and available accounts. Local text models are not media generators, and a media request may fail or return without a saved artifact.
 
+Writing remains a distinct backend request mode. `/writing/mcp`, `/writing/sse`, explicit `mode: "writing"`, and the `transgentic/writing` completion model retain Writing guidance and identity. They share General's configured provider route and per-mode policies, so no separate Writing route appears in the desktop controls.
+
 ### Combining provider and mode choices
 
 - **One provider, different kinds of tasks:**
 
-  Use a provider endpoint with `prompt_model` and set `mode` per request. For example: `/chatgpt/mcp` with `mode: "writing"`.
+  Use a provider endpoint with `prompt_model` and set `mode` per request. For example: `/chatgpt/mcp` with `mode: "general"`.
 
 - **One kind of task, configured provider selection:**
 

@@ -118,7 +118,7 @@ describe('Actual provider answers with server-side reminders', () => {
       expect(completion.mock.calls[1][0]).toEqual(expect.arrayContaining([{ role: 'assistant', content: answer }]));
     });
 
-  it.each(['general', 'coding', 'writing'] as TaskMode[])('retains local answers in %s mode', async (mode) => {
+  it.each(['general', 'coding'] as TaskMode[])('retains local answers in %s mode', async (mode) => {
     expectAnswerAndGuidance(await run('Help with this task.', mode), 'BALANCED HARNESS: LOCAL LLM');
   });
 
@@ -134,7 +134,7 @@ describe('Actual provider answers with server-side reminders', () => {
     expect(adapter.executePrompt).toHaveBeenCalledTimes(2);
   });
 
-  it.each(['general', 'coding', 'writing', 'image', 'video', 'audio'] as TaskMode[])(
+  it.each(['general', 'coding', 'image', 'video', 'audio'] as TaskMode[])(
     'keeps Web AI answers and reminders across scenarios in %s mode', async (mode) => {
       for (const [balanced, double] of [[true, false], [false, false], [true, true], [false, true]]) {
         configure(balanced, false, double);
@@ -272,7 +272,7 @@ describe('Actual provider answers with server-side reminders', () => {
 describe('Caller profiles and truthful outcomes across providers', () => {
   it.each(['localllm', 'chatgpt', 'claude', 'gemini', 'grok', 'custom-service'] as ProviderId[])(
     'keeps neutral input/output for plain MCP and Quick Prompt on %s', async (provider) => {
-      const modes: TaskMode[] = provider === 'localllm' ? ['general', 'coding', 'writing'] : ['general', 'coding', 'writing', 'image', 'video', 'audio'];
+      const modes: TaskMode[] = provider === 'localllm' ? ['general', 'coding'] : ['general', 'coding', 'image', 'video', 'audio'];
       for (const mode of modes) for (const quick of [true, false]) for (const balanced of [true, false]) {
         configure(balanced, true);
         const result = await run('A neutral user request.', mode, provider, true, quick,
@@ -356,7 +356,7 @@ describe('Caller profiles and truthful outcomes across providers', () => {
     expect(result.content).toEqual([{ type: 'text', text: 'Request cancelled.' }]);
   });
 
-  it.each(['writing', 'image', 'video', 'audio', 'general'] as TaskMode[])('uses %s guidance without ordering implementation', async (mode) => {
+  it.each(['image', 'video', 'audio', 'general'] as TaskMode[])('uses %s guidance without ordering implementation', async (mode) => {
     const result = await run('Help with this request.', mode, 'claude');
     expect(result.content[1].text).toContain('requested scope');
     expect(result.content[1].text).not.toContain('Continue with implementing');

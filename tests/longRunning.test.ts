@@ -11,8 +11,8 @@ describe('Long-Running Operations & SSE Transports', () => {
       expect(TimeoutManager.getTimeout('video')).toBe(420_000);  // 7 minutes
       expect(TimeoutManager.getTimeout('audio')).toBe(420_000);  // 7 minutes
       expect(TimeoutManager.getTimeout('image')).toBe(120_000);  // 2 minutes
-      expect(TimeoutManager.getTimeout('writing')).toBe(60_000); // 60 seconds
       expect(TimeoutManager.getTimeout('general')).toBe(60_000); // 60 seconds
+      expect(TimeoutManager.getTimeout('writing')).toBe(60_000); // General route budget
     });
 
     it('should support provider-specific timeout overrides', () => {

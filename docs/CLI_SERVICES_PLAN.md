@@ -81,7 +81,7 @@ Use structured references such as `{ kind: 'cli', sessionId, profileId, runtimeF
 
 | Existing flow or feature | Required CLI behavior |
 | --- | --- |
-| General, coding, writing | All four support these text modes after compatibility checks. Use actual runtime/model availability. |
+| General, Writing, and Coding | All four support these backend text modes after compatibility checks. Writing keeps its identity and guidance while using the General route configuration. Use actual runtime/model availability. |
 | Image, video, audio | Preserve existing media routes. CLI services are ineligible until an adapter proves generation and saved-artifact support. Image input is a separate capability from image generation. |
 | Main routes and fallbacks | CLI may be primary or fallback after explicit setup. Forced CLI requests stay on that CLI and report unavailable/unsupported states clearly. |
 | Model selection | Preserve service toggles, user-enabled models, per-mode defaults/fallback models, and MCP override settings. Replace browser `lock_active_session` handling with the CLI session’s model policy. |

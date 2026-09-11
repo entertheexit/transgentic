@@ -36,24 +36,6 @@
       "modelRouting": {},
       "providerModels": {}
     },
-    "writing": {
-      "mode": "writing",
-      "defaultService": "chatgpt",
-      "primary": "chatgpt",
-      "fallbackChain": [
-        "claude",
-        "grok",
-        "gemini"
-      ],
-      "fallbacks": [
-        "claude",
-        "grok",
-        "gemini"
-      ],
-      "outputFormat": "prose_markdown",
-      "modelRouting": {},
-      "providerModels": {}
-    },
     "image": {
       "mode": "image",
       "defaultService": "grok",
@@ -106,7 +88,9 @@
         "gemini",
         "grok"
       ],
-      "outputFormat": "prose_markdown"
+      "outputFormat": "prose_markdown",
+      "modelRouting": {},
+      "providerModels": {}
     },
     "coding": {
       "mode": "coding",
@@ -120,21 +104,9 @@
         "gemini",
         "grok"
       ],
-      "outputFormat": "json_code"
-    },
-    "writing": {
-      "mode": "writing",
-      "defaultService": "claude",
-      "primary": "claude",
-      "fallbackChain": [
-        "grok",
-        "gemini"
-      ],
-      "fallbacks": [
-        "grok",
-        "gemini"
-      ],
-      "outputFormat": "prose_markdown"
+      "outputFormat": "json_code",
+      "modelRouting": {},
+      "providerModels": {}
     },
     "image": {
       "mode": "image",
@@ -146,7 +118,9 @@
       "fallbacks": [
         "gemini"
       ],
-      "outputFormat": "file_download"
+      "outputFormat": "file_download",
+      "modelRouting": {},
+      "providerModels": {}
     },
     "video": {
       "mode": "video",
@@ -154,7 +128,9 @@
       "primary": "gemini",
       "fallbackChain": [],
       "fallbacks": [],
-      "outputFormat": "file_download"
+      "outputFormat": "file_download",
+      "modelRouting": {},
+      "providerModels": {}
     },
     "audio": {
       "mode": "audio",
@@ -166,7 +142,9 @@
       "fallbacks": [
         "gemini"
       ],
-      "outputFormat": "file_download"
+      "outputFormat": "file_download",
+      "modelRouting": {},
+      "providerModels": {}
     }
   }
 }

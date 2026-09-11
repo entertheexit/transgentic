@@ -27,7 +27,7 @@ The connected server's `tools/list` response is the reference for the tools and 
 
 Media tools request generation and attempt to save detected assets. They do not guarantee that a provider can generate the requested media or that extraction will succeed.
 
-Use an explicit mode for media requests. Supported task modes are `general`, `coding`, `writing`, `image`, `video`, and `audio`. Availability is determined by the configured model catalog, active account, and adapter; this guide intentionally does not list provider model IDs as permanent capabilities.
+Use an explicit mode for media requests. Supported backend task modes are `general`, `writing`, `coding`, `image`, `video`, and `audio`. Writing keeps its prose guidance and request identity while using the General provider route and per-mode policy configuration. Availability is determined by the configured model catalog, active account, and adapter; this guide intentionally does not list provider model IDs as permanent capabilities.
 
 ## Prompt arguments
 

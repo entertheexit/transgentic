@@ -33,7 +33,6 @@
           "modes": [
             "general",
             "coding",
-            "writing",
             "image"
           ]
         },
@@ -47,8 +46,7 @@
           "mode": "general",
           "modes": [
             "general",
-            "coding",
-            "writing"
+            "coding"
           ]
         },
         {
@@ -61,8 +59,7 @@
           "mode": "coding",
           "modes": [
             "coding",
-            "general",
-            "writing"
+            "general"
           ]
         },
         {
@@ -75,8 +72,7 @@
           "mode": "general",
           "modes": [
             "general",
-            "coding",
-            "writing"
+            "coding"
           ]
         }
       ]
@@ -112,8 +108,7 @@
           "mode": "coding",
           "modes": [
             "general",
-            "coding",
-            "writing"
+            "coding"
           ]
         },
         {
@@ -123,11 +118,10 @@
           "discoveredAvailable": true,
           "userEnabled": true,
           "requiresTier": "Pro",
-          "mode": "writing",
+          "mode": "general",
           "modes": [
             "general",
-            "coding",
-            "writing"
+            "coding"
           ]
         },
         {
@@ -140,8 +134,7 @@
           "mode": "general",
           "modes": [
             "general",
-            "coding",
-            "writing"
+            "coding"
           ]
         }
       ]
@@ -178,7 +171,6 @@
           "modes": [
             "general",
             "coding",
-            "writing",
             "image",
             "video",
             "audio"
@@ -195,7 +187,6 @@
           "modes": [
             "general",
             "coding",
-            "writing",
             "image",
             "video",
             "audio"
@@ -212,7 +203,6 @@
           "modes": [
             "general",
             "coding",
-            "writing",
             "video",
             "audio"
           ]
@@ -228,7 +218,6 @@
           "modes": [
             "general",
             "coding",
-            "writing",
             "video",
             "audio"
           ]
@@ -267,7 +256,6 @@
           "modes": [
             "general",
             "coding",
-            "writing",
             "video"
           ]
         },
@@ -282,7 +270,6 @@
           "modes": [
             "general",
             "coding",
-            "writing",
             "video"
           ]
         },
@@ -296,8 +283,7 @@
           "mode": "coding",
           "modes": [
             "general",
-            "coding",
-            "writing"
+            "coding"
           ]
         },
         {
@@ -347,8 +333,7 @@
           "mode": "general",
           "modes": [
             "general",
-            "coding",
-            "writing"
+            "coding"
           ]
         }
       ]

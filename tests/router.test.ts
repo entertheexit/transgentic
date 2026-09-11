@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterAll } from 'vitest';
 import { DynamicRouter } from '../src/main/mcp/router.js';
 import { ServiceManifestManager } from '../src/main/registry/serviceManifest.js';
+import { normalizeModeFlags, normalizeRouteMode, normalizeTaskMode } from '../src/shared/types.js';
 
 describe('DynamicRouter', () => {
   beforeEach(() => {
@@ -16,14 +17,11 @@ describe('DynamicRouter', () => {
     // General mode: ChatGPT -> Claude -> Gemini -> Grok
     const generalChain = DynamicRouter.getCandidateChain('general', undefined, false);
     expect(generalChain).toEqual(['chatgpt', 'claude', 'gemini', 'grok']);
+    expect(DynamicRouter.getCandidateChain('writing', undefined, false)).toEqual(generalChain);
 
     // Coding mode: Claude -> ChatGPT -> Gemini -> Grok
     const codingChain = DynamicRouter.getCandidateChain('coding', undefined, false);
     expect(codingChain).toEqual(['claude', 'chatgpt', 'gemini', 'grok']);
-
-    // Writing mode: ChatGPT -> Claude -> Grok -> Gemini
-    const writingChain = DynamicRouter.getCandidateChain('writing', undefined, false);
-    expect(writingChain).toEqual(['chatgpt', 'claude', 'grok', 'gemini']);
 
     // Image mode: Grok -> ChatGPT -> Gemini
     const imageChain = DynamicRouter.getCandidateChain('image', undefined, false);
@@ -104,6 +102,40 @@ describe('DynamicRouter', () => {
     // Explicit mode override should be preserved
     const resExplicit = DynamicRouter.classifyMode('Write a story about space', 'writing');
     expect(resExplicit.mode).toBe('writing');
+    expect(resExplicit.intent).toBe('writing');
     expect(resExplicit.isAutoDetected).toBe(false);
+
+    const autoWriting = DynamicRouter.classifyMode('Draft chapter three of my novel');
+    expect(autoWriting).toMatchObject({ mode: 'writing', intent: 'writing', isAutoDetected: true });
+
+    const markdownNovel = DynamicRouter.classifyMode('Continue the prose in novel.md with a quiet final scene');
+    expect(markdownNovel).toMatchObject({ mode: 'writing', intent: 'writing' });
+
+    const structuredNovel = DynamicRouter.classifyMode('Update novel.json with the next chapter and character arc');
+    expect(structuredNovel).toMatchObject({ mode: 'writing', intent: 'writing' });
+  });
+
+  it('migrates Writing routes into General only when General is absent', () => {
+    const general = { mode: 'general', primary: 'gemini', fallbacks: ['claude'] };
+    const writing = { mode: 'writing', primary: 'grok', fallbacks: ['chatgpt'] };
+    const generalWins = DynamicRouter.migrateRouteMatrix({ main: { general, writing }, co: {} });
+    expect(generalWins.main.general.primary).toBe('gemini');
+    expect(generalWins.main).not.toHaveProperty('writing');
+
+    const writingMigrates = DynamicRouter.migrateRouteMatrix({ main: { writing }, co: { writing } });
+    expect(writingMigrates.main.general.primary).toBe('grok');
+    expect(writingMigrates.co.general.primary).toBe('grok');
+    expect(DynamicRouter.migrateRouteMatrix(writingMigrates)).toEqual(writingMigrates);
+  });
+
+  it('preserves Writing as a backend mode while sharing General settings', () => {
+    expect(normalizeTaskMode('writing')).toBe('writing');
+    expect(normalizeRouteMode('writing')).toBe('general');
+    expect(normalizeModeFlags({ writing: false, coding: false } as any)).toEqual({
+      general: false, coding: false, image: true, video: true, audio: true,
+    });
+    expect(normalizeModeFlags({ general: true, writing: false } as any).general).toBe(true);
+    const normalized = normalizeModeFlags({ writing: false } as any);
+    expect(normalizeModeFlags(normalized)).toEqual(normalized);
   });
 });

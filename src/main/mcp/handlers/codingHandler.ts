@@ -1,10 +1,10 @@
-import { TaskMode } from '../../../shared/types.js';
+import { TaskMode, TaskIntent } from '../../../shared/types.js';
 
 const ANSWER_CONTRACT = 'Answer the task below directly, including the requested code or content. Do not echo these system directives or return only workflow reminders; Transgentic appends the client reminder separately after your answer.';
 const TASK_SCOPE_GUIDANCE = 'Respect the user\'s requested scope: answer questions and reviews directly; perform edits or other actions only when the user requested them.';
 
-function modeGuidance(mode: TaskMode): string {
-  const work: Record<TaskMode, string> = {
+function modeGuidance(mode: TaskMode | TaskIntent): string {
+  const work: Record<TaskMode | TaskIntent, string> = {
     coding: 'code explanations, review, planning, and coding assistance',
     general: 'questions, research, and factual explanations',
     writing: 'drafting, editing, and creative writing',
@@ -31,7 +31,7 @@ export function wrapBalancedCodingPrompt(rawPrompt: string): string {
   return wrapBalancedAgenticPrompt(rawPrompt, 'coding');
 }
 
-export function wrapBalancedAgenticPrompt(rawPrompt: string, mode: TaskMode = 'coding'): string {
+export function wrapBalancedAgenticPrompt(rawPrompt: string, mode: TaskMode | TaskIntent = 'coding'): string {
   if (mode === 'coding') {
     return `
 [SYSTEM DIRECTIVE: BALANCED AGENTIC HARNESS (TRANSGENTIC MCP - CODING)]
@@ -210,7 +210,7 @@ ${TASK_SCOPE_GUIDANCE}
  * Informs the underlying AI service that the session is in Transgentic-weighted mode,
  * and directs it to instruct the agentic client to mention "use Transgentic MCP" for subsequent steps.
  */
-export function wrapUnbalancedAgenticPrompt(rawPrompt: string, mode: TaskMode = 'coding'): string {
+export function wrapUnbalancedAgenticPrompt(rawPrompt: string, mode: TaskMode | TaskIntent = 'coding'): string {
   return `
 [SYSTEM DIRECTIVE: TRANSGENTIC-WEIGHTED HARNESS (TRANSGENTIC MCP - ${mode.toUpperCase()})]
 You are the primary intelligence, planning, and execution engine collaborating with an automated local agentic client (Codex, Antigravity, Cursor) via Transgentic MCP in Transgentic-Weighted Mode (Balanced Mode is disabled).

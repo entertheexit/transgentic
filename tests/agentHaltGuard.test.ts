@@ -22,10 +22,10 @@ describe('Agent Halt Guard', () => {
     };
 
     expect(isAgentHaltGuardEnabled(config, 'general')).toBe(true);
+    expect(isAgentHaltGuardEnabled(config, 'writing')).toBe(true);
     expect(isAgentHaltGuardEnabled(config, 'coding')).toBe(true);
     expect(isAgentHaltGuardEnabled(config, 'image')).toBe(true);
     expect(isAgentHaltGuardEnabled(config, 'video')).toBe(true);
-    expect(isAgentHaltGuardEnabled(config, 'writing')).toBe(true);
     expect(isAgentHaltGuardEnabled(config, 'audio')).toBe(true);
     expect(isAgentHaltGuardEnabled(undefined, 'coding')).toBe(true);
   });
@@ -47,7 +47,6 @@ describe('Agent Halt Guard', () => {
         coding: false,
         image: true,
         video: false,
-        writing: true,
         audio: true,
       },
     };
@@ -55,6 +54,7 @@ describe('Agent Halt Guard', () => {
     expect(isAgentHaltGuardEnabled(config, 'coding')).toBe(false);
     expect(isAgentHaltGuardEnabled(config, 'video')).toBe(false);
     expect(isAgentHaltGuardEnabled(config, 'general')).toBe(true);
+    expect(isAgentHaltGuardEnabled(config, 'writing')).toBe(true);
     expect(isAgentHaltGuardEnabled(config, 'image')).toBe(true);
   });
 

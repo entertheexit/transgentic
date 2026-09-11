@@ -211,5 +211,33 @@ describe('Mode Selection & Routing Verification', () => {
 
       reader?.cancel();
     });
+
+    it('keeps /writing/sse as a first-class Writing endpoint backed by General routing', async () => {
+      const sseRes = await fetch(`http://127.0.0.1:${testPort}/writing/sse?token=${token}`);
+      expect(sseRes.status).toBe(200);
+      expect(sseRes.headers.get('deprecation')).toBeNull();
+      expect(sseRes.headers.get('link')).toBeNull();
+      const reader = sseRes.body?.getReader();
+      const { value } = await reader!.read();
+      const sseChunk = new TextDecoder().decode(value);
+      const sessionId = sseChunk.match(/sessionId=([a-f0-9-]+)/)![1];
+      expect(SseTransportManager.getClient(sessionId)?.targetMode).toBe('writing');
+      expect(DynamicRouter.classifyMode('Continue the novel', 'writing')).toMatchObject({ mode: 'writing', intent: 'writing' });
+      reader?.cancel();
+    });
+
+    it('keeps /writing/mcp as a first-class Writing endpoint', async () => {
+      const response = await fetch(`http://127.0.0.1:${testPort}/writing/mcp`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream' },
+        body: JSON.stringify({
+          jsonrpc: '2.0', id: 'writing-init', method: 'initialize',
+          params: { protocolVersion: '2025-03-26', capabilities: {}, clientInfo: { name: 'writing-test', version: '1' } },
+        }),
+      });
+      expect(response.status).toBe(200);
+      expect(response.headers.get('deprecation')).toBeNull();
+      expect(response.headers.get('link')).toBeNull();
+    });
   });
 });
