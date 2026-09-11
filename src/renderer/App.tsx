@@ -1,8 +1,14 @@
 import { isCliProvider } from '../shared/cli.js';
 import React, { useState, useEffect, useRef } from 'react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { UPDATE_CHECK_INTERVAL_MS } from '../shared/release.js';
 import { version as appVersion } from '../../package.json';
+import {
+  modalBackdropVariants,
+  modalBackdropTransition,
+  modalContentVariants,
+  modalContentTransition,
+} from './utils/modalAnimations.js';
 import { useTransgentic } from './hooks/useTransgentic.js';
 import { RadialHub } from './components/RadialHub.js';
 import { DrawerWebview } from './components/DrawerWebview.js';
@@ -885,141 +891,179 @@ export function App() {
 
       </div>
 
-      {showUpdateDialog && availableUpdate && !showAboutModal && !showAuthModal && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-          <div role="dialog" aria-modal="true" aria-labelledby="update-title" onKeyDown={(event) => { if (event.key === 'Escape') setShowUpdateDialog(false); }} className="w-full max-w-sm rounded-xl border border-cyan-500/40 bg-[#0c1017] p-6 text-slate-200 shadow-2xl space-y-4">
-            <h2 id="update-title" className="text-lg font-semibold text-cyan-300">Transgentic update available</h2>
-            <p className="text-sm">Version {availableUpdate.version} is available. You’re currently using {appVersion}.</p>
-            <div className="flex justify-end gap-3">
-              <button autoFocus onClick={() => setShowUpdateDialog(false)} className="px-3 py-2 rounded-lg bg-white/5 hover:bg-white/10">Later</button>
-              <button onClick={openUpdateRelease} className="px-3 py-2 rounded-lg bg-cyan-500/20 text-cyan-300 hover:bg-cyan-500/30">Open release page</button>
-            </div>
-          </div>
-        </div>
-      )}
+      <AnimatePresence>
+        {showUpdateDialog && availableUpdate && !showAboutModal && !showAuthModal && (
+          <motion.div
+            key="update-dialog-backdrop"
+            variants={modalBackdropVariants}
+            initial="hidden"
+            animate="visible"
+            exit="exit"
+            transition={modalBackdropTransition}
+            onClick={() => setShowUpdateDialog(false)}
+            className="fixed inset-0 z-[70] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4"
+          >
+            <motion.div
+              key="update-dialog-content"
+              variants={modalContentVariants}
+              initial="hidden"
+              animate="visible"
+              exit="exit"
+              transition={modalContentTransition}
+              onClick={(e) => e.stopPropagation()}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="update-title"
+              onKeyDown={(event) => { if (event.key === 'Escape') setShowUpdateDialog(false); }}
+              className="w-full max-w-sm rounded-xl border border-cyan-500/40 bg-[#0c1017] p-6 text-slate-200 shadow-2xl space-y-4"
+            >
+              <h2 id="update-title" className="text-lg font-semibold text-cyan-300">Transgentic update available</h2>
+              <p className="text-sm">Version {availableUpdate.version} is available. You’re currently using {appVersion}.</p>
+              <div className="flex justify-end gap-3">
+                <button autoFocus onClick={() => setShowUpdateDialog(false)} className="px-3 py-2 rounded-lg bg-white/5 hover:bg-white/10 cursor-pointer">Later</button>
+                <button onClick={openUpdateRelease} className="px-3 py-2 rounded-lg bg-cyan-500/20 text-cyan-300 hover:bg-cyan-500/30 cursor-pointer">Open release page</button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* About & Disclaimer Centered Modal */}
-      {showAboutModal && (
-        <div
-          onClick={handleDismissAboutModal}
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-150"
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            className="relative w-full max-w-md max-h-[calc(100vh-2rem)] overflow-y-auto bg-[#0c1017] border border-cyan-500/40 rounded-xl shadow-[0_20px_50px_rgba(0,0,0,0.95)] p-6 space-y-4 animate-in zoom-in-95 duration-150 text-left"
+      <AnimatePresence>
+        {showAboutModal && (
+          <motion.div
+            key="about-modal-backdrop"
+            variants={modalBackdropVariants}
+            initial="hidden"
+            animate="visible"
+            exit="exit"
+            transition={modalBackdropTransition}
+            onClick={handleDismissAboutModal}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4"
           >
-            {/* Header */}
-            <div className="flex items-center justify-between border-b border-white/10 pb-3">
-              <div className="flex items-center gap-2.5">
-                <div className={`w-3.5 h-3.5 rounded-full transition-all duration-500 group-hover:scale-110 shrink-0 ${showUpdateIndicator ? 'update-available-orb' : 'animate-pulse'} ${isProcessing
-                  ? 'bg-purple-300 shadow-[0_0_20px_#d8b4fe]'
-                  : 'bg-cyan-400 shadow-[0_0_18px_#00f2fe]'
-                  }`} />
-                <div>
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="font-extrabold text-sm tracking-wider font-mono bg-gradient-to-r from-cyan-300 to-purple-300 bg-clip-text text-transparent uppercase">
-                      TRANSGENTIC
-                    </span>
-                    <span className="text-[9px] font-mono text-cyan-300 bg-cyan-500/10 px-1.5 py-0.5 rounded border border-cyan-500/30">
-                      v{appVersion}
-                    </span>
+            <motion.div
+              key="about-modal-content"
+              variants={modalContentVariants}
+              initial="hidden"
+              animate="visible"
+              exit="exit"
+              transition={modalContentTransition}
+              onClick={(e) => e.stopPropagation()}
+              className="relative w-full max-w-md max-h-[calc(100vh-2rem)] overflow-y-auto bg-[#0c1017] border border-cyan-500/40 rounded-xl shadow-[0_20px_50px_rgba(0,0,0,0.95)] p-6 space-y-4 text-left"
+            >
+              {/* Header */}
+              <div className="flex items-center justify-between border-b border-white/10 pb-3">
+                <div className="flex items-center gap-2.5">
+                  <div className={`w-3.5 h-3.5 rounded-full transition-all duration-500 group-hover:scale-110 shrink-0 ${showUpdateIndicator ? 'update-available-orb' : 'animate-pulse'} ${isProcessing
+                    ? 'bg-purple-300 shadow-[0_0_20px_#d8b4fe]'
+                    : 'bg-cyan-400 shadow-[0_0_18px_#00f2fe]'
+                    }`} />
+                  <div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-extrabold text-sm tracking-wider font-mono bg-gradient-to-r from-cyan-300 to-purple-300 bg-clip-text text-transparent uppercase">
+                        TRANSGENTIC
+                      </span>
+                      <span className="text-[9px] font-mono text-cyan-300 bg-cyan-500/10 px-1.5 py-0.5 rounded border border-cyan-500/30">
+                        v{appVersion}
+                      </span>
+                    </div>
+                    <p className="text-[10px] text-slate-400 font-mono">
+                      Local Tactical AI Orchestrator & Multi-Model MCP Gateway
+                    </p>
                   </div>
-                  <p className="text-[10px] text-slate-400 font-mono">
-                    Local Tactical AI Orchestrator & Multi-Model MCP Gateway
-                  </p>
+                </div>
+                <button
+                  onClick={handleDismissAboutModal}
+                  className="p-1 rounded-lg text-slate-400 hover:text-slate-100 hover:bg-white/10 transition-colors cursor-pointer"
+                  title="Close"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Architecture Overview */}
+              <div className="space-y-2 text-xs text-slate-300 font-sans leading-relaxed">
+                <p>
+                  Transgentic unifies Webview AI sessions (ChatGPT, Claude, Gemini, Grok) with your local agentic IDEs (<strong className="text-cyan-300">Codex, Antigravity, Cursor, Claude Desktop</strong>) over low-latency SSE transport.
+                </p>
+
+                <div className="bg-black/40 rounded-lg p-3 border border-white/5 space-y-1.5 font-mono text-[11px]">
+                  <div className="flex items-center gap-2 text-cyan-300">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-cyan-400" />
+                    <span>Balanced Agentic Coding Workflow</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-purple-300">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-purple-400" />
+                    <span>In-Memory Volatile Secret Blinding Vault</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-emerald-300">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>Local Media File Download Manager</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-amber-300">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Standardized Browser Session & Input Alignment</span>
+                  </div>
                 </div>
               </div>
-              <button
-                onClick={handleDismissAboutModal}
-                className="p-1 rounded-lg text-slate-400 hover:text-slate-100 hover:bg-white/10 transition-colors cursor-pointer"
-                title="Close"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
 
-            {/* Architecture Overview */}
-            <div className="space-y-2 text-xs text-slate-300 font-sans leading-relaxed">
-              <p>
-                Transgentic unifies Webview AI sessions (ChatGPT, Claude, Gemini, Grok) with your local agentic IDEs (<strong className="text-cyan-300">Codex, Antigravity, Cursor, Claude Desktop</strong>) over low-latency SSE transport.
-              </p>
-
-              <div className="bg-black/40 rounded-lg p-3 border border-white/5 space-y-1.5 font-mono text-[11px]">
-                <div className="flex items-center gap-2 text-cyan-300">
-                  <CheckCircle2 className="w-3.5 h-3.5 text-cyan-400" />
-                  <span>Balanced Agentic Coding Workflow</span>
+              {/* Disclaimer */}
+              <div className={`p-3.5 bg-amber-500/5 border border-amber-500/20 rounded-xl text-[11px] text-amber-200/80 leading-relaxed font-sans space-y-2 overflow-y-auto ${availableUpdate ? 'max-h-[175px]' : 'max-h-[220px]'}`}>
+                <div className="flex items-center gap-1.5 text-amber-300 font-bold">
+                  <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                  <span>Disclaimer & Operational Notice</span>
                 </div>
-                <div className="flex items-center gap-2 text-purple-300">
-                  <CheckCircle2 className="w-3.5 h-3.5 text-purple-400" />
-                  <span>In-Memory Volatile Secret Blinding Vault</span>
-                </div>
-                <div className="flex items-center gap-2 text-emerald-300">
-                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-                  <span>Local Media File Download Manager</span>
-                </div>
-                <div className="flex items-center gap-2 text-amber-300">
-                  <CheckCircle2 className="w-3.5 h-3.5 text-amber-400" />
-                  <span>Standardized Browser Session & Input Alignment</span>
-                </div>
+                <p>
+                  Transgentic is an independent, local-first developer productivity utility created to help synchronize memory, requirements, and contextual planning between your agentic IDE tools (e.g. Codex, Antigravity, Cursor) and your web AI chat sessions (e.g. ChatGPT, Claude, Gemini, Grok). By providing local cross-tool memory recall, it prevents agentic tools from planning in isolation without awareness of discussions and designs formulated in other chats.
+                </p>
+                <p>
+                  Memory stores and the MCP bridge run locally, with no Transgentic-operated cloud relay. Prompts, attachments, and authenticated web sessions communicate with the providers you configure.
+                </p>
+                <p>
+                  Transgentic is not affiliated with, endorsed by, or sponsored by OpenAI, Anthropic, Google, or xAI. Users maintain full control over their credentials, sessions, and compliance with the terms of service of each respective platform. All product names, logos, and brands (including ChatGPT, Claude, Gemini, and Grok) are property of their respective owners. All company, product, and service names used in this application are for identification purposes only.
+                </p>
               </div>
-            </div>
+              <label className="flex items-center gap-3 rounded-lg border border-white/10 bg-white/5 p-3 cursor-pointer text-xs text-slate-200">
+                <input type="checkbox" checked={autoCheckUpdates} onChange={(event) => handleAutoCheckUpdates(event.target.checked)} className="accent-cyan-400 w-4 h-4" />
+                <span>
+                  Automatically check for updates
+                  <span className="block mt-1 text-[10px] text-slate-400">At launch and every hour while the app is running.</span>
+                </span>
+              </label>
+              {availableUpdate && (
+                <p className="rounded-lg border border-cyan-500/30 bg-cyan-500/10 p-3 text-xs text-cyan-200">
+                  Update available: v{availableUpdate.version} · Installed: v{appVersion}
+                </p>
+              )}
 
-            {/* Disclaimer */}
-            <div className={`p-3.5 bg-amber-500/5 border border-amber-500/20 rounded-xl text-[11px] text-amber-200/80 leading-relaxed font-sans space-y-2 overflow-y-auto ${availableUpdate ? 'max-h-[175px]' : 'max-h-[220px]'}`}>
-              <div className="flex items-center gap-1.5 text-amber-300 font-bold">
-                <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                <span>Disclaimer & Operational Notice</span>
+              {/* Footer */}
+              <div className="pt-1 flex items-center justify-between border-t border-white/5">
+                <button
+                  onClick={() => {
+                    if (availableUpdate) { openUpdateRelease(); return; }
+                    const url = 'https://github.com/entertheexit/transgentic';
+                    if ((window as any).transgenticApi?.openExternalUrl) {
+                      (window as any).transgenticApi.openExternalUrl(url);
+                    } else {
+                      window.open(url, '_blank');
+                    }
+                  }}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white border border-white/10 font-mono text-xs transition-all cursor-pointer"
+                >
+                  <Github className="w-3.5 h-3.5" />
+                  <span>{availableUpdate ? `Update to v${availableUpdate.version}` : 'GitHub'}</span>
+                </button>
+                <button
+                  onClick={handleDismissAboutModal}
+                  className="px-4 py-1.5 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-500/40 font-mono text-xs font-semibold transition-all cursor-pointer shadow-[0_0_12px_rgba(6,182,212,0.2)]"
+                >
+                  Got it
+                </button>
               </div>
-              <p>
-                Transgentic is an independent, local-first developer productivity utility created to help synchronize memory, requirements, and contextual planning between your agentic IDE tools (e.g. Codex, Antigravity, Cursor) and your web AI chat sessions (e.g. ChatGPT, Claude, Gemini, Grok). By providing local cross-tool memory recall, it prevents agentic tools from planning in isolation without awareness of discussions and designs formulated in other chats.
-              </p>
-              <p>
-                Memory stores and the MCP bridge run locally, with no Transgentic-operated cloud relay. Prompts, attachments, and authenticated web sessions communicate with the providers you configure.
-              </p>
-              <p>
-                Transgentic is not affiliated with, endorsed by, or sponsored by OpenAI, Anthropic, Google, or xAI. Users maintain full control over their credentials, sessions, and compliance with the terms of service of each respective platform. All product names, logos, and brands (including ChatGPT, Claude, Gemini, and Grok) are property of their respective owners. All company, product, and service names used in this application are for identification purposes only.
-              </p>
-            </div>
-            <label className="flex items-center gap-3 rounded-lg border border-white/10 bg-white/5 p-3 cursor-pointer text-xs text-slate-200">
-              <input type="checkbox" checked={autoCheckUpdates} onChange={(event) => handleAutoCheckUpdates(event.target.checked)} className="accent-cyan-400 w-4 h-4" />
-              <span>
-                Automatically check for updates
-                <span className="block mt-1 text-[10px] text-slate-400">At launch and every hour while the app is running.</span>
-              </span>
-            </label>
-            {availableUpdate && (
-              <p className="rounded-lg border border-cyan-500/30 bg-cyan-500/10 p-3 text-xs text-cyan-200">
-                Update available: v{availableUpdate.version} · Installed: v{appVersion}
-              </p>
-            )}
-
-            {/* Footer */}
-            <div className="pt-1 flex items-center justify-between border-t border-white/5">
-              <button
-                onClick={() => {
-                  if (availableUpdate) { openUpdateRelease(); return; }
-                  const url = 'https://github.com/entertheexit/transgentic';
-                  if ((window as any).transgenticApi?.openExternalUrl) {
-                    (window as any).transgenticApi.openExternalUrl(url);
-                  } else {
-                    window.open(url, '_blank');
-                  }
-                }}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white border border-white/10 font-mono text-xs transition-all cursor-pointer"
-              >
-                <Github className="w-3.5 h-3.5" />
-                <span>{availableUpdate ? `Update to v${availableUpdate.version}` : 'GitHub'}</span>
-              </button>
-              <button
-                onClick={handleDismissAboutModal}
-                className="px-4 py-1.5 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-500/40 font-mono text-xs font-semibold transition-all cursor-pointer shadow-[0_0_12px_rgba(6,182,212,0.2)]"
-              >
-                Got it
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* MCP Client Authentication Setup Modal */}
       <AuthSetupModal
@@ -1029,33 +1073,39 @@ export function App() {
       />
 
       {/* AI Services Manifest Route Conflict Alert Modal */}
-      {serviceConflicts && serviceConflicts.length > 0 && (
-        <ServiceConflictModal
-          conflicts={serviceConflicts}
-          onDismiss={clearServiceConflicts}
-          onGoToRoutes={() => {
-            clearServiceConflicts();
-            handleTabChange('routes');
-          }}
-        />
-      )}
+      <AnimatePresence>
+        {serviceConflicts && serviceConflicts.length > 0 && (
+          <ServiceConflictModal
+            key="service-conflict-modal"
+            conflicts={serviceConflicts}
+            onDismiss={clearServiceConflicts}
+            onGoToRoutes={() => {
+              clearServiceConflicts();
+              handleTabChange('routes');
+            }}
+          />
+        )}
+      </AnimatePresence>
 
       {/* Multi-Account Profile Management Modal */}
-      {showAccountModalProvider && (
-        <AccountManagerModal
-          providerId={showAccountModalProvider}
-          providerStatus={providers[showAccountModalProvider]}
-          accountStore={accountsRegistry ? accountsRegistry[showAccountModalProvider] : undefined}
-          onClose={() => setShowAccountModalProvider(null)}
-          onAddAccount={addAccount}
-          onUpdateAlias={updateAccountAlias}
-          onSetMain={setMainAccount}
-          onSetActive={setActiveAccount}
-          onReorder={reorderAccounts}
-          onDelete={deleteAccount}
-          onOpenDedicatedWindow={openProviderWindow}
-        />
-      )}
+      <AnimatePresence>
+        {showAccountModalProvider && (
+          <AccountManagerModal
+            key="account-manager-modal"
+            providerId={showAccountModalProvider}
+            providerStatus={providers[showAccountModalProvider]}
+            accountStore={accountsRegistry ? accountsRegistry[showAccountModalProvider] : undefined}
+            onClose={() => setShowAccountModalProvider(null)}
+            onAddAccount={addAccount}
+            onUpdateAlias={updateAccountAlias}
+            onSetMain={setMainAccount}
+            onSetActive={setActiveAccount}
+            onReorder={reorderAccounts}
+            onDelete={deleteAccount}
+            onOpenDedicatedWindow={openProviderWindow}
+          />
+        )}
+      </AnimatePresence>
 
       {/* Dedicated Local LLM Configuration Hub Modal */}
       <LocalLLMModal

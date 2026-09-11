@@ -23,6 +23,12 @@ import { AuthBookmarklet } from './AuthBookmarklet.js';
 import { soundFx } from '../audio/soundFx.js';
 import { version as appVersion } from '../../../package.json';
 import { getExtensionDownloadUrl } from '../../shared/release.js';
+import {
+  modalBackdropVariants,
+  modalBackdropTransition,
+  modalContentVariants,
+  modalContentTransition,
+} from '../utils/modalAnimations.js';
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -206,17 +212,32 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     }
   };
 
-  if (!isOpen) return null;
-
   return (
     <AnimatePresence>
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm">
+      {isOpen && (
         <motion.div
-          initial={{ opacity: 0, scale: 0.95, y: 10 }}
-          animate={{ opacity: 1, scale: 1, y: 0 }}
-          exit={{ opacity: 0, scale: 0.95, y: 10 }}
-          className="relative w-full max-w-lg bg-[#0f1117] border border-white/10 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh]"
+          key="auth-modal-backdrop"
+          variants={modalBackdropVariants}
+          initial="hidden"
+          animate="visible"
+          exit="exit"
+          transition={modalBackdropTransition}
+          onClick={() => {
+            soundFx.playClick();
+            onClose();
+          }}
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm"
         >
+          <motion.div
+            key="auth-modal-content"
+            variants={modalContentVariants}
+            initial="hidden"
+            animate="visible"
+            exit="exit"
+            transition={modalContentTransition}
+            onClick={(e) => e.stopPropagation()}
+            className="relative w-full max-w-lg bg-[#0f1117] border border-white/10 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh]"
+          >
           {/* Header */}
           <div className="px-5 py-4 border-b border-white/5 flex items-center justify-between bg-white/[0.02]">
             <div className="flex items-center gap-2.5">
@@ -445,7 +466,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             <span className="text-teal-400/80">Host-Aligned Profile Sync</span>
           </div>
         </motion.div>
-      </div>
+      </motion.div>
+      )}
     </AnimatePresence>
   );
 };

@@ -1,6 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { ShieldCheck, Key, Copy, Check, RefreshCw, ArrowRight, Lock, Terminal } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { soundFx } from '../audio/soundFx.js';
+import {
+  modalBackdropVariants,
+  modalBackdropTransition,
+  modalContentVariants,
+  modalContentTransition,
+} from '../utils/modalAnimations.js';
 
 interface AuthSetupModalProps {
   isOpen: boolean;
@@ -59,11 +66,32 @@ export const AuthSetupModal: React.FC<AuthSetupModalProps> = ({
     }
   };
 
-  if (!isOpen) return null;
-
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200">
-      <div className="w-full max-w-md bg-[#0c1017]/95 border border-cyan-500/30 rounded-2xl shadow-[0_0_50px_rgba(6,182,212,0.15)] flex flex-col overflow-hidden text-slate-200 no-drag">
+    <AnimatePresence>
+      {isOpen && (
+        <motion.div
+          key="auth-setup-modal-backdrop"
+          variants={modalBackdropVariants}
+          initial="hidden"
+          animate="visible"
+          exit="exit"
+          transition={modalBackdropTransition}
+          onClick={() => {
+            soundFx.playClick();
+            onClose();
+          }}
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md"
+        >
+          <motion.div
+            key="auth-setup-modal-content"
+            variants={modalContentVariants}
+            initial="hidden"
+            animate="visible"
+            exit="exit"
+            transition={modalContentTransition}
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-md bg-[#0c1017]/95 border border-cyan-500/30 rounded-2xl shadow-[0_0_50px_rgba(6,182,212,0.15)] flex flex-col overflow-hidden text-slate-200 no-drag"
+          >
         {/* Header */}
         <div className="p-5 pb-3 flex items-start justify-between border-b border-white/5">
           <div className="flex items-center gap-2.5">
@@ -164,7 +192,9 @@ export const AuthSetupModal: React.FC<AuthSetupModalProps> = ({
             <ArrowRight className="w-3.5 h-3.5" />
           </button>
         </div>
-      </div>
-    </div>
+      </motion.div>
+    </motion.div>
+      )}
+    </AnimatePresence>
   );
 };

@@ -1,8 +1,15 @@
 import React, { useRef, useState, useEffect } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { AccountProfile, ProviderAccountStore, ProviderId, ProviderStatus, LocalLLMConfig, CustomRecipe } from '../../shared/types.js';
 import { ChevronLeft, RefreshCw, ExternalLink, ShieldCheck, KeyRound, Globe, Users, Sparkles, Link, Wrench, Info, CheckCircle2, AlertCircle, X, ShieldAlert, AlertTriangle, Copy, Code, Upload, Target, Check, RotateCcw } from 'lucide-react';
 import { soundFx } from '../audio/soundFx.js';
 import { AuthModal } from './AuthModal.js';
+import {
+  modalBackdropVariants,
+  modalBackdropTransition,
+  modalContentVariants,
+  modalContentTransition,
+} from '../utils/modalAnimations.js';
 
 interface DrawerWebviewProps {
   provider: ProviderStatus;
@@ -580,9 +587,31 @@ Respond ONLY with valid JSON.`;
       />
 
       {/* DOM Self-Healing & Landmark Watchdog Modal */}
-      {showHealingFlyout && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in no-drag">
-          <div className="relative w-full max-w-lg bg-[#0d0f14] border border-orange-500/40 rounded-2xl shadow-[0_0_40px_rgba(249,115,22,0.2)] p-4 space-y-3.5">
+      <AnimatePresence>
+        {showHealingFlyout && (
+          <motion.div
+            key="healing-flyout-backdrop"
+            variants={modalBackdropVariants}
+            initial="hidden"
+            animate="visible"
+            exit="exit"
+            transition={modalBackdropTransition}
+            onClick={() => {
+              soundFx.playClick();
+              setShowHealingFlyout(false);
+            }}
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm no-drag"
+          >
+            <motion.div
+              key="healing-flyout-content"
+              variants={modalContentVariants}
+              initial="hidden"
+              animate="visible"
+              exit="exit"
+              transition={modalContentTransition}
+              onClick={(e) => e.stopPropagation()}
+              className="relative w-full max-w-lg bg-[#0d0f14] border border-orange-500/40 rounded-2xl shadow-[0_0_40px_rgba(249,115,22,0.2)] p-4 space-y-3.5"
+            >
             <div className="flex items-center justify-between pb-2 border-b border-white/10">
               <div className="flex items-center gap-2">
                 <div className="p-1.5 rounded-lg bg-orange-500/20 border border-orange-500/40 text-orange-300">
@@ -960,9 +989,10 @@ Respond ONLY with valid JSON.`;
                 {healingMsg}
               </div>
             )}
-          </div>
-        </div>
+          </motion.div>
+        </motion.div>
       )}
+    </AnimatePresence>
     </div>
   );
 };

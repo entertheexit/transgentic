@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { motion } from 'framer-motion';
 import { AccountProfile, ProviderAccountStore, ProviderId, ProviderStatus } from '../../shared/types.js';
 import {
   X,
@@ -17,6 +18,12 @@ import {
   KeyRound,
 } from 'lucide-react';
 import { soundFx } from '../audio/soundFx.js';
+import {
+  modalBackdropVariants,
+  modalBackdropTransition,
+  modalContentVariants,
+  modalContentTransition,
+} from '../utils/modalAnimations.js';
 
 interface AccountManagerModalProps {
   providerId: ProviderId;
@@ -139,8 +146,29 @@ export const AccountManagerModal: React.FC<AccountManagerModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-md animate-in fade-in duration-200">
-      <div className="relative w-full max-w-xl bg-[#0c0d12]/95 border border-white/10 rounded-2xl shadow-[0_0_50px_rgba(0,0,0,0.8)] overflow-hidden flex flex-col max-h-[85vh]">
+    <motion.div
+      key="account-manager-modal-backdrop"
+      variants={modalBackdropVariants}
+      initial="hidden"
+      animate="visible"
+      exit="exit"
+      transition={modalBackdropTransition}
+      onClick={() => {
+        soundFx.playClick();
+        onClose();
+      }}
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-md"
+    >
+      <motion.div
+        key="account-manager-modal-content"
+        variants={modalContentVariants}
+        initial="hidden"
+        animate="visible"
+        exit="exit"
+        transition={modalContentTransition}
+        onClick={(e) => e.stopPropagation()}
+        className="relative w-full max-w-xl bg-[#0c0d12]/95 border border-white/10 rounded-2xl shadow-[0_0_50px_rgba(0,0,0,0.8)] overflow-hidden flex flex-col max-h-[85vh]"
+      >
         {/* Header */}
         <div className="p-4 border-b border-white/10 flex items-center justify-between bg-white/[0.02]">
           <div className="flex items-center gap-3">
@@ -359,7 +387,7 @@ export const AccountManagerModal: React.FC<AccountManagerModalProps> = ({
             <span>Add Profile</span>
           </button>
         </div>
-      </div>
-    </div>
+      </motion.div>
+    </motion.div>
   );
 };

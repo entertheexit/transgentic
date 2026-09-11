@@ -1,6 +1,12 @@
 import { isCliProvider } from '../../shared/cli.js';
 import React, { useState, useEffect } from 'react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
+import {
+  modalBackdropVariants,
+  modalBackdropTransition,
+  modalContentVariants,
+  modalContentTransition,
+} from '../utils/modalAnimations.js';
 import {
   ModeRouteConfig,
   ProviderId,
@@ -1062,48 +1068,71 @@ export const RoutesSettings: React.FC<RoutesSettingsProps> = ({
       </div>
 
       {/* Confirmation Modal for Resetting Routes */}
-      {showResetConfirm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in duration-150">
-          <div className="w-full max-w-sm bg-[#0f1117] border border-white/10 rounded-2xl p-5 space-y-4 shadow-2xl text-slate-200">
-            <div className="flex items-center gap-2.5 text-amber-400">
-              <div className="p-2 rounded-xl bg-amber-500/10 border border-amber-500/30">
-                <RotateCcw className="w-5 h-5" />
+      <AnimatePresence>
+        {showResetConfirm && (
+          <motion.div
+            key="reset-routes-backdrop"
+            variants={modalBackdropVariants}
+            initial="hidden"
+            animate="visible"
+            exit="exit"
+            transition={modalBackdropTransition}
+            onClick={() => {
+              soundFx.playClick();
+              setShowResetConfirm(false);
+            }}
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm"
+          >
+            <motion.div
+              key="reset-routes-content"
+              variants={modalContentVariants}
+              initial="hidden"
+              animate="visible"
+              exit="exit"
+              transition={modalContentTransition}
+              onClick={(e) => e.stopPropagation()}
+              className="w-full max-w-sm bg-[#0f1117] border border-white/10 rounded-2xl p-5 space-y-4 shadow-2xl text-slate-200"
+            >
+              <div className="flex items-center gap-2.5 text-amber-400">
+                <div className="p-2 rounded-xl bg-amber-500/10 border border-amber-500/30">
+                  <RotateCcw className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-slate-100 font-sans">Reset Routing Defaults?</h3>
+                  <p className="text-[11px] text-slate-400 font-sans">Restore factory primary & fallback routes.</p>
+                </div>
               </div>
-              <div>
-                <h3 className="text-sm font-bold text-slate-100 font-sans">Reset Routing Defaults?</h3>
-                <p className="text-[11px] text-slate-400 font-sans">Restore factory primary & fallback routes.</p>
+
+              <p className="text-xs text-slate-300 leading-relaxed font-sans bg-black/40 p-3 rounded-xl border border-white/5">
+                This will restore default primary providers and candidate fallback chains for all 5 task modes (General, Coding, Image, Video, Music).
+              </p>
+
+              <div className="flex items-center justify-end gap-2 pt-1">
+                <button
+                  onClick={() => {
+                    soundFx.playClick();
+                    setShowResetConfirm(false);
+                  }}
+                  className="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 border border-white/10 text-xs font-semibold transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => {
+                    soundFx.playClick();
+                    onResetRoutes();
+                    soundFx.playTaskSuccess();
+                    setShowResetConfirm(false);
+                  }}
+                  className="px-3.5 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-xs font-semibold transition-all shadow-[0_0_12px_rgba(245,158,11,0.2)] cursor-pointer"
+                >
+                  Confirm Reset
+                </button>
               </div>
-            </div>
-
-            <p className="text-xs text-slate-300 leading-relaxed font-sans bg-black/40 p-3 rounded-xl border border-white/5">
-              This will restore default primary providers and candidate fallback chains for all 5 task modes (General, Coding, Image, Video, Music).
-            </p>
-
-            <div className="flex items-center justify-end gap-2 pt-1">
-              <button
-                onClick={() => {
-                  soundFx.playClick();
-                  setShowResetConfirm(false);
-                }}
-                className="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 border border-white/10 text-xs font-semibold transition-colors cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => {
-                  soundFx.playClick();
-                  onResetRoutes();
-                  soundFx.playTaskSuccess();
-                  setShowResetConfirm(false);
-                }}
-                className="px-3.5 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-xs font-semibold transition-all shadow-[0_0_12px_rgba(245,158,11,0.2)] cursor-pointer"
-              >
-                Confirm Reset
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };

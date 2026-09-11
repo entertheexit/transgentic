@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import {
   Image as ImageIcon,
   Film,
@@ -12,6 +13,12 @@ import {
   AlertCircle,
 } from 'lucide-react';
 import { soundFx } from '../audio/soundFx.js';
+import {
+  modalBackdropVariants,
+  modalBackdropTransition,
+  modalContentVariants,
+  modalContentTransition,
+} from '../utils/modalAnimations.js';
 
 export type MediaType = 'image' | 'video' | 'audio' | 'other';
 
@@ -286,46 +293,60 @@ export const MediaPreview: React.FC<MediaPreviewProps> = ({
       </div>
 
       {/* Lightbox Modal for Full-Size Image Viewing */}
-      {isLightBoxOpen && mediaType === 'image' && (
-        <div
-          onClick={() => setIsLightBoxOpen(false)}
-          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/90 backdrop-blur-md p-4 animate-in fade-in duration-150"
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            className="relative max-w-4xl max-h-[90vh] flex flex-col items-center bg-[#0d1117] border border-purple-500/40 rounded-2xl overflow-hidden shadow-2xl p-2"
+      <AnimatePresence>
+        {isLightBoxOpen && mediaType === 'image' && (
+          <motion.div
+            key="lightbox-modal-backdrop"
+            variants={modalBackdropVariants}
+            initial="hidden"
+            animate="visible"
+            exit="exit"
+            transition={modalBackdropTransition}
+            onClick={() => setIsLightBoxOpen(false)}
+            className="fixed inset-0 z-[100] flex items-center justify-center bg-black/90 backdrop-blur-md p-4"
           >
-            <div className="w-full flex items-center justify-between px-3 py-2 border-b border-white/10">
-              <span className="text-xs font-mono text-slate-200 truncate">{fileName}</span>
-              <button
-                onClick={() => setIsLightBoxOpen(false)}
-                className="p-1 rounded-lg hover:bg-white/10 text-slate-400 hover:text-white transition-colors cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-            <div className="flex-1 overflow-auto p-2 flex items-center justify-center">
-              <img src={activeSrc} alt={fileName} className="max-w-full max-h-[75vh] object-contain rounded-lg" />
-            </div>
-            <div className="w-full flex items-center justify-end gap-2 px-3 py-2 border-t border-white/10 text-xs font-mono">
-              <button
-                onClick={handleCopyPath}
-                className="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 flex items-center gap-1 cursor-pointer"
-              >
-                <Copy className="w-3 h-3" />
-                <span>{copied ? 'Copied' : 'Copy Path'}</span>
-              </button>
-              <button
-                onClick={handleOpenFile}
-                className="px-2.5 py-1 rounded-lg bg-purple-500/20 hover:bg-purple-500/30 text-purple-200 flex items-center gap-1 cursor-pointer"
-              >
-                <ExternalLink className="w-3 h-3" />
-                <span>Open in Viewer</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+            <motion.div
+              key="lightbox-modal-content"
+              variants={modalContentVariants}
+              initial="hidden"
+              animate="visible"
+              exit="exit"
+              transition={modalContentTransition}
+              onClick={(e) => e.stopPropagation()}
+              className="relative max-w-4xl max-h-[90vh] flex flex-col items-center bg-[#0d1117] border border-purple-500/40 rounded-2xl overflow-hidden shadow-2xl p-2"
+            >
+              <div className="w-full flex items-center justify-between px-3 py-2 border-b border-white/10">
+                <span className="text-xs font-mono text-slate-200 truncate">{fileName}</span>
+                <button
+                  onClick={() => setIsLightBoxOpen(false)}
+                  className="p-1 rounded-lg hover:bg-white/10 text-slate-400 hover:text-white transition-colors cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <div className="flex-1 overflow-auto p-2 flex items-center justify-center">
+                <img src={activeSrc} alt={fileName} className="max-w-full max-h-[75vh] object-contain rounded-lg" />
+              </div>
+              <div className="w-full flex items-center justify-end gap-2 px-3 py-2 border-t border-white/10 text-xs font-mono">
+                <button
+                  onClick={handleCopyPath}
+                  className="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 flex items-center gap-1 cursor-pointer"
+                >
+                  <Copy className="w-3 h-3" />
+                  <span>{copied ? 'Copied' : 'Copy Path'}</span>
+                </button>
+                <button
+                  onClick={handleOpenFile}
+                  className="px-2.5 py-1 rounded-lg bg-purple-500/20 hover:bg-purple-500/30 text-purple-200 flex items-center gap-1 cursor-pointer"
+                >
+                  <ExternalLink className="w-3 h-3" />
+                  <span>Open in Viewer</span>
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };

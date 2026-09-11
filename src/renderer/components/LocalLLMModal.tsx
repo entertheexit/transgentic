@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { LocalLLMConfig, type AttachmentKind } from '../../shared/types.js';
 import {
   Cpu,
@@ -17,6 +18,12 @@ import {
   Minimize2,
 } from 'lucide-react';
 import { soundFx } from '../audio/soundFx.js';
+import {
+  modalBackdropVariants,
+  modalBackdropTransition,
+  modalContentVariants,
+  modalContentTransition,
+} from '../utils/modalAnimations.js';
 
 interface LocalLLMModalProps {
   isOpen: boolean;
@@ -92,8 +99,6 @@ export const LocalLLMModal: React.FC<LocalLLMModalProps> = ({
       setAttachmentKinds(config.attachmentKinds || []);
     }
   }, [isOpen]);
-
-  if (!isOpen) return null;
 
   const handleSelectPreset = async (newPreset: 'ollama' | 'lmstudio' | 'custom') => {
     soundFx.playClick();
@@ -392,8 +397,28 @@ export const LocalLLMModal: React.FC<LocalLLMModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fade-in no-drag">
-      <div className="relative w-full max-w-lg bg-[#0d0f14] border border-blue-500/30 rounded-2xl shadow-[0_0_40px_rgba(59,130,246,0.15)] flex flex-col overflow-hidden max-h-[90vh]">
+    <AnimatePresence>
+      {isOpen && (
+        <motion.div
+          key="local-llm-modal-backdrop"
+          variants={modalBackdropVariants}
+          initial="hidden"
+          animate="visible"
+          exit="exit"
+          transition={modalBackdropTransition}
+          onClick={onClose}
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md no-drag"
+        >
+          <motion.div
+            key="local-llm-modal-content"
+            variants={modalContentVariants}
+            initial="hidden"
+            animate="visible"
+            exit="exit"
+            transition={modalContentTransition}
+            onClick={(e) => e.stopPropagation()}
+            className="relative w-full max-w-lg bg-[#0d0f14] border border-blue-500/30 rounded-2xl shadow-[0_0_40px_rgba(59,130,246,0.15)] flex flex-col overflow-hidden max-h-[90vh]"
+          >
         {/* Modal Header */}
         <div className="p-4 border-b border-white/10 flex items-center justify-between bg-gradient-to-r from-blue-950/30 via-slate-900 to-transparent">
           <div className="flex items-center gap-2.5">
@@ -875,7 +900,9 @@ export const LocalLLMModal: React.FC<LocalLLMModalProps> = ({
             </button>
           </div>
         </div>
-      </div>
-    </div>
+      </motion.div>
+    </motion.div>
+      )}
+    </AnimatePresence>
   );
 };

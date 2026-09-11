@@ -1,4 +1,11 @@
 import React, { useState } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import {
+  modalBackdropVariants,
+  modalBackdropTransition,
+  modalContentVariants,
+  modalContentTransition,
+} from '../utils/modalAnimations.js';
 import {
   CoreStatus,
   ProviderId,
@@ -761,18 +768,30 @@ export const RadialHub: React.FC<RadialHubProps> = ({
       </div>
 
       {/* 4. Balanced Agentic Mode Info Modal (Centered Vertically & Horizontally) */}
-      {
-        showInfoModal && (
-          <div
+      <AnimatePresence>
+        {showInfoModal && (
+          <motion.div
+            key="info-modal-backdrop"
+            variants={modalBackdropVariants}
+            initial="hidden"
+            animate="visible"
+            exit="exit"
+            transition={modalBackdropTransition}
             onClick={() => {
               soundFx.playClick();
               setShowInfoModal(false);
             }}
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-150"
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4"
           >
-            <div
+            <motion.div
+              key="info-modal-content"
+              variants={modalContentVariants}
+              initial="hidden"
+              animate="visible"
+              exit="exit"
+              transition={modalContentTransition}
               onClick={(e) => e.stopPropagation()}
-              className="relative w-full max-w-sm bg-[#0c1017] border border-cyan-500/40 rounded-xl shadow-[0_20px_50px_rgba(0,0,0,0.95)] p-5 space-y-3.5 animate-in zoom-in-95 duration-150 text-left"
+              className="relative w-full max-w-sm bg-[#0c1017] border border-cyan-500/40 rounded-xl shadow-[0_20px_50px_rgba(0,0,0,0.95)] p-5 space-y-3.5 text-left"
             >
               {/* Modal Header */}
               <div className="flex items-center justify-between border-b border-white/10 pb-2.5">
@@ -827,24 +846,36 @@ export const RadialHub: React.FC<RadialHubProps> = ({
                   Got it
                 </button>
               </div>
-            </div>
-          </div>
-        )
-      }
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* 5. Agent Halt Guard Info Modal */}
-      {
-        showAgentGuardModal && (
-          <div
+      <AnimatePresence>
+        {showAgentGuardModal && (
+          <motion.div
+            key="agent-guard-modal-backdrop"
+            variants={modalBackdropVariants}
+            initial="hidden"
+            animate="visible"
+            exit="exit"
+            transition={modalBackdropTransition}
             onClick={() => {
               soundFx.playClick();
               setShowAgentGuardModal(false);
             }}
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-150"
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4"
           >
-            <div
+            <motion.div
+              key="agent-guard-modal-content"
+              variants={modalContentVariants}
+              initial="hidden"
+              animate="visible"
+              exit="exit"
+              transition={modalContentTransition}
               onClick={(e) => e.stopPropagation()}
-              className="relative w-full max-w-sm bg-[#0c1017] border border-emerald-500/40 rounded-xl shadow-[0_20px_50px_rgba(0,0,0,0.95)] p-5 space-y-3.5 animate-in zoom-in-95 duration-150 text-left"
+              className="relative w-full max-w-sm bg-[#0c1017] border border-emerald-500/40 rounded-xl shadow-[0_20px_50px_rgba(0,0,0,0.95)] p-5 space-y-3.5 text-left"
             >
               {/* Modal Header */}
               <div className="flex items-center justify-between border-b border-white/10 pb-2.5">
@@ -896,24 +927,36 @@ export const RadialHub: React.FC<RadialHubProps> = ({
                   Got it
                 </button>
               </div>
-            </div>
-          </div>
-        )
-      }
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* 5. Quick Prompt AI Response Modal */}
-      {
-        showAnswerModal && currentAnswer && (
-          <div
+      <AnimatePresence>
+        {showAnswerModal && currentAnswer && (
+          <motion.div
+            key="answer-modal-backdrop"
+            variants={modalBackdropVariants}
+            initial="hidden"
+            animate="visible"
+            exit="exit"
+            transition={modalBackdropTransition}
             onClick={() => {
               soundFx.playClick();
               setShowAnswerModal(false);
             }}
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-150"
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4"
           >
-            <div
+            <motion.div
+              key="answer-modal-content"
+              variants={modalContentVariants}
+              initial="hidden"
+              animate="visible"
+              exit="exit"
+              transition={modalContentTransition}
               onClick={(e) => e.stopPropagation()}
-              className="relative w-full max-w-lg max-h-[85vh] bg-[#0c1017] border border-cyan-500/40 rounded-xl shadow-[0_20px_50px_rgba(0,0,0,0.95)] flex flex-col overflow-hidden animate-in zoom-in-95 duration-150 text-left"
+              className="relative w-full max-w-lg max-h-[85vh] bg-[#0c1017] border border-cyan-500/40 rounded-xl shadow-[0_20px_50px_rgba(0,0,0,0.95)] flex flex-col overflow-hidden text-left"
             >
               {/* Modal Header */}
               <div className="flex items-center justify-between px-5 py-3 border-b border-white/10 bg-black/40 shrink-0 gap-2">
@@ -978,15 +1021,15 @@ export const RadialHub: React.FC<RadialHubProps> = ({
                 </div>
               </div>
 
-              {/* Modal Body: Scrollable */}
-              <div className="flex-1 overflow-y-auto p-5 space-y-3.5 font-sans select-text">
-                {/* User Prompt Box */}
+              {/* Modal Body */}
+              <div className="p-5 overflow-y-auto space-y-4">
+                {/* User Prompt Echo */}
                 {currentAnswer.prompt && (
                   <div className="space-y-1">
-                    <div className="text-[9px] font-mono uppercase tracking-wider text-slate-500 font-semibold">
+                    <div className="text-[9px] font-mono uppercase tracking-wider text-slate-400 font-semibold">
                       Prompt
                     </div>
-                    <div className="text-xs text-slate-300 font-mono bg-black/60 px-3 py-2 rounded-xl border border-white/10 break-words select-text">
+                    <div className="text-xs text-slate-300 font-mono bg-white/5 p-2.5 rounded-lg border border-white/5">
                       {currentAnswer.prompt}
                     </div>
                   </div>
@@ -1041,10 +1084,10 @@ export const RadialHub: React.FC<RadialHubProps> = ({
                   </button>
                 </div>
               </div>
-            </div>
-          </div>
-        )
-      }
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div >
   );
 };

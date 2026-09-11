@@ -1,5 +1,12 @@
 import React, { useState } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { BlindedTokenMap } from '../../shared/types.js';
+import {
+  modalBackdropVariants,
+  modalBackdropTransition,
+  modalContentVariants,
+  modalContentTransition,
+} from '../utils/modalAnimations.js';
 import {
   Brain,
   Shield,
@@ -438,72 +445,97 @@ export const MemoryHubView: React.FC<MemoryHubViewProps> = ({
       </div>
 
       {/* Clearance Confirmation Modal */}
-      {showConfirmModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="relative w-full max-w-md bg-slate-900 border border-white/10 rounded-2xl p-5 shadow-2xl space-y-4">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 shadow-[0_0_15px_rgba(245,158,11,0.2)] shrink-0">
-                <AlertTriangle className="w-5 h-5" />
+      <AnimatePresence>
+        {showConfirmModal && (
+          <motion.div
+            key="clearance-confirm-backdrop"
+            variants={modalBackdropVariants}
+            initial="hidden"
+            animate="visible"
+            exit="exit"
+            transition={modalBackdropTransition}
+            onClick={() => {
+              if (!isProcessing) {
+                soundFx.playClick();
+                setShowConfirmModal(null);
+              }
+            }}
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm"
+          >
+            <motion.div
+              key="clearance-confirm-content"
+              variants={modalContentVariants}
+              initial="hidden"
+              animate="visible"
+              exit="exit"
+              transition={modalContentTransition}
+              onClick={(e) => e.stopPropagation()}
+              className="relative w-full max-w-md bg-slate-900 border border-white/10 rounded-2xl p-5 shadow-2xl space-y-4"
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 shadow-[0_0_15px_rgba(245,158,11,0.2)] shrink-0">
+                  <AlertTriangle className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-slate-100">
+                    {showConfirmModal === 'app_local'
+                      ? 'Clear App Local Storage & Memory?'
+                      : showConfirmModal === 'browser'
+                        ? 'Purge All Browser Storage & Cookies?'
+                        : 'Clear All Local & Browser Storage?'}
+                  </h3>
+                  <p className="text-xs text-slate-400">
+                    {showConfirmModal === 'app_local'
+                      ? 'This will wipe active blinded secrets, SQLite thread continuity, request logs, and cached local storage.'
+                      : showConfirmModal === 'browser'
+                        ? 'This will clear all cookies, localStorages, IndexedDBs, and session caches across ChatGPT, Claude, Gemini, and Grok. You will need to log in again in the Webview Drawer.'
+                        : 'This performs a complete wipe of all browser partition cookies, session tokens, secret vaults, and local storage.'}
+                  </p>
+                </div>
               </div>
-              <div>
-                <h3 className="text-sm font-bold text-slate-100">
-                  {showConfirmModal === 'app_local'
-                    ? 'Clear App Local Storage & Memory?'
-                    : showConfirmModal === 'browser'
-                      ? 'Purge All Browser Storage & Cookies?'
-                      : 'Clear All Local & Browser Storage?'}
-                </h3>
-                <p className="text-xs text-slate-400">
-                  {showConfirmModal === 'app_local'
-                    ? 'This will wipe active blinded secrets, SQLite thread continuity, request logs, and cached local storage.'
-                    : showConfirmModal === 'browser'
-                      ? 'This will clear all cookies, localStorages, IndexedDBs, and session caches across ChatGPT, Claude, Gemini, and Grok. You will need to log in again in the Webview Drawer.'
-                      : 'This performs a complete wipe of all browser partition cookies, session tokens, secret vaults, and local storage.'}
+
+              <div className="p-3 bg-black/40 rounded-xl border border-white/5 text-[11px] text-slate-300 space-y-1">
+                <div className="flex items-center gap-1.5 text-amber-400 font-semibold">
+                  <AlertTriangle className="w-3.5 h-3.5" />
+                  <span>Notice:</span>
+                </div>
+                <p className="text-slate-400">
+                  This action is immediate and cannot be undone. Use this when resetting your environment or before uninstalling the application.
                 </p>
               </div>
-            </div>
 
-            <div className="p-3 bg-black/40 rounded-xl border border-white/5 text-[11px] text-slate-300 space-y-1">
-              <div className="flex items-center gap-1.5 text-amber-400 font-semibold">
-                <AlertTriangle className="w-3.5 h-3.5" />
-                <span>Notice:</span>
+              <div className="flex items-center justify-end gap-2.5 pt-2">
+                <button
+                  onClick={() => {
+                    soundFx.playClick();
+                    setShowConfirmModal(null);
+                  }}
+                  disabled={isProcessing}
+                  className="px-4 py-2 text-xs font-semibold text-slate-300 hover:text-slate-100 bg-white/5 hover:bg-white/10 rounded-xl transition-all cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleConfirmAction}
+                  disabled={isProcessing}
+                  className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-rose-600 hover:bg-rose-500 rounded-xl transition-all cursor-pointer shadow-[0_0_15px_rgba(225,29,72,0.4)]"
+                >
+                  {isProcessing && <RefreshCw className="w-3.5 h-3.5 animate-spin" />}
+                  <span>
+                    {isProcessing
+                      ? 'Purging Storage...'
+                      : showConfirmModal === 'app_local'
+                        ? 'Clear Local Storage'
+                        : showConfirmModal === 'browser'
+                          ? 'Purge Browser Cookies'
+                          : 'Confirm Complete Wipe'}
+                  </span>
+                </button>
               </div>
-              <p className="text-slate-400">
-                This action is immediate and cannot be undone. Use this when resetting your environment or before uninstalling the application.
-              </p>
-            </div>
-
-            <div className="flex items-center justify-end gap-2.5 pt-2">
-              <button
-                onClick={() => {
-                  soundFx.playClick();
-                  setShowConfirmModal(null);
-                }}
-                disabled={isProcessing}
-                className="px-4 py-2 text-xs font-semibold text-slate-300 hover:text-slate-100 bg-white/5 hover:bg-white/10 rounded-xl transition-all cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleConfirmAction}
-                disabled={isProcessing}
-                className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-rose-600 hover:bg-rose-500 rounded-xl transition-all cursor-pointer shadow-[0_0_15px_rgba(225,29,72,0.4)]"
-              >
-                {isProcessing && <RefreshCw className="w-3.5 h-3.5 animate-spin" />}
-                <span>
-                  {isProcessing
-                    ? 'Purging Storage...'
-                    : showConfirmModal === 'app_local'
-                      ? 'Clear Local Storage'
-                      : showConfirmModal === 'browser'
-                        ? 'Purge Browser Cookies'
-                        : 'Confirm Complete Wipe'}
-                </span>
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };

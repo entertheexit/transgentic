@@ -1,6 +1,6 @@
 import { CliServicesSettings, setCachedCliState } from './CliServicesSettings.js';
 import { loadCliState } from '../utils/cliStateLoader.js';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import React, { useState, useEffect } from 'react';
 import {
   ProviderConfig,
@@ -3715,31 +3715,37 @@ http_headers = { "Authorization" = "Bearer ${clientToken || 'YOUR_TOKEN'}" }`;
       )}
 
       {/* Chrome Authentication & Session Sync Modal */}
-      {showAuthModalProvider && (
-        <AuthModal
-          isOpen={Boolean(showAuthModalProvider)}
-          onClose={() => setShowAuthModalProvider(null)}
-          providerId={showAuthModalProvider}
-          providerName={getProviderLabel(showAuthModalProvider)}
-          providerUrl={providers[showAuthModalProvider]?.url || ''}
-          onSynced={() => {
-            handleResync();
-          }}
-        />
-      )}
+      <AnimatePresence>
+        {showAuthModalProvider && (
+          <AuthModal
+            key="settings-auth-modal"
+            isOpen={Boolean(showAuthModalProvider)}
+            onClose={() => setShowAuthModalProvider(null)}
+            providerId={showAuthModalProvider}
+            providerName={getProviderLabel(showAuthModalProvider)}
+            providerUrl={providers[showAuthModalProvider]?.url || ''}
+            onSynced={() => {
+              handleResync();
+            }}
+          />
+        )}
+      </AnimatePresence>
 
       {/* Remove Provider Confirmation Modal */}
-      {providerToDelete && (
-        <DeleteProviderModal
-          providerId={providerToDelete.id}
-          providerName={providerToDelete.name}
-          isWebview={providerToDelete.isWebview}
-          servicesManifest={servicesManifest}
-          isDeleting={isDeletingProvider}
-          onConfirm={handleConfirmDeleteProvider}
-          onClose={() => setProviderToDelete(null)}
-        />
-      )}
+      <AnimatePresence>
+        {providerToDelete && (
+          <DeleteProviderModal
+            key="settings-delete-provider-modal"
+            providerId={providerToDelete.id}
+            providerName={providerToDelete.name}
+            isWebview={providerToDelete.isWebview}
+            servicesManifest={servicesManifest}
+            isDeleting={isDeletingProvider}
+            onConfirm={handleConfirmDeleteProvider}
+            onClose={() => setProviderToDelete(null)}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 };

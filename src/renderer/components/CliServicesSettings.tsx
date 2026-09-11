@@ -1,9 +1,16 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { Check, CheckCircle2, ChevronDown, CircleAlert, Clock3, Code2, Copy, ExternalLink, Folder, FolderGit2, HardDrive, KeyRound, LoaderCircle, PencilLine, Plus, Power, RefreshCw, ShieldCheck, Terminal, Trash2, X, Zap } from 'lucide-react';
 import { CLI_DEFINITIONS, defaultCliService, type CliModelDiscovery, type CliProviderId, type CliState, type CliPermissions, type CliWorkspace } from '../../shared/cli.js';
 import type { ServicesManifest } from '../../shared/types.js';
 import { loadCliState } from '../utils/cliStateLoader.js';
 import { soundFx } from '../audio/soundFx.js';
+import {
+  modalBackdropVariants,
+  modalBackdropTransition,
+  modalContentVariants,
+  modalContentTransition,
+} from '../utils/modalAnimations.js';
 
 type Props = { manifest?: ServicesManifest | null; selectedProvider: CliProviderId; onToggleService: (id: CliProviderId, enabled: boolean) => Promise<any> };
 const actionClass = 'group inline-flex items-center justify-center gap-1.5 rounded-xl border border-white/10 bg-white/[0.035] px-3 py-2 text-[10px] font-semibold text-slate-300 transition-all hover:border-cyan-500/30 hover:bg-cyan-500/[0.08] hover:text-cyan-200 disabled:cursor-not-allowed disabled:opacity-35';
@@ -397,18 +404,31 @@ export function CliServicesSettings({ manifest, selectedProvider: id, onToggleSe
     </article>
     <p className="px-1 text-[9.5px] leading-relaxed text-slate-500">Connection tests use your native CLI login. Provider Mode never receives a host workspace. Changing work mode or permissions stops active CLI work.</p>
 
-    {showWorkspaces && (
-      <div
-        onClick={handleCloseWorkspaces}
-        className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4 animate-in fade-in duration-200 no-drag"
-        role="dialog"
-        aria-modal="true"
-        aria-label="Registered CLI Workspaces"
-      >
-        <div
-          onClick={(e) => e.stopPropagation()}
-          className="relative w-full max-w-2xl bg-[#0c1017] border border-cyan-500/30 rounded-2xl shadow-[0_20px_60px_rgba(0,0,0,0.95),0_0_30px_rgba(6,182,212,0.15)] flex flex-col overflow-hidden max-h-[85vh] animate-in zoom-in-95 duration-200 text-left"
+    <AnimatePresence>
+      {showWorkspaces && (
+        <motion.div
+          key="workspaces-modal-backdrop"
+          variants={modalBackdropVariants}
+          initial="hidden"
+          animate="visible"
+          exit="exit"
+          transition={modalBackdropTransition}
+          onClick={handleCloseWorkspaces}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4 no-drag"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Registered CLI Workspaces"
         >
+          <motion.div
+            key="workspaces-modal-content"
+            variants={modalContentVariants}
+            initial="hidden"
+            animate="visible"
+            exit="exit"
+            transition={modalContentTransition}
+            onClick={(e) => e.stopPropagation()}
+            className="relative w-full max-w-2xl bg-[#0c1017] border border-cyan-500/30 rounded-2xl shadow-[0_20px_60px_rgba(0,0,0,0.95),0_0_30px_rgba(6,182,212,0.15)] flex flex-col overflow-hidden max-h-[85vh] text-left"
+          >
           {/* Header */}
           <div className="p-4 border-b border-white/10 flex items-center justify-between bg-gradient-to-r from-cyan-950/30 via-slate-900 to-transparent shrink-0">
             <div className="flex items-center gap-3">
@@ -581,8 +601,9 @@ export function CliServicesSettings({ manifest, selectedProvider: id, onToggleSe
               <span>Add Workspace</span>
             </button>
           </div>
-        </div>
-      </div>
+        </motion.div>
+      </motion.div>
     )}
+    </AnimatePresence>
   </section>;
 }

@@ -1,4 +1,5 @@
 import React from "react";
+import { motion } from "framer-motion";
 import { ServiceRouteConflict, TaskMode } from "../../shared/types.js";
 import {
   AlertTriangle,
@@ -14,6 +15,12 @@ import {
   Layers,
 } from "lucide-react";
 import { soundFx } from "../audio/soundFx.js";
+import {
+  modalBackdropVariants,
+  modalBackdropTransition,
+  modalContentVariants,
+  modalContentTransition,
+} from "../utils/modalAnimations.js";
 
 interface ServiceConflictModalProps {
   conflicts: ServiceRouteConflict[];
@@ -58,13 +65,25 @@ export const ServiceConflictModal: React.FC<ServiceConflictModalProps> = ({
   };
 
   return (
-    <div
+    <motion.div
+      key="service-conflict-modal-backdrop"
+      variants={modalBackdropVariants}
+      initial="hidden"
+      animate="visible"
+      exit="exit"
+      transition={modalBackdropTransition}
       onClick={handleDismiss}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4 animate-in fade-in duration-200"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4"
     >
-      <div
+      <motion.div
+        key="service-conflict-modal-content"
+        variants={modalContentVariants}
+        initial="hidden"
+        animate="visible"
+        exit="exit"
+        transition={modalContentTransition}
         onClick={(e) => e.stopPropagation()}
-        className="relative w-full max-w-lg bg-[#0c1017] border border-amber-500/40 rounded-2xl shadow-[0_20px_60px_rgba(0,0,0,0.95)] p-6 space-y-4 animate-in zoom-in-95 duration-200 text-left"
+        className="relative w-full max-w-lg bg-[#0c1017] border border-amber-500/40 rounded-2xl shadow-[0_20px_60px_rgba(0,0,0,0.95)] p-6 space-y-4 text-left"
       >
         {/* Header */}
         <div className="flex items-center justify-between border-b border-white/10 pb-3">
@@ -155,7 +174,7 @@ export const ServiceConflictModal: React.FC<ServiceConflictModalProps> = ({
             <ArrowRight className="w-3.5 h-3.5" />
           </button>
         </div>
-      </div>
-    </div>
+      </motion.div>
+    </motion.div>
   );
 };
