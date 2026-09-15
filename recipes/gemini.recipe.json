@@ -1,7 +1,7 @@
 {
-  "version": "1.0",
+  "version": "1.1.1",
   "id": "gemini",
-  "title": "Gemini",
+  "title": "Google Gemini",
   "domainMatch": "gemini.google.com",
   "url": "https://gemini.google.com/app",
   "newChatUrl": "https://gemini.google.com/app",
@@ -31,6 +31,27 @@
       "Gemini is currently unavailable",
       "Please wait before sending more requests"
     ]
+  },
+  "temporaryChat": {
+    "enabled": true,
+    "activationSteps": [
+      {
+        "action": "click",
+        "target": {
+          "role": "button",
+          "name": "Temporary chat"
+        }
+      }
+    ],
+    "activeWhen": {
+      "selectors": [
+        ".temporary-chat-card-container",
+        ".temporary-chat-header .info-text"
+      ]
+    },
+    "inactiveWhen": {
+      "selectors": "button[aria-label=\"Temporary chat\"] mat-icon[fonticon=\"gemini_chat_temp\"]"
+    }
   },
   "createdAt": "2026-01-01T00:00:00.000Z",
   "selectors": {

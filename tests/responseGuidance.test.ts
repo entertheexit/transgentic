@@ -16,7 +16,7 @@ import type { CallerContext } from '../src/main/mcp/clientContext.js';
 
 // Keep orchestration and response assembly real; isolate persistent stores and providers.
 vi.mock('../src/main/storage/logStorage.js', () => ({
-  globalLogStorage: { insert: vi.fn(), update: vi.fn() },
+  globalLogStorage: { insert: vi.fn(), update: vi.fn(), wasCleared: vi.fn().mockReturnValue(false) },
 }));
 
 const answer = '```js\nconst add = (a, b) => a + b;\n```';

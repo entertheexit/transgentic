@@ -18,6 +18,10 @@ describe("ServiceManifestManager", () => {
     expect(manifest.services.claude).toBeDefined();
     expect(manifest.services.gemini).toBeDefined();
     expect(manifest.services.grok).toBeDefined();
+    expect(manifest.services.chatgpt.enabled).toBe(true);
+    expect(manifest.services.claude.enabled).toBe(true);
+    expect(manifest.services.gemini.enabled).toBe(true);
+    expect(manifest.services.grok.enabled).toBe(true);
 
     expect(ServiceManifestManager.isServiceEnabled("chatgpt")).toBe(true);
     expect(ServiceManifestManager.isServiceEnabled("claude")).toBe(true);

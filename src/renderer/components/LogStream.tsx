@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
-import { McpRequestLog, ProviderStatus, ServicesManifest } from '../../shared/types.js';
+import { createPortal } from 'react-dom';
+import { AnimatePresence, motion } from 'framer-motion';
+import { McpRequestLog, ProviderStatus, ServicesManifest, type ChatMode } from '../../shared/types.js';
 import {
   Activity,
   ArrowRight,
@@ -28,12 +30,22 @@ import {
 import { soundFx } from '../audio/soundFx.js';
 import { MediaPreview, extractMediaPath } from './MediaPreview.js';
 import { getProviderDisplayName } from '../utils/providerTheme.js';
+import {
+  modalBackdropVariants,
+  modalBackdropTransition,
+  modalContentVariants,
+  modalContentTransition,
+} from '../utils/modalAnimations.js';
 
 interface LogStreamProps {
   logs: McpRequestLog[];
   totalLogsCount?: number;
+  category: ChatMode;
+  categoryCounts: Record<ChatMode, number>;
+  categoryClearSupported?: boolean;
+  onSelectCategory: (category: ChatMode) => void;
   onFetchMore?: () => void;
-  onClearLogs?: () => void;
+  onClearLogs?: (category: ChatMode) => Promise<void> | void;
   onTerminateRequest?: (logId: string) => Promise<any>;
   onTerminateAllPending?: () => Promise<any>;
   servicesManifest?: ServicesManifest | null;
@@ -43,6 +55,10 @@ interface LogStreamProps {
 export const LogStream: React.FC<LogStreamProps> = ({
   logs,
   totalLogsCount = 0,
+  category,
+  categoryCounts,
+  categoryClearSupported = true,
+  onSelectCategory,
   onFetchMore,
   onClearLogs,
   onTerminateRequest,
@@ -53,6 +69,8 @@ export const LogStream: React.FC<LogStreamProps> = ({
   const [expandedLogIds, setExpandedLogIds] = useState<Record<string, boolean>>({});
   const [copiedLogId, setCopiedLogId] = useState<string | null>(null);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
+  const [isClearing, setIsClearing] = useState(false);
+  const [clearError, setClearError] = useState<string | null>(null);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
 
   const toggleExpand = (id: string) => {
@@ -70,13 +88,19 @@ export const LogStream: React.FC<LogStreamProps> = ({
     setTimeout(() => setCopiedLogId(null), 2500);
   };
 
-  const handleClear = () => {
+  const handleClear = async () => {
+    if (!categoryClearSupported || isClearing || !onClearLogs) return;
     soundFx.playClick();
-    if (onClearLogs) {
-      onClearLogs();
+    setIsClearing(true);
+    try {
+      await onClearLogs(category);
       soundFx.playTaskSuccess();
+      setShowClearConfirm(false);
+    } catch (error: any) {
+      setClearError(error?.message || 'Could not clear logs.');
+    } finally {
+      setIsClearing(false);
     }
-    setShowClearConfirm(false);
   };
 
   const handleLoadMore = async () => {
@@ -153,78 +177,120 @@ export const LogStream: React.FC<LogStreamProps> = ({
   return (
     <div className="flex flex-col h-full pt-4 space-y-3 max-h-full overflow-hidden">
       {/* Header */}
-      <div className="flex pl-4 pr-4 items-center gap-3 justify-between pb-4 border-b border-white/5 shrink-0">
-        <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-xl bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center text-cyan-400 shadow-[0_0_15px_rgba(6,182,212,0.15)]">
-            <Activity className="w-4 h-4" />
-          </div>
-          <div className="items-center gap-2">
-            <div className="flex items-center gap-2">
-              <h2 className="text-sm font-bold text-slate-100 tracking-wide">Logs</h2>
-              <span className="text-[10px] font-mono text-slate-500 bg-white/5 px-2 py-0.5 rounded border border-white/5">
-                {logs.length} of {displayTotal}
-              </span>
+      <div className="flex flex-col gap-1.5 px-4 pb-3 border-b border-white/5 shrink-0">
+        <div className="flex min-w-0 items-center gap-2">
+          <div className="flex min-w-[90px] flex-1 items-center gap-2">
+            <div className="relative -top-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-cyan-500/30 bg-cyan-500/10 text-cyan-400 shadow-[0_0_15px_rgba(6,182,212,0.15)]">
+              <Activity className="w-4 h-4" />
             </div>
-            <p className="text-[10px] text-slate-400">
-              Live MCP Routing Stream
-            </p>
+            <div className="min-w-0">
+              <div className="flex items-center gap-1.5">
+                <h2 className="text-sm font-bold text-slate-100 tracking-wide">Logs</h2>
+                <span className="hidden min-[560px]:inline text-[9px] font-mono text-slate-500 bg-white/5 px-1.5 py-0.5 rounded border border-white/5">
+                  {logs.length} of {displayTotal}
+                </span>
+              </div>
+              <p className="truncate text-[9px] text-slate-400">Gateway request history</p>
+            </div>
+          </div>
+
+          <div className="flex min-w-[140px] max-w-[190px] flex-1 items-center gap-0.5 rounded-2xl border border-white/10 bg-black/50 p-1 shadow-inner backdrop-blur-md" role="tablist" aria-label="Conversation log category">
+            {(['normal', 'temporary'] as const).map((tab, idx) => (
+              <button key={tab} type="button" role="tab" aria-selected={category === tab} aria-controls="conversation-log-feed" id={`conversation-log-${tab}-tab`}
+                onClick={() => { soundFx.playModeSwitch(idx); setShowClearConfirm(false); void onSelectCategory(tab); }}
+                className={`flex min-w-0 flex-1 items-center justify-center gap-1 rounded-xl border px-2 py-1.5 text-[10px] font-mono font-semibold transition-all duration-200 ${category === tab
+                  ? 'border-cyan-500/40 bg-gradient-to-r from-cyan-500/20 to-blue-500/20 text-cyan-300 shadow-[0_0_12px_rgba(0,242,254,0.25)]'
+                  : 'border-transparent text-slate-400 hover:bg-white/5 hover:text-slate-200'}`}>
+                <span>{tab === 'normal' ? 'Normal' : 'Temporary'}</span>
+                <span className="text-[9px] opacity-60">{categoryCounts[tab]}</span>
+              </button>
+            ))}
+          </div>
+
+          <div className="ml-auto shrink-0">
+            {displayTotal > 0 && (
+              <button
+                onClick={() => { soundFx.playClick(); setClearError(null); setShowClearConfirm(true); }}
+                aria-label={`Clear ${category} logs`}
+                aria-haspopup="dialog"
+                className="flex items-center gap-1 px-2 py-1.5 rounded-lg text-[10px] font-mono font-semibold text-amber-300 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 shadow-[0_0_12px_rgba(245,158,11,0.15)] transition-all cursor-pointer"
+                title={`Clear ${category} logs from disk and memory`}
+              >
+                <Trash2 className="w-3 h-3" />
+                <span>Clear</span>
+              </button>
+            )}
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
-          {pendingCount > 0 && onTerminateAllPending && (
-            <button
-              onClick={handleTerminateAll}
-              className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 text-[10px] font-mono font-bold transition-all shadow-[0_0_10px_rgba(244,63,94,0.2)] cursor-pointer"
-              title="Stop waiting on all pending requests and flag them as terminated"
-            >
-              <Square className="w-2.5 h-2.5 fill-rose-400 text-rose-400" />
-              <span>Stop Waiting ({pendingCount})</span>
-            </button>
-          )}
-
-          {logs.length > 0 && (
-            <>
-              {showClearConfirm ? (
-                <div className="flex items-center gap-1.5 animate-in fade-in duration-200">
-                  <span className="text-[10px] font-mono text-rose-400">Clear all?</span>
-                  <button
-                    onClick={handleClear}
-                    className="px-2 py-0.5 rounded bg-rose-500 hover:bg-rose-600 text-white text-[10px] font-mono font-bold transition-colors cursor-pointer"
-                  >
-                    Yes, Delete
-                  </button>
-                  <button
-                    onClick={() => setShowClearConfirm(false)}
-                    className="px-2 py-0.5 rounded bg-white/10 hover:bg-white/20 text-slate-300 text-[10px] font-mono transition-colors cursor-pointer"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              ) : (
-                <button
-                  onClick={() => {
-                    soundFx.playClick();
-                    setShowClearConfirm(true);
-                  }}
-                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-mono font-semibold text-amber-300 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 shadow-[0_0_12px_rgba(245,158,11,0.15)] transition-all cursor-pointer"
-                  title="Clear all logs from disk and memory"
-                >
-                  <Trash2 className="w-3 h-3" />
-                  <span>Clear All</span>
-                </button>
-              )}
-            </>
-          )}
-        </div>
+        {pendingCount > 0 && onTerminateAllPending && (
+          <button
+            onClick={handleTerminateAll}
+            className="ml-auto flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 text-[10px] font-mono font-bold transition-all shadow-[0_0_10px_rgba(244,63,94,0.2)] cursor-pointer"
+            title="Stop waiting on all pending requests and flag them as terminated"
+          >
+            <Square className="w-2.5 h-2.5 fill-rose-400 text-rose-400" />
+            <span>Stop Waiting ({pendingCount})</span>
+          </button>
+        )}
       </div>
 
+      {createPortal(<AnimatePresence>
+        {showClearConfirm && (
+          <motion.div
+            variants={modalBackdropVariants}
+            initial="hidden"
+            animate="visible"
+            exit="exit"
+            transition={modalBackdropTransition}
+            onClick={() => { if (!isClearing) setShowClearConfirm(false); }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm"
+          >
+            <motion.div
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="clear-category-logs-title"
+              variants={modalContentVariants}
+              initial="hidden"
+              animate="visible"
+              exit="exit"
+              transition={modalContentTransition}
+              onClick={(event) => event.stopPropagation()}
+              className="relative w-full max-w-md space-y-4 rounded-2xl border border-white/10 bg-slate-900 p-5 shadow-2xl"
+            >
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-amber-500/30 bg-amber-500/10 text-amber-400 shadow-[0_0_15px_rgba(245,158,11,0.2)]">
+                  <AlertTriangle className="h-5 w-5" />
+                </div>
+                <div>
+                  <h3 id="clear-category-logs-title" className="text-sm font-bold text-slate-100">Clear {category === 'temporary' ? 'Temporary' : 'Normal'} Logs?</h3>
+                  <p className="text-xs text-slate-400">This removes {category} request logs from Transgentic's local history.</p>
+                </div>
+              </div>
+              <div className="space-y-1 rounded-xl border border-white/5 bg-black/40 p-3 text-[11px] text-slate-300">
+                <div className="flex items-center gap-1.5 font-semibold text-amber-400"><AlertTriangle className="h-3.5 w-3.5" /><span>Notice:</span></div>
+                <p className="text-slate-400">This action is immediate and cannot be undone. Conversations and Library files stay available.</p>
+                {!categoryClearSupported && <p className="text-amber-300">Restart Transgentic after active sessions finish to enable safe category clearing.</p>}
+                {clearError && <p className="text-rose-300">{clearError}</p>}
+              </div>
+              <div className="flex items-center justify-end gap-2.5 pt-2">
+                <button type="button" disabled={isClearing} onClick={() => setShowClearConfirm(false)} className="cursor-pointer rounded-xl bg-white/5 px-4 py-2 text-xs font-semibold text-slate-300 transition-all hover:bg-white/10 hover:text-slate-100">Cancel</button>
+                <button type="button" disabled={isClearing || !categoryClearSupported} onClick={() => { void handleClear(); }} className="flex cursor-pointer items-center gap-1.5 rounded-xl bg-rose-600 px-4 py-2 text-xs font-semibold text-white shadow-[0_0_15px_rgba(225,29,72,0.4)] transition-all hover:bg-rose-500 disabled:cursor-not-allowed disabled:opacity-50">
+                  {isClearing && <RefreshCw className="h-3.5 w-3.5 animate-spin" />}
+                  <span>{isClearing ? 'Clearing Logs...' : `Clear ${category === 'temporary' ? 'Temporary' : 'Normal'} Logs`}</span>
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>, document.body)}
+
       {/* Log Feed List */}
-      <div className="flex-1 overflow-y-auto !mt-0 pt-3 pb-4 pl-4 pr-4 space-y-2.5 pr-1">
+      <div id="conversation-log-feed" role="tabpanel" aria-labelledby={`conversation-log-${category}-tab`} className="flex-1 overflow-y-auto !mt-0 pt-3 pb-4 pl-4 pr-4 space-y-2.5 pr-1">
         {logs.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center text-center p-6 text-slate-500">
             <Activity className="w-8 h-8 text-slate-600 mb-2 opacity-60" />
-            <p className="text-xs font-semibold text-slate-400">No MCP requests recorded yet.</p>
+            <p className="text-xs font-semibold text-slate-400">No {category} requests recorded yet.</p>
             <p className="text-[10px] text-slate-600 mt-1 max-w-xs">
               All MCP requests and AI service answers are securely stored to local disk so you can review routing history anytime.
             </p>
@@ -271,6 +337,14 @@ export const LogStream: React.FC<LogStreamProps> = ({
                         <MessageSquareText className="w-2.5 h-2.5 text-emerald-400" />
                         <span>QUICK PROMPT</span>
                       </span>
+                    )}
+
+                    {log.transport === 'api' && <span className="text-[9px] font-mono text-sky-300 border border-sky-500/25 rounded px-1.5 py-0.5">API</span>}
+                    {log.chatExecution?.policy !== 'normal' && log.chatExecution?.actualMode === 'normal' && log.chatExecution.fallbackReason && (
+                      <span className="text-[9px] font-mono text-amber-300 border border-amber-500/30 rounded px-1.5 py-0.5" title={log.chatExecution.fallbackReason}>Unsupported · Normal chat used</span>
+                    )}
+                    {category === 'temporary' && log.temporaryChat && !log.promptText && (
+                      <span className="text-[9px] font-mono text-slate-400 border border-white/10 rounded px-1.5 py-0.5">Content not retained under previous policy</span>
                     )}
 
                     {log.autoRollover && (

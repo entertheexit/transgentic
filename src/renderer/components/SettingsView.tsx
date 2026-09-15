@@ -10,6 +10,7 @@ import {
   TransgenticConfig,
   ServicesManifest,
   RouteMode,
+  DEFAULT_TEMPORARY_CHAT,
   TaskMode,
   AttachmentKind,
 } from '../../shared/types.js';
@@ -93,6 +94,7 @@ interface SettingsViewProps {
   onToggleDoubleAgentMode?: (mode: RouteMode, enabled?: boolean) => Promise<any>;
   onUpdateDoubleAgent?: (config: Partial<import('../../shared/types.js').DoubleAgentConfig>) => Promise<any>;
   onToggleAgentGuard?: (mode: RouteMode, enabled?: boolean) => Promise<any>;
+  onToggleTemporaryChatMode?: (mode: RouteMode, enabled?: boolean) => Promise<any>;
   onUpdateRecallConfig?: (config: Partial<import('../../shared/types.js').RecallConfig>) => Promise<any>;
   onToggleRecallMode?: (mode: RouteMode, enabled?: boolean) => Promise<any>;
   onUpdateProviderConfig: (providerId: ProviderId, config: Partial<ProviderConfig>) => Promise<any>;
@@ -103,6 +105,10 @@ interface SettingsViewProps {
   onUpdateCustomApiProvider?: (providerId: ProviderId, updates: { name?: string; baseUrl?: string; apiKey?: string; defaultModelId?: string; attachmentKinds?: AttachmentKind[] }) => Promise<any>;
   onDeleteProvider?: (providerId: ProviderId) => Promise<any>;
   onUpdateServiceTitle?: (providerId: ProviderId, title: string) => Promise<any>;
+  onUpdateServiceManifest?: (providerId: ProviderId, updates: Partial<import('../../shared/types.js').ServiceManifestEntry>) => Promise<any>;
+  temporaryChatSessions?: import('../../shared/types.js').TemporaryChatSessionInfo[];
+  onOpenTemporaryChat?: (key: string) => Promise<any>;
+  onEndTemporaryChat?: (key: string) => Promise<any>;
   onInstallRecipe?: (recipe: any) => Promise<any>;
   onResyncModels: (providerId?: ProviderId) => Promise<any>;
   onSelectDirectory: () => Promise<string | null>;
@@ -143,6 +149,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   onToggleDoubleAgentMode,
   onUpdateDoubleAgent,
   onToggleAgentGuard,
+  onToggleTemporaryChatMode,
   onUpdateRecallConfig,
   onToggleRecallMode,
   onUpdateProviderConfig,
@@ -153,6 +160,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   onUpdateCustomApiProvider,
   onDeleteProvider,
   onUpdateServiceTitle,
+  onUpdateServiceManifest,
+  temporaryChatSessions = [],
+  onOpenTemporaryChat,
+  onEndTemporaryChat,
   onInstallRecipe,
   onResyncModels,
   onSelectDirectory,
@@ -1159,6 +1170,33 @@ http_headers = { "Authorization" = "Bearer ${clientToken || 'YOUR_TOKEN'}" }`;
                 <span>Co-Agent</span>
                 <ArrowRight className="w-3 h-3 text-amber-400 group-hover:translate-x-0.5 transition-transform" />
               </button>
+            </div>
+          </div>
+
+          <div className="tactile-core-card p-3.5 rounded-2xl space-y-3 border border-indigo-500/20">
+            <div className="flex items-center gap-2.5 pb-2 border-b border-white/5">
+              <div className="p-2 rounded-xl bg-indigo-500/10 border border-indigo-500/30 text-indigo-300"><Shield className="w-4 h-4" /></div>
+              <div>
+                <span className="text-xs font-bold text-slate-100 uppercase tracking-wide">Temporary Chat</span>
+                <p className="text-[10px] text-slate-400">Applies to new conversations in each mode. Supported providers use native Temporary Chat; unsupported providers use normal chat. Transgentic saves conversation logs locally, and generated files save to your Library.</p>
+              </div>
+            </div>
+            <div className="grid grid-cols-5 gap-1.5 pt-1">
+              {([
+                { mode: 'general' as RouteMode, label: 'General', icon: Sparkles },
+                { mode: 'coding' as RouteMode, label: 'Coding', icon: Code2 },
+                { mode: 'image' as RouteMode, label: 'Image', icon: ImageIcon },
+                { mode: 'video' as RouteMode, label: 'Video', icon: Video },
+                { mode: 'music' as RouteMode, label: 'Music', icon: Music },
+              ]).map(({ mode, label, icon: Icon }) => {
+                const enabled = config.temporaryChat?.[mode] ?? DEFAULT_TEMPORARY_CHAT[mode];
+                return <button key={mode} type="button" aria-pressed={enabled} onClick={() => { soundFx.playClick(); void onToggleTemporaryChatMode?.(mode, !enabled); }}
+                  className={`flex flex-col items-center justify-center p-2 rounded-xl border transition-all ${enabled ? 'bg-indigo-500/20 border-indigo-500/50 text-indigo-200' : 'bg-black/30 border-white/5 text-slate-400 hover:text-slate-200'}`}
+                  title={`Temporary Chat preference for ${label} mode`}>
+                  <Icon className="w-3.5 h-3.5 mb-1" /><span className="text-[10px] font-mono font-semibold">{label}</span>
+                  <span className="text-[8.5px] font-mono mt-0.5">{enabled ? 'ON' : 'OFF'}</span>
+                </button>;
+              })}
             </div>
           </div>
 
@@ -3451,6 +3489,46 @@ http_headers = { "Authorization" = "Bearer ${clientToken || 'YOUR_TOKEN'}" }`;
                   <span>Live models refreshed & synced non-destructively!</span>
                 </div>
               )}
+
+              {(() => {
+                const capability = providers[selectedProvider]?.temporaryChat;
+                const supported = capability?.supported === true;
+                const liveSessions = temporaryChatSessions.filter(session => session.providerId === selectedProvider);
+                return (
+                  <div className="space-y-2 rounded-xl border border-indigo-500/20 bg-indigo-500/[0.06] p-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 text-[10px] font-mono font-bold uppercase tracking-wider text-indigo-200">
+                          <Shield className="h-3.5 w-3.5 text-indigo-300" />
+                          Temporary Chat
+                        </div>
+                        <p className="mt-1 text-[9.5px] leading-relaxed text-slate-400">
+                          {supported
+                            ? 'This provider supports native Temporary Chat. Per-mode preferences are in General Settings. Transgentic saves conversation logs locally; generated files still save to your Library.'
+                            : 'Native Temporary Chat is unavailable for this provider. Preferred temporary requests use normal chat and report that fallback.'}
+                        </p>
+                        {supported && capability?.availability === 'unavailable' && (
+                          <p className="mt-1 text-[9px] font-mono text-amber-300">{capability.reason || 'Unavailable for the active account.'}</p>
+                        )}
+                      </div>
+                    </div>
+                    {liveSessions.length > 0 && (
+                      <div className="space-y-1.5 border-t border-white/5 pt-2">
+                        <div className="text-[9px] font-mono uppercase tracking-wider text-slate-500">Live Conversations</div>
+                        {liveSessions.map(session => (
+                          <div key={session.key} className="flex items-center justify-between gap-2 rounded-lg border border-white/[0.06] bg-black/25 px-2.5 py-2">
+                            <span className="truncate text-[9.5px] font-mono text-indigo-200">{session.mode === 'normal' ? 'Normal' : 'Temporary'} session {session.generation}</span>
+                            <div className="flex gap-1.5">
+                              <button type="button" onClick={() => void onOpenTemporaryChat?.(session.key)} className="rounded-md border border-cyan-500/25 bg-cyan-500/10 px-2 py-1 text-[9px] font-mono text-cyan-200">Open</button>
+                              <button type="button" onClick={() => void onEndTemporaryChat?.(session.key)} className="rounded-md border border-rose-500/25 bg-rose-500/10 px-2 py-1 text-[9px] font-mono text-rose-200">End</button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
 
               {/* Provider Safe Hourly Quota & Subscription Limit Settings */}
               <div className="space-y-2 bg-black/40 p-3 rounded-xl border border-white/5">

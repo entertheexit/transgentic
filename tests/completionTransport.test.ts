@@ -3,9 +3,10 @@ import { TransgenticMcpServer } from '../src/main/mcp/server.js';
 import { globalCliRuntime } from '../src/main/cli/cliRuntimeManager.js';
 import { DynamicRouter } from '../src/main/mcp/router.js';
 import { ServiceManifestManager } from '../src/main/registry/serviceManifest.js';
+import { globalLogStorage } from '../src/main/storage/logStorage.js';
 
-vi.mock('../src/main/storage/logStorage.js', () => ({ globalLogStorage: { insert: vi.fn(), update: vi.fn() } }));
-vi.mock('../src/main/security/clientAuth.js', () => ({ ClientAuthManager: { verifyToken: (token?: string) => token === 'transport-token' } }));
+vi.mock('../src/main/storage/logStorage.js', () => ({ globalLogStorage: { insert: vi.fn(), update: vi.fn(), getAll: vi.fn().mockReturnValue([]), wasCleared: vi.fn().mockReturnValue(false) }, logCategory: vi.fn().mockReturnValue('normal') }));
+vi.mock('../src/main/security/clientAuth.js', () => ({ ClientAuthManager: { verifyToken: (token?: string) => token === 'transport-token', getMasterToken: () => 'transport-token' } }));
 
 describe('OpenAI-compatible completion transport', () => {
   let server: TransgenticMcpServer;
@@ -47,6 +48,20 @@ describe('OpenAI-compatible completion transport', () => {
     expect(globalCliRuntime.execute).toHaveBeenCalledWith('cli_codex', expect.stringContaining('Unique context'), expect.objectContaining({ newThread: true, request: {} }));
     const options = vi.mocked(globalCliRuntime.execute).mock.calls[0][2];
     expect(options.conversationKey).toBe(options.reqId);
+    expect(data.transgentic.chatExecution).toMatchObject({ policy: 'prefer-temporary', actualMode: 'normal', fallbackReason: expect.any(String) });
+    expect(globalLogStorage.update).toHaveBeenCalledWith(expect.objectContaining({ transport: 'api', status: 'success', responseText: expect.stringContaining('Direct CLI answer') }));
+  });
+
+  it('keeps explicit temporary API requests strict and rejects retained sessions for CLI targets', async () => {
+    const post = async (body: any) => fetch(`http://127.0.0.1:${port}/v1/chat/completions`, { method: 'POST',
+      headers: { Authorization: 'Bearer transport-token', 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const strict = await post({ model: 'transgentic/general', temporary_chat: true, messages: [{ role: 'user', content: 'sentinel strict' }] });
+    expect(strict.status).toBe(400);
+    expect((await strict.json() as any).error.message).toContain('TEMPORARY_CHAT_UNSUPPORTED');
+    const retained = await post({ model: 'transgentic/provider/cli_codex', conversation_id: 'thread', messages: [{ role: 'user', content: 'sentinel retained' }] });
+    expect(retained.status).toBe(400);
+    expect((await retained.json() as any).error.message).toContain('CONVERSATION_UNSUPPORTED');
+    expect(globalCliRuntime.execute).not.toHaveBeenCalled();
   });
 
   it('emits valid buffered SSE chunks and a DONE marker', async () => {
@@ -56,6 +71,7 @@ describe('OpenAI-compatible completion transport', () => {
     expect(body).toContain('chat.completion.chunk');
     expect(body).toContain('Direct CLI answer');
     expect(body).toContain('data: [DONE]');
+    expect(body).toContain('"chatExecution"');
   });
 
   it('streams validated tool calls while forcing all optional context extras off', async () => {

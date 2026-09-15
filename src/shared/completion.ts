@@ -1,4 +1,4 @@
-import type { ProviderId, TaskMode } from './types.js';
+import type { ProviderId, TaskMode, ChatExecutionStatus } from './types.js';
 
 export type CompletionRole = 'system' | 'developer' | 'user' | 'assistant' | 'tool';
 
@@ -25,13 +25,16 @@ export interface CompletionRequest {
   model: string;
   messages: CompletionMessage[];
   tools?: CompletionTool[];
-  tool_choice?: unknown;
+  tool_choice?: 'auto' | 'none' | 'required' | { type: 'function'; function: { name: string } };
   stream?: boolean;
   temperature?: number;
   max_tokens?: number;
   max_completion_tokens?: number;
   stop?: string | string[];
   user?: string;
+  temporary_chat?: boolean;
+  conversation_id?: string;
+  new_thread?: boolean;
 }
 
 export interface CompletionChoiceMessage {
@@ -46,6 +49,11 @@ export interface CompletionResult {
   provider: ProviderId;
   model: string;
   usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number };
+  chatExecution?: ChatExecutionStatus;
+  executionBranches?: ChatExecutionStatus[];
+  conversationId?: string;
+  contextReset?: boolean;
+  reviewError?: string;
 }
 
 export interface CompletionModel {

@@ -78,11 +78,27 @@ export interface RecipeElementLocator {
   role?: string;
   /** Exact normalized accessible-name alternatives, including localized labels. */
   name?: SelectorCandidate;
+  /** Accessible-name comparison. Exact remains the backward-compatible default. */
+  nameMatch?: 'exact' | 'contains';
 }
 
-export interface RecipeAttachmentRevealStep {
+export interface RecipeClickStep {
   action: 'click';
   target: RecipeElementLocator;
+}
+
+/** Backward-compatible name used by attachment recipes. */
+export type RecipeAttachmentRevealStep = RecipeClickStep;
+
+export interface RecipeTemporaryChat {
+  /** Native provider temporary/private chat support. */
+  enabled: boolean;
+  /** Ordered provider UI actions that activate the native mode. */
+  activationSteps?: RecipeClickStep[];
+  /** Positive proof that the currently open conversation is temporary. */
+  activeWhen?: RecipeElementLocator;
+  /** Positive proof that a newly opened conversation is in normal mode. */
+  inactiveWhen?: RecipeElementLocator;
 }
 
 export interface RecipeAttachmentInput {
@@ -216,6 +232,8 @@ export interface CustomRecipe {
   auth?: RecipeAuthConfig;
   /** Declarative rate limiting configuration */
   rateLimit?: RecipeRateLimitConfig;
+  /** Native provider Temporary Chat activation and verification. */
+  temporaryChat?: RecipeTemporaryChat;
   /** ISO timestamp of recipe creation */
   createdAt: string;
   /** ISO timestamp of last update */
@@ -279,11 +297,13 @@ export function validateCustomRecipe(raw: any): { valid: boolean; errors: string
     const selectors = normalizeSelectorCandidate(value.selectors);
     const role = typeof value.role === 'string' ? value.role.trim().toLowerCase() : '';
     const name = normalizeTextCandidate(value.name);
+    const nameMatch = value.nameMatch === 'contains' ? 'contains' : 'exact';
     if (!selectors && !role) return undefined;
     return {
       ...(selectors ? { selectors } : {}),
       ...(role ? { role } : {}),
       ...(name ? { name } : {}),
+      ...(name && nameMatch === 'contains' ? { nameMatch } : {}),
     };
   };
 
@@ -313,6 +333,35 @@ export function validateCustomRecipe(raw: any): { valid: boolean; errors: string
     };
   };
 
+  const sanitizeTemporaryChat = (value: any): RecipeTemporaryChat | undefined => {
+    if (value === undefined) return undefined;
+    if (!value || typeof value !== 'object') {
+      errors.push('temporaryChat must be an object.');
+      return undefined;
+    }
+    if (typeof value.enabled !== 'boolean') {
+      errors.push('temporaryChat.enabled boolean is required.');
+      return undefined;
+    }
+    if (!value.enabled) return { enabled: false };
+    if (!Array.isArray(value.activationSteps) || value.activationSteps.length === 0) {
+      errors.push('temporaryChat.activationSteps must contain at least one click step when enabled.');
+    }
+    const activationSteps = Array.isArray(value.activationSteps)
+      ? value.activationSteps.flatMap((step: any, index: number) => {
+          const target = step?.action === 'click' ? sanitizeElementLocator(step.target) : undefined;
+          if (!target) errors.push(`temporaryChat.activationSteps[${index}] requires a click action and a valid target.`);
+          return target ? [{ action: 'click' as const, target }] : [];
+        })
+      : [];
+    const activeWhen = sanitizeElementLocator(value.activeWhen);
+    const inactiveWhen = sanitizeElementLocator(value.inactiveWhen);
+    if (!activeWhen) errors.push('temporaryChat.activeWhen requires selectors or role.');
+    if (!inactiveWhen) errors.push('temporaryChat.inactiveWhen requires selectors or role.');
+    if (!activationSteps.length || !activeWhen || !inactiveWhen) return undefined;
+    return { enabled: true, activationSteps, activeWhen, inactiveWhen };
+  };
+
   if (!raw || typeof raw !== 'object') {
     return { valid: false, errors: ['Recipe payload must be a non-null object.'] };
   }
@@ -336,6 +385,7 @@ export function validateCustomRecipe(raw: any): { valid: boolean; errors: string
     }));
   }
   raw.modeSchemaVersion = 2;
+  const temporaryChat = sanitizeTemporaryChat(raw.temporaryChat);
 
   // Flattened inspector structure: if response is missing but responseContainer or textResponse exists in selectors
   if (!raw.response && (raw.selectors?.responseContainer || raw.selectors?.textResponse || raw.responseStructure?.container)) {
@@ -682,6 +732,7 @@ export function validateCustomRecipe(raw: any): { valid: boolean; errors: string
           },
         }
       : {}),
+    ...(temporaryChat ? { temporaryChat } : {}),
     ...(raw.newChatUrl ? { newChatUrl: String(raw.newChatUrl).trim() } : {}),
     ...(Array.isArray(raw.resetUrlPatterns) ? { resetUrlPatterns: raw.resetUrlPatterns } : {}),
   };
@@ -689,263 +740,4 @@ export function validateCustomRecipe(raw: any): { valid: boolean; errors: string
   return { valid: true, errors: [], recipe: sanitized };
 }
 
-/**
- * Built-in recipe templates for the 4 primary providers.
- */
-export const BUILTIN_RECIPES: Record<'chatgpt' | 'claude' | 'gemini' | 'grok', CustomRecipe> = {
-  chatgpt: {
-    modeSchemaVersion: 2,
-    version: '1.0',
-    id: 'chatgpt',
-    title: 'OpenAI ChatGPT',
-    domainMatch: 'chatgpt.com',
-    url: 'https://chatgpt.com',
-    newChatUrl: 'https://chatgpt.com',
-    resetUrlPatterns: [
-      { pattern: '/projects', redirectTo: '/' }
-    ],
-    authStrategy: 'cookie_sync',
-    auth: {
-      authCookies: [
-        '__Secure-next-auth.session-token',
-        '__Host-next-auth.session-token'
-      ],
-      minCookieLength: 25,
-      loggedInSelector: 'button[data-testid="profile-button"], button[data-testid="user-menu"], #projects-page-search, [data-testid="project-directory-scroll-root"], a[href="/projects"], button[aria-label*="Profile" i], button[aria-label*="Account" i]',
-      loggedOutSelector: 'button[data-testid="login-button"], button[data-testid="signup-button"], a[href*="/auth/login"], a[href*="/auth/signup"]',
-      loginUrls: ['/auth/login', '/auth/signup'],
-      clientBootstrapSelector: '#client-bootstrap'
-    },
-    rateLimit: {
-      textPatterns: [
-        "You've reached your limit",
-        "Too many requests in 1 hour",
-        "Please try again later",
-        "Rate limit reached"
-      ],
-      selector: '[data-testid="request-error-banner"], .text-red-500'
-    },
-    createdAt: '2026-01-01T00:00:00.000Z',
-    selectors: {
-      inputPrompt: '#prompt-textarea, div.ProseMirror[contenteditable="true"], textarea, div[contenteditable="true"]',
-      submitButton: 'button[data-testid="send-button"], button[aria-label*="Send prompt" i], button[aria-label*="Send" i], button.composer-submit-button-color, button[data-testid="composer-speech-button"] + button',
-      stopButton: 'button[data-testid="stop-button"], button[aria-label*="Stop" i]',
-      modelDropdownTrigger: '[data-testid="model-selector-button"], button[aria-haspopup="menu"]',
-    },
-    response: {
-      container: '[data-message-author-role="assistant"], div[data-testid^="conversation-turn-"]:not([data-message-author-role="user"]), div.agent-turn',
-      textSelector: '.response-content-markdown, .markdown, .prose',
-      actionButtons: 'button[data-testid*="copy" i], button[aria-label*="Copy" i], button[aria-label*="Good response" i], button[aria-label*="Bad response" i]',
-      generatingIndicator: '[class*="imagegen-loading"], [class*="placeholder-shimmer"], .animate-pulse',
-      excludeSelectors: ['details', '[data-testid*="thought" i]', '[data-testid*="reasoning" i]', '.thinking-accordion'],
-      modes: {
-        text: {
-          enabled: true,
-          contentSelector: '.response-content-markdown, .markdown, .prose',
-          mediaKind: 'text',
-          inputAttachments: { fileInput: 'input[type="file"]', acceptedKinds: ['image', 'document'], multiple: true },
-        },
-        image: {
-          enabled: true,
-          contentSelector: 'img[src*="backend-api/estuary/content"], img[src*="estuary/content"], img[alt*="Generated image" i], div[class*="imagegen"] img, div[id^="image-"] img, img[src*="dall-e"], img[src*="oaiusercontent"], img.dall-e-image',
-          mediaKind: 'image',
-          inputAttachments: { fileInput: 'input[type="file"]', acceptedKinds: ['image'], multiple: true },
-        },
-        video: {
-          enabled: true,
-          contentSelector: 'video source, video[src], [data-testid*="video"] video, video, a[download][href*="video"]',
-          downloadSelector: 'a[download][href*="video"]',
-          mediaKind: 'video',
-        },
-        music: {
-          enabled: true,
-          contentSelector: 'audio source, audio[src], [data-testid*="audio"] audio, audio, [data-testid="audio-player"] audio',
-          mediaKind: 'audio',
-        },
-      },
-    },
-  },
-  claude: {
-    modeSchemaVersion: 2,
-    version: '1.0',
-    id: 'claude',
-    title: 'Anthropic Claude',
-    domainMatch: 'claude.ai',
-    url: 'https://claude.ai',
-    newChatUrl: 'https://claude.ai/new',
-    resetUrlPatterns: [
-      { pattern: '/project', redirectTo: '/new' },
-      { pattern: '/settings', redirectTo: '/new' }
-    ],
-    authStrategy: 'cookie_sync',
-    auth: {
-      authCookies: ['sessionKey'],
-      minCookieLength: 20,
-      loggedInSelector: 'div.ProseMirror[contenteditable="true"], div[contenteditable="true"], textarea[placeholder*="Claude" i], [data-testid="user-menu"], button[aria-label*="Account" i], button[aria-label*="Profile" i]',
-      loggedOutSelector: 'input[type="email"], input[name="email"], input[placeholder*="email" i], a[href*="/login"], a[href*="/signup"], button[data-testid="login-button"]',
-      loggedOutTextPatterns: [
-        "Question what's next",
-        "Continue with Google",
-        "Continue with email"
-      ],
-      loginUrls: ['/login', '/signup']
-    },
-    rateLimit: {
-      textPatterns: [
-        "You have reached your Claude message limit",
-        "You're out of free messages",
-        "Claude is at capacity right now",
-        "Rate limit exceeded"
-      ]
-    },
-    createdAt: '2026-01-01T00:00:00.000Z',
-    selectors: {
-      inputPrompt: 'div.ProseMirror, fieldset div[contenteditable="true"], div[contenteditable="true"], textarea[placeholder*="Claude" i], textarea',
-      submitButton: 'button[aria-label*="Send" i], button[type="submit"], button:has(svg)',
-      stopButton: 'button[aria-label*="Stop" i], [data-is-streaming="true"]',
-      modelDropdownTrigger: 'button[aria-label*="model" i], [data-testid="model-selector"]',
-    },
-    response: {
-      container: '[data-test-render-count] .font-claude-message, .font-claude-message, div.grid-cols-1 .prose, div[data-is-streaming], div.prose',
-      textSelector: '.font-claude-message, .prose',
-      actionButtons: 'button[aria-label*="Copy" i], button[aria-label*="Copy text" i], button[aria-label*="Retry" i], button[aria-label*="Thumbs up" i]',
-      generatingIndicator: '[data-is-streaming="true"], div[data-is-streaming]',
-      modes: {
-        text: {
-          enabled: true,
-          contentSelector: '.font-claude-message, .prose',
-          mediaKind: 'text',
-          inputAttachments: { fileInput: 'input[type="file"]', acceptedKinds: ['image', 'document'], multiple: true },
-        },
-      },
-    },
-  },
-  gemini: {
-    modeSchemaVersion: 2,
-    version: '1.0',
-    id: 'gemini',
-    title: 'Google Gemini',
-    domainMatch: 'gemini.google.com',
-    url: 'https://gemini.google.com/app',
-    newChatUrl: 'https://gemini.google.com/app',
-    authStrategy: 'cookie_sync',
-    auth: {
-      authCookies: ['__Secure-1PSIDTS', '__Secure-3PSIDTS', '__Secure-1PSID', '__Secure-3PSID'],
-      cookieDomains: ['google.com'],
-      requireAllCookies: false,
-      minCookieLength: 20,
-      loggedInSelector: 'button[aria-label*="Google Account" i], img[alt*="profile" i], img[alt*="Google Account" i], a[aria-label*="Google Account" i], [data-id="avatar-button"]',
-      loggedOutSelector: 'a[href*="accounts.google.com/ServiceLogin"], a[href*="accounts.google.com/signin"], a[aria-label*="Sign in" i], button[aria-label*="Sign in" i], a[data-g-label="sign-in"]',
-      loginUrls: ['accounts.google.com/ServiceLogin', 'accounts.google.com/signin']
-    },
-    rateLimit: {
-      textPatterns: [
-        "You've reached your limit",
-        "Gemini is currently unavailable",
-        "Please wait before sending more requests"
-      ]
-    },
-    createdAt: '2026-01-01T00:00:00.000Z',
-    selectors: {
-      inputPrompt: 'div.ql-editor, rich-textarea textarea, rich-textarea div[contenteditable="true"], div[contenteditable="true"]',
-      submitButton: 'button[aria-label*="Send message" i], button[aria-label*="Send prompt" i], button[aria-label*="Send" i], button[aria-label*="ส่ง" i], button.send-button, button[mattooltip*="Send" i]',
-      stopButton: 'button[aria-label*="Stop" i], .streaming-indicator',
-      modelDropdownTrigger: 'button[aria-label*="model" i], div.model-switcher',
-    },
-    response: {
-      container: 'model-response, response-container, structured-content-container, message-content',
-      textSelector: '.response-content-markdown, .markdown, .prose',
-      actionButtons: 'button[aria-label*="Copy" i], button[aria-label*="Download" i], copy-button, share-button',
-      generatingIndicator: '[data-test-id="image-loading-overlay"]:not(.done-generating), .shimmer-overlay:not(.done-generating)',
-      modes: {
-        text: {
-          enabled: true,
-          contentSelector: '.response-content-markdown, .markdown, .prose',
-          mediaKind: 'text',
-          inputAttachments: { fileInput: 'input[type="file"]', acceptedKinds: ['image', 'document'], multiple: true },
-        },
-        image: {
-          enabled: true,
-          contentSelector: 'single-image img.loaded, single-image img[src], generated-image img.loaded, generated-image img[src], .generated-images img',
-          downloadSelector: '[data-test-id="download-generated-image-button"]',
-          mediaKind: 'image',
-          inputAttachments: { fileInput: 'input[type="file"]', acceptedKinds: ['image'], multiple: true },
-        },
-        video: {
-          enabled: true,
-          contentSelector: 'generated-video video, video-player video, video',
-          downloadSelector: 'button[aria-label*="Download video" i]',
-          mediaKind: 'video',
-          inputAttachments: { fileInput: 'input[type="file"]', acceptedKinds: ['image', 'video'], multiple: true },
-        },
-        music: {
-          enabled: true,
-          contentSelector: 'generated-music video, generated-music audio, video-player video, audio',
-          downloadSelector: 'button[aria-label*="Download track" i]',
-          mediaKind: 'audio',
-        },
-      },
-    },
-  },
-  grok: {
-    modeSchemaVersion: 2,
-    version: '1.0',
-    id: 'grok',
-    title: 'xAI Grok',
-    domainMatch: 'grok.com',
-    url: 'https://grok.com',
-    newChatUrl: 'https://grok.com',
-    authStrategy: 'cookie_sync',
-    auth: {
-      authCookies: ['sso', 'sso-rw', '__Secure-next-auth.session-token', 'xai-session'],
-      cookieDomains: ['grok.com', 'x.ai'],
-      excludeCookieDomains: ['x.com', 'twitter.com'],
-      minCookieLength: 25,
-      loggedInSelector: 'button[aria-haspopup="menu"], button[aria-label*="user" i], button[aria-label*="profile" i], button[aria-label*="account" i], [data-testid="UserAvatar"], [data-testid="user-avatar"], [data-testid="SideNav_AccountSwitcher_Button"], img[alt*="avatar" i]',
-      loggedOutSelector: 'a[href="/login"], a[href="/signin"], a[href="/signup"], button[data-testid="login-button"], button[data-testid="signin-button"], button[data-testid="signup-button"]',
-      loginUrls: ['/login', '/signin', '/signup', '/auth/', '/i/flow/login']
-    },
-    rateLimit: {
-      textPatterns: [
-        "Rate limit exceeded",
-        "You have run out of Grok queries",
-        "run out of Grok",
-        "Please wait a few moments",
-        "You've reached your limit"
-      ]
-    },
-    createdAt: '2026-01-01T00:00:00.000Z',
-    selectors: {
-      inputPrompt: 'textarea[placeholder*="Ask" i], textarea[placeholder*="Grok" i], textarea[placeholder*="anything" i], textarea[data-id="root"], form textarea, textarea, div[contenteditable="true"], div[role="textbox"]',
-      submitButton: 'button[aria-label*="Submit" i], button[aria-label*="Send" i], button[aria-label*="Ask" i], button[aria-label*="Grok" i], button[data-testid*="send" i], button[data-testid*="submit" i], button[type="submit"], form button[type=\"submit\"], form button:not([disabled])',
-      stopButton: 'button[aria-label*="Stop" i]',
-      modelDropdownTrigger: 'button[aria-label*="Fast" i], button[aria-label*="Grok" i]',
-    },
-    response: {
-      container: '#last-reply-container [id^="response-"], [data-testid="assistant-message"], .response-turn',
-      textSelector: '.response-content-markdown, .streamdown-chat-md, main .prose',
-      actionButtons: 'button[aria-label*="Copy" i], svg[class*="copy" i]',
-      generatingIndicator: '[data-testid*="generating-placeholder"], .animate-pulse',
-      modes: {
-        text: {
-          enabled: true,
-          contentSelector: '.response-content-markdown, .streamdown-chat-md, main .prose',
-          mediaKind: 'text',
-          inputAttachments: { fileInput: 'input[type="file"]', acceptedKinds: ['image', 'document'], multiple: true },
-        },
-        image: {
-          enabled: true,
-          contentSelector: 'img[alt*="Generated image" i], img[src*="grok"], img.media-attachment',
-          mediaKind: 'image',
-          inputAttachments: { fileInput: 'input[type="file"]', acceptedKinds: ['image'], multiple: true },
-        },
-        video: {
-          enabled: true,
-          contentSelector: 'video source, video[src], video',
-          mediaKind: 'video',
-          inputAttachments: { fileInput: 'input[type="file"]', acceptedKinds: ['image', 'video'], multiple: true },
-        },
-      },
-    },
-  },
-};
+export { BUILTIN_RECIPES } from "../generated/builtinRecipes.js";

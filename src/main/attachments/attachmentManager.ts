@@ -130,6 +130,20 @@ function ensureModeAllows(kind: string, mode: TaskMode, name: string): void {
 }
 
 export class AttachmentManager {
+  static cleanupAbandonedRuns(): number {
+    const base = app?.getPath ? path.join(app.getPath('userData'), 'attachment-runs') : path.join(os.tmpdir(), 'transgentic-attachment-runs');
+    if (!fs.existsSync(base)) return 0;
+    let removed = 0;
+    for (const entry of fs.readdirSync(base, { withFileTypes: true })) {
+      if (!entry.isDirectory() || !entry.name.startsWith('request-')) continue;
+      try {
+        fs.rmSync(path.join(base, entry.name), { recursive: true, force: true });
+        removed++;
+      } catch {}
+    }
+    return removed;
+  }
+
   static async stage(inputs: unknown, options: { loopback: boolean; mode: TaskMode; signal?: AbortSignal }): Promise<{ envelope: RequestAttachmentEnvelope; cleanup: () => Promise<void> }> {
     if (inputs === undefined || inputs === null) return { envelope: { files: [], identity: '', totalBytes: 0 }, cleanup: async () => {} };
     if (!Array.isArray(inputs)) throw new Error('files must be an array.');

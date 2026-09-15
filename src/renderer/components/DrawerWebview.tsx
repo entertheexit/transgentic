@@ -13,6 +13,7 @@ import {
 
 interface DrawerWebviewProps {
   provider: ProviderStatus;
+  browserTitle?: string;
   accountStore?: ProviderAccountStore;
   onClose: () => void;
   onReload: (id: ProviderId) => void;
@@ -28,6 +29,7 @@ interface DrawerWebviewProps {
 
 export const DrawerWebview: React.FC<DrawerWebviewProps> = ({
   provider,
+  browserTitle,
   accountStore,
   onClose,
   onReload,
@@ -442,7 +444,7 @@ Respond ONLY with valid JSON.`;
           <div className="flex items-center gap-1.5">
             <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
             <span className="font-bold text-xs text-slate-100 uppercase tracking-wide">
-              {displayName}
+              {browserTitle || displayName}
             </span>
           </div>
 

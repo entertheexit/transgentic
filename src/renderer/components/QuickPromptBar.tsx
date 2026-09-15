@@ -1,5 +1,5 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
-import { Send, Sparkles, Loader2, RotateCcw, Eye, Bot, Paperclip, FileText, Film, X } from 'lucide-react';
+import { Send, Sparkles, Loader2, RotateCcw, Bot, Paperclip, FileText, Film, X, MessageSquareText, CircleX } from 'lucide-react';
 import { soundFx } from '../audio/soundFx.js';
 import { ATTACHMENT_LIMITS, type AttachmentInput, type DesktopAttachmentSelection } from '../../shared/attachments.js';
 import type { TaskMode } from '../../shared/types.js';
@@ -7,15 +7,18 @@ import type { TaskMode } from '../../shared/types.js';
 const QUICK_PROMPT_DRAFT_KEY = 'transgentic_quick_prompt_draft';
 
 interface QuickPromptBarProps {
-  onSendPrompt: (prompt: string, files: AttachmentInput[]) => Promise<any>;
+  onSendPrompt: (prompt: string, files: AttachmentInput[], temporaryChat?: boolean) => Promise<any>;
   onSelectFiles?: (mode?: TaskMode) => Promise<DesktopAttachmentSelection[]>;
   isProcessing: boolean;
   hasActiveSession?: boolean;
   onClearSession?: () => Promise<void>;
   hasAnswer?: boolean;
+  hasError?: boolean;
   onViewAnswer?: () => void;
+  onError: (message: string, prompt?: string) => void;
   isServiceDeselected?: boolean;
   activeMode?: TaskMode;
+  temporaryChat?: boolean;
 }
 
 export const QuickPromptBar: React.FC<QuickPromptBarProps> = ({
@@ -25,9 +28,12 @@ export const QuickPromptBar: React.FC<QuickPromptBarProps> = ({
   hasActiveSession = false,
   onClearSession,
   hasAnswer = false,
+  hasError = false,
   onViewAnswer,
+  onError,
   isServiceDeselected = false,
   activeMode,
+  temporaryChat = false,
 }) => {
   const [input, setInput] = useState(() => {
     try {
@@ -38,7 +44,6 @@ export const QuickPromptBar: React.FC<QuickPromptBarProps> = ({
   });
   const [isClearing, setIsClearing] = useState(false);
   const [attachments, setAttachments] = useState<DesktopAttachmentSelection[]>([]);
-  const [attachmentError, setAttachmentError] = useState('');
   const attachmentsRef = useRef<HTMLDivElement | null>(null);
   const wheelCleanupRef = useRef<(() => void) | null>(null);
 
@@ -105,6 +110,12 @@ export const QuickPromptBar: React.FC<QuickPromptBarProps> = ({
   }, []);
 
   useEffect(() => {
+    if (temporaryChat) {
+      try { localStorage.removeItem(QUICK_PROMPT_DRAFT_KEY); } catch {}
+    }
+  }, [temporaryChat]);
+
+  useEffect(() => {
     return () => {
       if (wheelCleanupRef.current) {
         wheelCleanupRef.current();
@@ -117,7 +128,7 @@ export const QuickPromptBar: React.FC<QuickPromptBarProps> = ({
     const val = e.target.value;
     setInput(val);
     try {
-      localStorage.setItem(QUICK_PROMPT_DRAFT_KEY, val);
+      if (!temporaryChat) localStorage.setItem(QUICK_PROMPT_DRAFT_KEY, val);
     } catch {}
   };
 
@@ -129,7 +140,8 @@ export const QuickPromptBar: React.FC<QuickPromptBarProps> = ({
     try {
       await onClearSession();
       setAttachments([]);
-      setAttachmentError('');
+    } catch (error: any) {
+      onError(error?.message || 'Could not start a new chat.');
     } finally {
       setIsClearing(false);
     }
@@ -139,7 +151,6 @@ export const QuickPromptBar: React.FC<QuickPromptBarProps> = ({
     e.preventDefault();
     if (!onSelectFiles || isProcessing || isServiceDeselected || activeMode === 'music') return;
     soundFx.playClick();
-    setAttachmentError('');
     try {
       const selected = await onSelectFiles(activeMode);
       if (!selected.length) return;
@@ -158,7 +169,7 @@ export const QuickPromptBar: React.FC<QuickPromptBarProps> = ({
       }
       setAttachments(next);
     } catch (error: any) {
-      setAttachmentError(error?.message || 'Could not attach the selected files.');
+      onError(error?.message || 'Could not attach the selected files.');
       soundFx.playWarnTone();
     }
   };
@@ -166,7 +177,6 @@ export const QuickPromptBar: React.FC<QuickPromptBarProps> = ({
   const removeAttachment = (filePath: string) => {
     soundFx.playClick();
     setAttachments(current => current.filter(file => file.path !== filePath));
-    setAttachmentError('');
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -176,7 +186,6 @@ export const QuickPromptBar: React.FC<QuickPromptBarProps> = ({
     const prompt = input.trim();
     const files: AttachmentInput[] = attachments.map(({ path, name }) => ({ path, name }));
     soundFx.playClick();
-    setAttachmentError('');
     try {
       await onSendPrompt(prompt, files);
       setInput('');
@@ -185,18 +194,11 @@ export const QuickPromptBar: React.FC<QuickPromptBarProps> = ({
         localStorage.removeItem(QUICK_PROMPT_DRAFT_KEY);
       } catch {}
     } catch (error: any) {
-      setAttachmentError(error?.message || 'Quick Prompt could not send this request.');
+      onError(error?.message || 'Quick Prompt could not send this request.', prompt);
     }
   };
 
-  let rightPadding = 'pr-24';
-  if (hasAnswer && hasActiveSession) {
-    rightPadding = 'pr-56';
-  } else if (hasAnswer) {
-    rightPadding = 'pr-40';
-  } else if (hasActiveSession) {
-    rightPadding = 'pr-44';
-  }
+  const inputRightPadding = 72 + (hasAnswer ? 34 : 0) + (hasActiveSession ? 78 : 0);
 
   return (
     <form onSubmit={handleSubmit} className="w-full mt-2">
@@ -216,7 +218,8 @@ export const QuickPromptBar: React.FC<QuickPromptBarProps> = ({
               : 'Type quick prompt (e.g. review my code)...'
           }
           disabled={isProcessing || isServiceDeselected}
-          className={`w-full h-8 pl-8 ${rightPadding} ${
+          style={{ paddingRight: inputRightPadding }}
+          className={`w-full h-8 pl-8 ${
             isServiceDeselected
               ? 'bg-black/40 border border-amber-500/20 text-slate-400 opacity-70 cursor-not-allowed'
               : 'bg-black/60 border border-white/10 text-slate-100 placeholder-slate-500 focus:border-cyan-500/60 focus:ring-1 focus:ring-cyan-500/40'
@@ -229,11 +232,16 @@ export const QuickPromptBar: React.FC<QuickPromptBarProps> = ({
             type="button"
             onClick={handleAttach}
             disabled={!onSelectFiles || isProcessing || isServiceDeselected || activeMode === 'music'}
-            title={activeMode === 'music' ? 'Music mode does not accept attachments' : 'Attach images or documents; Video mode also accepts video files'}
-            className="flex items-center gap-1 px-1.5 py-0.5 rounded-lg bg-slate-500/20 hover:bg-slate-500/30 text-slate-300 border border-slate-500/40 hover:border-slate-400 text-[9px] font-mono transition-all cursor-pointer disabled:opacity-40 disabled:pointer-events-none"
+            title={activeMode === 'music' ? 'Music mode does not accept attachments' : `${attachments.length ? `${attachments.length} attached. ` : ''}Attach images or documents; Video mode also accepts video files`}
+            aria-label={attachments.length ? `Attach files, ${attachments.length} currently attached` : 'Attach files'}
+            className="relative flex h-6 w-6 items-center justify-center rounded-lg border border-slate-500/40 bg-slate-500/20 text-slate-300 transition-all hover:border-slate-400 hover:bg-slate-500/30 disabled:pointer-events-none disabled:opacity-40"
           >
-            <Paperclip className="w-2.5 h-2.5 text-slate-300" />
-            <span>{attachments.length ? `Files ${attachments.length}` : 'Files'}</span>
+            <Paperclip className="h-3.5 w-3.5" />
+            {attachments.length > 0 && (
+              <span className="absolute -right-1 -top-1 flex h-3.5 min-w-3.5 items-center justify-center rounded-full border border-slate-950 bg-cyan-500 px-0.5 text-[7px] font-bold leading-none text-slate-950">
+                {attachments.length}
+              </span>
+            )}
           </button>
 
           {hasAnswer && onViewAnswer && (
@@ -244,11 +252,13 @@ export const QuickPromptBar: React.FC<QuickPromptBarProps> = ({
                 soundFx.playClick();
                 onViewAnswer();
               }}
-              title="View latest AI response output"
-              className="flex items-center gap-1 px-1.5 py-0.5 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-500/40 hover:border-cyan-400 text-[9px] font-mono transition-all animate-in fade-in zoom-in-95 cursor-pointer shadow-[0_0_8px_rgba(6,182,212,0.25)]"
+              title={hasError ? 'View latest Quick Prompt error' : 'View latest AI response output'}
+              aria-label={hasError ? 'View latest Quick Prompt error' : 'View latest AI response'}
+              className={`flex h-6 w-6 items-center justify-center rounded-lg border transition-all animate-in fade-in zoom-in-95 ${hasError
+                ? 'border-rose-500/40 bg-rose-500/20 text-rose-300 shadow-[0_0_8px_rgba(244,63,94,0.25)] hover:border-rose-400 hover:bg-rose-500/30'
+                : 'border-cyan-500/40 bg-cyan-500/20 text-cyan-300 shadow-[0_0_8px_rgba(6,182,212,0.25)] hover:border-cyan-400 hover:bg-cyan-500/30'}`}
             >
-              <Eye className="w-2.5 h-2.5 text-cyan-400" />
-              <span>Answer</span>
+              {hasError ? <CircleX className="h-3.5 w-3.5" /> : <MessageSquareText className="h-3.5 w-3.5 text-cyan-400" />}
             </button>
           )}
 
@@ -258,7 +268,7 @@ export const QuickPromptBar: React.FC<QuickPromptBarProps> = ({
               onClick={handleClear}
               disabled={isProcessing || isClearing}
               title="Active chat session in progress. Click to clear session and start a new chat."
-              className="flex items-center gap-1 px-1.5 py-0.5 rounded-lg bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 border border-purple-500/40 hover:border-purple-400 text-[9px] font-mono transition-all animate-in fade-in zoom-in-95 cursor-pointer shadow-[0_0_8px_rgba(168,85,247,0.25)] disabled:opacity-50"
+              className="flex h-6 items-center justify-center gap-1 rounded-lg border border-purple-500/40 bg-purple-500/20 px-1.5 text-[9px] leading-none font-mono text-purple-300 shadow-[0_0_8px_rgba(168,85,247,0.25)] transition-all animate-in fade-in zoom-in-95 hover:border-purple-400 hover:bg-purple-500/30 disabled:opacity-50"
             >
               <RotateCcw className={`w-2.5 h-2.5 ${isClearing ? 'animate-spin text-purple-200' : 'text-purple-400'}`} />
               <span>New Chat</span>
@@ -279,6 +289,8 @@ export const QuickPromptBar: React.FC<QuickPromptBarProps> = ({
         </button>
       </div>
 
+      {hasError && <span className="sr-only" role="alert">Quick Prompt failed. Open the error button for details.</span>}
+
       {attachments.length > 0 && (
         <div
           ref={handleAttachmentsRef}
@@ -294,9 +306,6 @@ export const QuickPromptBar: React.FC<QuickPromptBarProps> = ({
             />
           ))}
         </div>
-      )}
-      {attachmentError && (
-        <p className="mt-1 px-4 text-[9px] font-mono text-rose-300" role="alert">{attachmentError}</p>
       )}
     </form>
   );

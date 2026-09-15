@@ -32,6 +32,8 @@ import { globalHealingManager } from './healing/healingManager.js';
 import { globalRecipeManager } from './registry/recipeManager.js';
 import {
   MODE_SCHEMA_VERSION,
+  DEFAULT_TEMPORARY_CHAT,
+  normalizeTemporaryChatConfig,
   AgentHaltGuardConfig,
   doubleAgentConfig,
   HealingConfig,
@@ -48,6 +50,7 @@ import {
 } from '../shared/types.js';
 import { getExtensionDownloadUrl } from '../shared/release.js';
 import { ATTACHMENT_LIMITS, type AttachmentInput, type DesktopAttachmentSelection } from '../shared/attachments.js';
+import { AttachmentManager } from './attachments/attachmentManager.js';
 
 // Register custom protocol for local media streaming
 protocol.registerSchemesAsPrivileged([
@@ -147,6 +150,7 @@ function loadPersistedConfig(): TransgenticConfig {
       video: true,
       music: true,
     },
+    temporaryChat: { ...DEFAULT_TEMPORARY_CHAT },
     localLLM: {
       enabled: false,
       preset: 'ollama',
@@ -203,6 +207,7 @@ function loadPersistedConfig(): TransgenticConfig {
       } else {
         parsed.agentHaltGuard = normalizeModeFlags(parsed.agentHaltGuard);
       }
+      parsed.temporaryChat = normalizeTemporaryChatConfig(parsed.temporaryChat);
       // Non-destructively preserve localLLM configuration (does not wipe endpoints/models on enabled: false)
       if (!parsed.localLLM) {
         parsed.localLLM = defaults.localLLM;
@@ -438,6 +443,7 @@ function getStealthPreloadPath(): string | undefined {
 }
 
   // 1. Initialize persistent sessions and anti-detection
+  AttachmentManager.cleanupAbandonedRuns();
   globalRecipeManager.initializeAllCustomRecipes();
   globalSessionManager.initializeSessions();
 
@@ -605,6 +611,10 @@ function getStealthPreloadPath(): string | undefined {
     }
   });
 
+  globalSessionManager.onTemporaryConversationsUpdate((sessions) => {
+    if (!mainWindow.isDestroyed()) mainWindow.webContents.send('temporary-chat-sessions-updated', sessions);
+  });
+
   ServiceManifestManager.onManifestUpdate((manifest) => {
     if (!mainWindow.isDestroyed()) {
       mainWindow.webContents.send('services-manifest-updated', manifest);
@@ -694,13 +704,13 @@ function setupIpcHandlers() {
     globalRateLimiter.resetAll();
     return { success: true, ...browserResult };
   });
-  ipcMain.handle('get-request-logs', (_, args?: { limit?: number; offset?: number }) => {
+  ipcMain.handle('get-request-logs', (_, args?: { limit?: number; offset?: number; category?: 'normal' | 'temporary' }) => {
     const limit = args?.limit ?? 20;
     const offset = args?.offset ?? 0;
-    return globalMcpServer.getRequestLogs(limit, offset);
+    return globalMcpServer.getRequestLogs(limit, offset, args?.category);
   });
-  ipcMain.handle('clear-request-logs', () => {
-    globalMcpServer.clearRequestLogs();
+  ipcMain.handle('clear-request-logs', (_, category?: 'normal' | 'temporary') => {
+    globalMcpServer.clearRequestLogs(category);
   });
   ipcMain.handle('logs:terminate-request', (_, logId: string) => {
     return globalMcpServer.terminateRequest(logId);
@@ -919,9 +929,21 @@ function setupIpcHandlers() {
     }
     return currentConfig.agentHaltGuard;
   });
+  ipcMain.handle('config:toggle-temporary-chat-mode', (_, { mode, enabled }: { mode: RouteMode; enabled?: boolean }) => {
+    if (!['general', 'coding', 'image', 'video', 'music'].includes(mode)) throw new Error('Invalid route mode.');
+    const currentMap = normalizeTemporaryChatConfig(currentConfig.temporaryChat);
+    const nextVal = enabled ?? !currentMap[mode];
+    currentConfig = { ...currentConfig, temporaryChat: { ...currentMap, [mode]: nextVal } };
+    globalMcpServer.updateConfig(currentConfig);
+    savePersistedConfig(currentConfig);
+    const win = globalWindowManager.getMainWindow();
+    if (win && !win.isDestroyed()) win.webContents.send('config-updated', currentConfig);
+    return nextVal;
+  });
   ipcMain.handle('update-config', (_, newCfg: Partial<TransgenticConfig>) => {
     if (newCfg.cli !== undefined) throw new Error('Use the CLI settings controls to change CLI permissions.');
-    currentConfig = { ...currentConfig, ...newCfg };
+    currentConfig = { ...currentConfig, ...newCfg,
+      ...(newCfg.temporaryChat ? { temporaryChat: normalizeTemporaryChatConfig({ ...currentConfig.temporaryChat, ...newCfg.temporaryChat }) } : {}) };
     if (newCfg.assetsDir) {
       globalAssetManager.setAssetsDirectory(newCfg.assetsDir);
       globalRecipeManager.setStorageDirectory(newCfg.assetsDir);
@@ -1216,6 +1238,7 @@ function setupIpcHandlers() {
     const serviceEnabled: boolean = typeof args.serviceEnabled === 'boolean' ? args.serviceEnabled : args.enabled;
     if (serviceEnabled && !isCliProvider(providerId)) await globalRecipeManager.confirmEnable(providerId);
     if (!serviceEnabled && isCliProvider(providerId)) globalCliRuntime.cancelProvider(providerId);
+    if (!serviceEnabled && !isCliProvider(providerId)) globalSessionManager.endTemporaryConversations(providerId);
     const reg = ModelRegistryManager.toggleService(providerId, serviceEnabled);
     const manifest = ServiceManifestManager.setServiceEnabled(providerId, serviceEnabled);
     const win = globalWindowManager.getMainWindow();
@@ -1400,7 +1423,7 @@ function setupIpcHandlers() {
     return selections;
   });
 
-  ipcMain.handle('execute-prompt', async (event, { prompt, mode, provider, model, cliRequest, files }: { prompt: string; mode?: TaskMode; provider?: ProviderId; model?: string; cliRequest?: unknown; files?: AttachmentInput[] }) => {
+  ipcMain.handle('execute-prompt', async (event, { prompt, mode, provider, model, cliRequest, files, temporaryChat }: { prompt: string; mode?: TaskMode; provider?: ProviderId; model?: string; cliRequest?: unknown; files?: AttachmentInput[]; temporaryChat?: boolean }) => {
     if (event.sender !== globalWindowManager.getMainWindow()?.webContents || event.senderFrame !== event.sender.mainFrame) throw new Error('Desktop prompts are available only in the main window.');
     const result = await globalMcpServer.orchestratePrompt(
       prompt,
@@ -1414,7 +1437,9 @@ function setupIpcHandlers() {
       true,
       undefined,
       { profile: 'plain', sessionId: `desktop_${event.sender.id}`, cliRequest: cliRequest as any, isLoopback: true },
-      files
+      files,
+      undefined,
+      temporaryChat
     );
     if (result.isError) throw new Error(result.content?.[0]?.text || 'Request failed');
     return result;
@@ -1425,13 +1450,24 @@ function setupIpcHandlers() {
     return globalThreadManager.getAllSessions();
   });
 
+  ipcMain.handle('temporary-chat:get-sessions', () => globalSessionManager.listTemporaryConversations());
+  ipcMain.handle('temporary-chat:open', (event, key: string) => {
+    if (event.sender !== globalWindowManager.getMainWindow()?.webContents || event.senderFrame !== event.sender.mainFrame) return false;
+    return globalSessionManager.openTemporaryConversation(key);
+  });
+  ipcMain.handle('temporary-chat:end', (event, key: string) => {
+    if (event.sender !== globalWindowManager.getMainWindow()?.webContents || event.senderFrame !== event.sender.mainFrame) return false;
+    return globalSessionManager.endTemporaryConversation(key);
+  });
+
   ipcMain.handle('threads:clear-sessions', async (event, { providerId, threadId, scope }: { providerId?: ProviderId; threadId?: string; scope?: 'quick_prompt' | 'all' } = {}) => {
     if (scope === 'quick_prompt') {
       for (const session of globalThreadManager.getAllSessions()) {
         if (isQuickPromptConversation(session.threadId, `desktop_${event.sender.id}`)
           && (!providerId || session.provider === providerId)
           && (!threadId || session.threadId === threadId)) {
-          globalThreadManager.removeSession(session.threadId, session.provider);
+          if (session.temporarySessionKey) globalSessionManager.endTemporaryConversation(session.temporarySessionKey);
+          else globalThreadManager.removeSession(session.threadId, session.provider);
         }
       }
       // Navigate on the next Quick Prompt inside the account queue, not while an
@@ -1439,14 +1475,18 @@ function setupIpcHandlers() {
       return { success: true, sessions: globalThreadManager.getAllSessions() };
     }
     if (providerId && threadId) {
-      globalThreadManager.removeSession(threadId, providerId);
+      const session = globalThreadManager.getSession(threadId, providerId);
+      if (session?.temporarySessionKey) globalSessionManager.endTemporaryConversation(session.temporarySessionKey);
+      else globalThreadManager.removeSession(threadId, providerId);
     } else if (providerId) {
       for (const sess of globalThreadManager.getAllSessions()) {
         if (sess.provider === providerId) {
-          globalThreadManager.removeSession(sess.threadId, sess.provider);
+          if (sess.temporarySessionKey) globalSessionManager.endTemporaryConversation(sess.temporarySessionKey);
+          else globalThreadManager.removeSession(sess.threadId, sess.provider);
         }
       }
     } else {
+      globalSessionManager.endTemporaryConversations();
       globalThreadManager.clearAll();
     }
 
@@ -1471,6 +1511,7 @@ function setupIpcHandlers() {
   ipcMain.handle('services:toggle-experimental', async (_, { serviceId, enabled }: { serviceId: ProviderId; enabled: boolean }) => {
     if (enabled) await globalRecipeManager.confirmEnable(serviceId);
     const updated = ServiceManifestManager.setServiceEnabled(serviceId, enabled);
+    if (!enabled) globalSessionManager.endTemporaryConversations(serviceId);
     ModelRegistryManager.toggleService(serviceId, enabled);
     await globalSessionManager.refreshProviderStatus(serviceId);
     const win = globalWindowManager.getMainWindow();
@@ -1485,6 +1526,7 @@ function setupIpcHandlers() {
   ipcMain.handle('services:update-manifest', async (_, { serviceId, updates }: { serviceId: ProviderId; updates: any }) => {
     if (updates?.enabled === true) await globalRecipeManager.confirmEnable(serviceId);
     const updated = ServiceManifestManager.updateServiceEntry(serviceId, updates);
+    if (updates?.enabled === false) globalSessionManager.endTemporaryConversations(serviceId);
     const win = globalWindowManager.getMainWindow();
     if (win && !win.isDestroyed()) {
       win.webContents.send('services-manifest-updated', updated);
@@ -1601,6 +1643,7 @@ function setupIpcHandlers() {
   });
 
   ipcMain.handle('accounts:delete', (_, { providerId, accountId }: { providerId: ProviderId; accountId: string }) => {
+    globalSessionManager.endTemporaryConversations(providerId, accountId);
     return AccountRegistryManager.deleteAccount(providerId, accountId);
   });
 

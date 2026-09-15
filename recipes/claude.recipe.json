@@ -1,7 +1,8 @@
 {
-  "version": "1.0",
+  "version": "1.1.0",
   "id": "claude",
-  "title": "Claude",
+  "modeSchemaVersion": 2,
+  "title": "Anthropic Claude",
   "domainMatch": "claude.ai",
   "url": "https://claude.ai",
   "newChatUrl": "https://claude.ai/new",
@@ -40,6 +41,26 @@
       "Claude is at capacity right now",
       "Rate limit exceeded"
     ]
+  },
+  "temporaryChat": {
+    "enabled": true,
+    "activationSteps": [
+      {
+        "action": "click",
+        "target": {
+          "role": "button",
+          "name": "Use incognito"
+        }
+      }
+    ],
+    "activeWhen": {
+      "role": "button",
+      "name": "Exit incognito"
+    },
+    "inactiveWhen": {
+      "role": "button",
+      "name": "Use incognito"
+    }
   },
   "createdAt": "2026-01-01T00:00:00.000Z",
   "selectors": {

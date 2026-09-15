@@ -1,6 +1,8 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { isQuickPromptConversation } from '../../shared/conversationScope.js';
 import {
+  DEFAULT_TEMPORARY_CHAT,
+  type ChatMode,
   BlindedTokenMap,
   CoreStatus,
   McpRequestLog,
@@ -25,6 +27,16 @@ import {
   DoubleAgentConfig,
 } from '../../shared/types.js';
 import type { AttachmentInput, DesktopAttachmentSelection } from '../../shared/attachments.js';
+
+const requestLogCategory = (log: McpRequestLog): ChatMode =>
+  log.chatExecution?.policy ? log.chatExecution.policy === 'normal' ? 'normal' : 'temporary'
+    : log.temporaryChat ? 'temporary' : 'normal';
+
+const countLogCategories = (items: McpRequestLog[]): Record<ChatMode, number> =>
+  items.reduce((counts, log) => {
+    counts[requestLogCategory(log)] += 1;
+    return counts;
+  }, { normal: 0, temporary: 0 });
 
 // Extend window definition for TypeScript
 declare global {
@@ -146,6 +158,13 @@ export function useTransgentic() {
 
   const [logs, setLogs] = useState<McpRequestLog[]>([]);
   const [totalLogsCount, setTotalLogsCount] = useState<number>(0);
+  const [selectedLogCategory, setSelectedLogCategory] = useState<ChatMode>('normal');
+  const selectedLogCategoryRef = useRef<ChatMode>('normal');
+  const [categoryLogs, setCategoryLogs] = useState<McpRequestLog[]>([]);
+  const [categoryCounts, setCategoryCounts] = useState<Record<ChatMode, number>>({ normal: 0, temporary: 0 });
+  const [categoryClearSupported, setCategoryClearSupported] = useState(true);
+  const categoryQuerySupportedRef = useRef(true);
+  const fallbackLogSnapshotRef = useRef<McpRequestLog[]>([]);
   const [secrets, setSecrets] = useState<BlindedTokenMap[]>([]);
   const [registry, setRegistry] = useState<RegistryStore>(DEFAULT_REGISTRY);
   const [modeRoutes, setModeRoutes] = useState<Record<RouteMode, ModeRouteConfig>>({
@@ -163,12 +182,57 @@ export function useTransgentic() {
   const api = typeof window !== 'undefined' ? window.transgenticApi : undefined;
 
   const [activeSessions, setActiveSessions] = useState<any[]>([]);
+  const [temporaryChatSessions, setTemporaryChatSessions] = useState<import('../../shared/types.js').TemporaryChatSessionInfo[]>([]);
   const [servicesManifest, setServicesManifest] = useState<ServicesManifest | null>(null);
   const [serviceConflicts, setServiceConflicts] = useState<ServiceRouteConflict[]>([]);
   const [accountsRegistry, setAccountsRegistry] = useState<AccountRegistryStore | null>(null);
 
   useEffect(() => {
     if (!api) return;
+
+    let mounted = true;
+    const refreshLogCategories = async (initial = false) => {
+      if (!api.getRequestLogs) return;
+      const readTotals = () => Promise.all([
+        api.getRequestLogs(0, 0),
+        api.getRequestLogs(0, 0, 'normal'),
+        api.getRequestLogs(0, 0, 'temporary'),
+      ]);
+      let [all, normal, temporary] = await readTotals();
+      if (!mounted) return;
+      let total = Number(all?.total || 0);
+      let normalTotal = Number(normal?.total || 0);
+      let temporaryTotal = Number(temporary?.total || 0);
+      if (normalTotal + temporaryTotal !== total) {
+        // Retry once because a live request may have arrived between the three reads.
+        [all, normal, temporary] = await readTotals();
+        if (!mounted) return;
+        total = Number(all?.total || 0);
+        normalTotal = Number(normal?.total || 0);
+        temporaryTotal = Number(temporary?.total || 0);
+      }
+      if (normalTotal + temporaryTotal !== total) {
+        // A running Electron window can retain an older preload bridge that ignores category.
+        // Its clear call would also erase both categories, so keep that action unavailable.
+        const snapshot = await api.getRequestLogs(1000, 0);
+        if (!mounted || !Array.isArray(snapshot?.logs)) return;
+        categoryQuerySupportedRef.current = false;
+        setCategoryClearSupported(false);
+        fallbackLogSnapshotRef.current = snapshot.logs;
+        setCategoryCounts(countLogCategories(snapshot.logs));
+        setCategoryLogs(prev => snapshot.logs.filter((log: McpRequestLog) => requestLogCategory(log) === selectedLogCategoryRef.current).slice(0, Math.max(20, prev.length)));
+        return;
+      }
+      categoryQuerySupportedRef.current = true;
+      setCategoryClearSupported(true);
+      fallbackLogSnapshotRef.current = [];
+      setCategoryCounts({ normal: normalTotal, temporary: temporaryTotal });
+      if (initial) {
+        const selected = selectedLogCategoryRef.current;
+        const page = await api.getRequestLogs(20, 0, selected);
+        if (mounted && selectedLogCategoryRef.current === selected && Array.isArray(page?.logs)) setCategoryLogs(page.logs);
+      }
+    };
 
     // Initial fetches
     api.getCoreStatus().then((s: CoreStatus) => s && setCoreStatus(s));
@@ -183,6 +247,7 @@ export function useTransgentic() {
           setTotalLogsCount(res.length);
         }
       });
+      void refreshLogCategories(true).catch((error: any) => console.warn('[Transgentic Logs] Category refresh failed:', error?.message || error));
     }
     api.getBlindedSecrets().then((sec: BlindedTokenMap[]) => sec && setSecrets(sec));
     if (api.getConfig) {
@@ -208,6 +273,7 @@ export function useTransgentic() {
         if (Array.isArray(s)) setActiveSessions(s);
       });
     }
+    api.getTemporaryChatSessions?.().then((sessions: import('../../shared/types.js').TemporaryChatSessionInfo[]) => setTemporaryChatSessions(sessions || []));
     if (api.getServicesManifest) {
       api.getServicesManifest().then((m: ServicesManifest) => m && setServicesManifest(m));
     }
@@ -237,10 +303,21 @@ export function useTransgentic() {
         }
         return [log, ...prev.slice(0, 19)];
       });
+      setCategoryLogs(prev => {
+        const idx = prev.findIndex(item => item.id === log.id);
+        const matching = requestLogCategory(log) === selectedLogCategoryRef.current;
+        if (idx >= 0 && !matching) return prev.filter(item => item.id !== log.id);
+        if (idx >= 0) { const next = [...prev]; next[idx] = log; return next; }
+        return matching ? [log, ...prev].slice(0, 1000) : prev;
+      });
+      void refreshLogCategories().catch((error: any) => console.warn('[Transgentic Logs] Category refresh failed:', error?.message || error));
     }) : undefined;
     const unsubModels = api.onModelsUpdated ? api.onModelsUpdated((r: RegistryStore) => setRegistry(r)) : undefined;
     const unsubThreads = api.onThreadsUpdated ? api.onThreadsUpdated((s: any[]) => {
       if (Array.isArray(s)) setActiveSessions(s);
+    }) : undefined;
+    const unsubTemporaryChats = api.onTemporaryChatSessionsUpdated ? api.onTemporaryChatSessionsUpdated((sessions: import('../../shared/types.js').TemporaryChatSessionInfo[]) => {
+      if (Array.isArray(sessions)) setTemporaryChatSessions(sessions);
     }) : undefined;
     const unsubManifest = api.onServicesManifestUpdated ? api.onServicesManifestUpdated((m: ServicesManifest) => {
       if (m) {
@@ -274,9 +351,11 @@ export function useTransgentic() {
     return () => {
       if (unsubCore) unsubCore();
       if (unsubProv) unsubProv();
+      mounted = false;
       if (unsubLogs) unsubLogs();
       if (unsubModels) unsubModels();
       if (unsubThreads) unsubThreads();
+      if (unsubTemporaryChats) unsubTemporaryChats();
       if (unsubManifest) unsubManifest();
       if (unsubAccounts) unsubAccounts();
       if (unsubHealing) unsubHealing();
@@ -463,6 +542,9 @@ export function useTransgentic() {
       setSecrets([]);
       setLogs([]);
       setTotalLogsCount(0);
+      setCategoryLogs([]);
+      setCategoryCounts({ normal: 0, temporary: 0 });
+      fallbackLogSnapshotRef.current = [];
       setActiveSessions([]);
       if (api?.getProviderStatuses) {
         const statuses = await api.getProviderStatuses();
@@ -479,11 +561,35 @@ export function useTransgentic() {
     }
   }, [api, clearVault]);
 
-  const clearLogs = useCallback(async () => {
+  const selectLogCategory = useCallback(async (category: ChatMode) => {
+    selectedLogCategoryRef.current = category;
+    setSelectedLogCategory(category);
+    if (!categoryQuerySupportedRef.current) {
+      setCategoryLogs(fallbackLogSnapshotRef.current.filter(log => requestLogCategory(log) === category).slice(0, 20));
+      return;
+    }
+    if (api?.getRequestLogs) {
+      const res = await api.getRequestLogs(20, 0, category);
+      if (selectedLogCategoryRef.current !== category) return;
+      if (Array.isArray(res?.logs)) setCategoryLogs(res.logs);
+      setCategoryCounts(prev => ({ ...prev, [category]: res?.total || 0 }));
+    }
+  }, [api]);
+
+  const clearLogs = useCallback(async (category?: ChatMode) => {
+    if (category && !categoryQuerySupportedRef.current) throw new Error('Category clearing needs the updated app bridge. Restart after active sessions finish.');
     if (api?.clearRequestLogs) {
-      await api.clearRequestLogs();
-      setLogs([]);
-      setTotalLogsCount(0);
+      await api.clearRequestLogs(category);
+      if (category) {
+        setLogs(prev => prev.filter(log => requestLogCategory(log) !== category));
+        setCategoryCounts(prev => ({ ...prev, [category]: 0 }));
+        if (selectedLogCategoryRef.current === category) setCategoryLogs([]);
+        const all = await api.getRequestLogs?.(0, 0);
+        if (all) setTotalLogsCount(all.total);
+      } else {
+        setLogs([]); setCategoryLogs([]); setCategoryCounts({ normal: 0, temporary: 0 }); setTotalLogsCount(0);
+        fallbackLogSnapshotRef.current = [];
+      }
     }
   }, [api]);
 
@@ -528,18 +634,23 @@ export function useTransgentic() {
   }, [api]);
 
   const fetchMoreLogs = useCallback(async (limit = 20) => {
+    if (!categoryQuerySupportedRef.current) {
+      setCategoryLogs(prev => fallbackLogSnapshotRef.current.filter(log => requestLogCategory(log) === selectedLogCategory).slice(0, prev.length + limit));
+      return;
+    }
     if (api?.getRequestLogs) {
-      const res: any = await api.getRequestLogs(limit, logs.length);
+      const res: any = await api.getRequestLogs(limit, categoryLogs.length, selectedLogCategory);
+      if (selectedLogCategoryRef.current !== selectedLogCategory) return;
       if (res && Array.isArray(res.logs)) {
-        setLogs((prev) => {
+        setCategoryLogs((prev) => {
           const ids = new Set(prev.map((l) => l.id));
           const additions = res.logs.filter((l: McpRequestLog) => !ids.has(l.id));
           return [...prev, ...additions];
         });
-        setTotalLogsCount(res.total);
+        setCategoryCounts(prev => ({ ...prev, [selectedLogCategory]: res.total }));
       }
     }
-  }, [api, logs.length]);
+  }, [api, categoryLogs.length, selectedLogCategory]);
 
   const toggleBalancedMode = useCallback(async (enabled?: boolean) => {
     const currentVal = config.balancedMode ?? config.coding?.balancedMode ?? true;
@@ -795,11 +906,39 @@ export function useTransgentic() {
     return nextVal;
   }, [api, config.agentHaltGuard]);
 
-  const executePrompt = useCallback(async (prompt: string, mode?: TaskMode, preferredProvider?: ProviderId, model?: string, cliRequest?: import('../../shared/cli.js').CliRequestOptions, files?: AttachmentInput[]) => {
+  const toggleTemporaryChatMode = useCallback(async (mode: RouteMode, enabled?: boolean) => {
+    const current = { ...DEFAULT_TEMPORARY_CHAT, ...config.temporaryChat };
+    const next = enabled ?? !current[mode];
+    if (api?.toggleTemporaryChatMode) {
+      await api.toggleTemporaryChatMode(mode, next);
+    } else if (api?.updateConfig) {
+      await api.updateConfig({ temporaryChat: { ...current, [mode]: next } });
+    }
+    setConfig(prev => ({ ...prev, temporaryChat: { ...DEFAULT_TEMPORARY_CHAT, ...prev.temporaryChat, [mode]: next } }));
+    return next;
+  }, [api, config.temporaryChat]);
+
+  const executePrompt = useCallback(async (prompt: string, mode?: TaskMode, preferredProvider?: ProviderId, model?: string, cliRequest?: import('../../shared/cli.js').CliRequestOptions, files?: AttachmentInput[], temporaryChat?: boolean) => {
     if (api?.executePrompt) {
-      return await api.executePrompt(prompt, mode, preferredProvider, model, cliRequest, files);
+      try {
+        return await api.executePrompt(prompt, mode, preferredProvider, model, cliRequest, files, temporaryChat);
+      } finally {
+        const sessions = await api.getTemporaryChatSessions?.().catch(() => []);
+        if (sessions) setTemporaryChatSessions(sessions);
+      }
     }
     throw new Error('API not available');
+  }, [api]);
+
+  const openTemporaryChatSession = useCallback(async (key: string) => {
+    return await api?.openTemporaryChatSession?.(key);
+  }, [api]);
+
+  const endTemporaryChatSession = useCallback(async (key: string) => {
+    const ended = await api?.endTemporaryChatSession?.(key);
+    const sessions = await api?.getTemporaryChatSessions?.().catch(() => []);
+    if (sessions) setTemporaryChatSessions(sessions);
+    return ended;
   }, [api]);
 
   const selectQuickPromptFiles = useCallback(async (mode?: TaskMode): Promise<DesktopAttachmentSelection[]> => {
@@ -1014,6 +1153,11 @@ export function useTransgentic() {
     providers,
     logs,
     totalLogsCount,
+    categoryLogs,
+    categoryCounts,
+    categoryClearSupported,
+    selectedLogCategory,
+    selectLogCategory,
     secrets,
     config,
     registry,
@@ -1021,8 +1165,11 @@ export function useTransgentic() {
     routeMatrix,
     activeDrawerProvider,
     activeSessions,
+    temporaryChatSessions,
     hasActiveSession: activeSessions.some((session) => isQuickPromptConversation(session.threadId)),
     clearThreadSessions,
+    openTemporaryChatSession,
+    endTemporaryChatSession,
     servicesManifest,
     toggleExperimentalService,
     updateServiceManifest,
@@ -1044,6 +1191,7 @@ export function useTransgentic() {
     toggleRecallMode,
     updateRecallConfig,
     toggleAgentGuard,
+    toggleTemporaryChatMode,
     updateModeRoute,
     resetModeRoutes,
     updateProviderConfig,

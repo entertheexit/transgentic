@@ -9,7 +9,7 @@ import { globalThreadManager } from '../src/main/registry/threadManager.js';
 import { globalRateLimiter } from '../src/main/mcp/rateLimiter.js';
 import { DuplicateActionGuard } from '../src/main/security/duplicateActionGuard.js';
 import type { TransgenticConfig } from '../src/shared/types.js';
-vi.mock('../src/main/storage/logStorage.js', () => ({ globalLogStorage: { insert: vi.fn(), update: vi.fn() } }));
+vi.mock('../src/main/storage/logStorage.js', () => ({ globalLogStorage: { insert: vi.fn(), update: vi.fn(), wasCleared: vi.fn().mockReturnValue(false) } }));
 let server: TransgenticMcpServer;
 beforeEach(() => {
   globalThreadManager.clearAll(); DuplicateActionGuard.clear();

@@ -5,8 +5,8 @@ const api = {
   checkForUpdate: () => ipcRenderer.invoke('app:check-for-update'),
   getCoreStatus: () => ipcRenderer.invoke('get-core-status'),
   getProviderStatuses: () => ipcRenderer.invoke('get-provider-statuses'),
-  getRequestLogs: (limit?: number, offset?: number) => ipcRenderer.invoke('get-request-logs', { limit, offset }),
-  clearRequestLogs: () => ipcRenderer.invoke('clear-request-logs'),
+  getRequestLogs: (limit?: number, offset?: number, category?: 'normal' | 'temporary') => ipcRenderer.invoke('get-request-logs', { limit, offset, category }),
+  clearRequestLogs: (category?: 'normal' | 'temporary') => ipcRenderer.invoke('clear-request-logs', category),
   terminateRequest: (logId: string) => ipcRenderer.invoke('logs:terminate-request', logId),
   terminateAllPendingRequests: () => ipcRenderer.invoke('logs:terminate-all-pending'),
   getBlindedSecrets: () => ipcRenderer.invoke('get-blinded-secrets'),
@@ -23,6 +23,7 @@ const api = {
   toggleRecall: (enabled?: boolean) => ipcRenderer.invoke('recall:toggle', enabled),
   toggleRecallMode: (mode: string, enabled?: boolean) => ipcRenderer.invoke('recall:toggle-mode', { mode, enabled }),
   toggleAgentGuard: (mode: string, enabled?: boolean) => ipcRenderer.invoke('config:toggle-agent-guard', { mode, enabled }),
+  toggleTemporaryChatMode: (mode: string, enabled?: boolean) => ipcRenderer.invoke('config:toggle-temporary-chat-mode', { mode, enabled }),
   updateAgentGuard: (config: any) => ipcRenderer.invoke('config:update-agent-guard', config),
   getModeRoutes: () => ipcRenderer.invoke('get-mode-routes'),
   getRouteMatrix: () => ipcRenderer.invoke('get-route-matrix'),
@@ -78,10 +79,13 @@ const api = {
   addCliWorkspace: () => ipcRenderer.invoke('cli:add-workspace'),
   updateCliWorkspace: (id: string, updates: any) => ipcRenderer.invoke('cli:update-workspace', id, updates),
   removeCliWorkspace: (id: string) => ipcRenderer.invoke('cli:remove-workspace', id),
-  executePrompt: (prompt: string, mode?: string, provider?: string, model?: string, cliRequest?: import('../../shared/cli.js').CliRequestOptions, files?: import('../../shared/attachments.js').AttachmentInput[]) =>
-    ipcRenderer.invoke('execute-prompt', { prompt, mode, provider, model, cliRequest, files }),
+  executePrompt: (prompt: string, mode?: string, provider?: string, model?: string, cliRequest?: import('../../shared/cli.js').CliRequestOptions, files?: import('../../shared/attachments.js').AttachmentInput[], temporaryChat?: boolean) =>
+    ipcRenderer.invoke('execute-prompt', { prompt, mode, provider, model, cliRequest, files, temporaryChat }),
   getThreadSessions: () => ipcRenderer.invoke('threads:get-sessions'),
   clearThreadSessions: (params?: any) => ipcRenderer.invoke('threads:clear-sessions', params),
+  getTemporaryChatSessions: () => ipcRenderer.invoke('temporary-chat:get-sessions'),
+  openTemporaryChatSession: (key: string) => ipcRenderer.invoke('temporary-chat:open', key),
+  endTemporaryChatSession: (key: string) => ipcRenderer.invoke('temporary-chat:end', key),
   getServicesManifest: () => ipcRenderer.invoke('services:get-manifest'),
   toggleExperimentalService: (serviceId: string, enabled: boolean) => ipcRenderer.invoke('services:toggle-experimental', { serviceId, enabled }),
   updateServiceManifest: (serviceId: string, updates: any) => ipcRenderer.invoke('services:update-manifest', { serviceId, updates }),
@@ -140,6 +144,11 @@ const api = {
     const handler = (_: any, sessions: any) => callback(sessions);
     ipcRenderer.on('threads-updated', handler);
     return () => ipcRenderer.removeListener('threads-updated', handler);
+  },
+  onTemporaryChatSessionsUpdated: (callback: (sessions: any) => void) => {
+    const handler = (_: any, sessions: any) => callback(sessions);
+    ipcRenderer.on('temporary-chat-sessions-updated', handler);
+    return () => ipcRenderer.removeListener('temporary-chat-sessions-updated', handler);
   },
 
   onServicesManifestUpdated: (callback: (manifest: any) => void) => {

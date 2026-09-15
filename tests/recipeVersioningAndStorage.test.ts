@@ -193,7 +193,7 @@ describe('Recipe Versioning, Storage & Self-Healing Tests', () => {
 
       // Check version increment and audit metadata
       expect(healResult.success).toBe(true);
-      expect(healResult.version).toBe('1.0.1');
+      expect(healResult.version).toBe('1.1.1');
       expect(healResult.recipe.healedAt).toBeDefined();
       expect(healResult.recipe.healer).toBe('localllm');
       expect(healResult.recipe.changelog).toBeDefined();

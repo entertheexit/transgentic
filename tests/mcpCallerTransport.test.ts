@@ -6,7 +6,7 @@ import { AccountRegistryManager } from '../src/main/registry/accountRegistry.js'
 import { globalThreadManager } from '../src/main/registry/threadManager.js';
 import { BaseMcpHandler } from '../src/main/mcp/handlers/baseHandler.js';
 
-vi.mock('../src/main/storage/logStorage.js', () => ({ globalLogStorage: { insert: vi.fn(), update: vi.fn() } }));
+vi.mock('../src/main/storage/logStorage.js', () => ({ globalLogStorage: { insert: vi.fn(), update: vi.fn(), wasCleared: vi.fn().mockReturnValue(false) } }));
 vi.mock('../src/main/security/clientAuth.js', () => ({ ClientAuthManager: { verifyToken: () => true } }));
 
 let server: TransgenticMcpServer;

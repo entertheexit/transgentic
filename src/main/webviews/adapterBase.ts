@@ -67,6 +67,7 @@ export abstract class BaseProviderAdapter {
   abstract readonly partition: string;
 
   protected webContents: WebContents | null = null;
+  protected suppressScriptDiagnostics = false;
   protected customPartition: string | null = null;
 
   public setCustomPartition(partition?: string | null): void {
@@ -128,7 +129,7 @@ export abstract class BaseProviderAdapter {
       return await this.webContents.executeJavaScript(code, true);
     } catch (err: any) {
       console.error(`[Transgentic] executeScript failed for provider ${this.providerId}:`, err?.message || err);
-      console.error(`[Transgentic] Failed script code:\n`, code);
+      if (!this.suppressScriptDiagnostics) console.error(`[Transgentic] Failed script code:\n`, code);
       throw err;
     }
   }
@@ -496,9 +497,9 @@ export abstract class BaseProviderAdapter {
   /**
    * Navigates the Webview to a specific conversation URL.
    */
-  public async navigateToConversation(targetUrl: string): Promise<void> {
+  public async navigateToConversation(targetUrl: string, options?: { assumeLocked?: boolean }): Promise<void> {
     if (!this.webContents || this.webContents.isDestroyed()) return;
-    const releaseLock = await this.acquireDomLock();
+    const releaseLock = options?.assumeLocked ? () => {} : await this.acquireDomLock();
     try {
       const currentUrl = this.webContents.getURL();
       if (currentUrl === targetUrl) return;
@@ -513,9 +514,9 @@ export abstract class BaseProviderAdapter {
   /**
    * Navigates the Webview to the provider's new chat page.
    */
-  public async navigateToNewChat(): Promise<void> {
+  public async navigateToNewChat(options?: { forceReload?: boolean; assumeLocked?: boolean }): Promise<void> {
     if (!this.webContents || this.webContents.isDestroyed()) return;
-    const releaseLock = await this.acquireDomLock();
+    const releaseLock = options?.assumeLocked ? () => {} : await this.acquireDomLock();
     try {
       let target = (this as any).recipe?.newChatUrl || (this as any).recipe?.url || this.url;
       if (!target) {
@@ -529,11 +530,13 @@ export abstract class BaseProviderAdapter {
 
       const currentUrl = (this.webContents.getURL() || '').replace(/\/$/, '');
       const normTarget = target.replace(/\/$/, '');
-      if (currentUrl !== normTarget) {
+      if (options?.forceReload || currentUrl !== normTarget) {
         await this.webContents.loadURL(target);
         await new Promise((r) => setTimeout(r, 1500));
       }
-    } catch {} finally {
+    } catch (error) {
+      throw new Error(`Could not open a new chat for ${this.name}: ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
       releaseLock();
     }
   }

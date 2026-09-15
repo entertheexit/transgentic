@@ -1,7 +1,8 @@
 {
   "version": "1.0",
   "id": "grok",
-  "title": "Grok",
+  "modeSchemaVersion": 2,
+  "title": "xAI Grok",
   "domainMatch": "grok.com",
   "url": "https://grok.com",
   "newChatUrl": "https://grok.com",

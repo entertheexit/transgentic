@@ -62,6 +62,11 @@ export function App() {
     providers,
     logs,
     totalLogsCount,
+    categoryLogs,
+    categoryCounts,
+    categoryClearSupported,
+    selectedLogCategory,
+    selectLogCategory,
     secrets,
     registry,
     modeRoutes,
@@ -77,6 +82,7 @@ export function App() {
     toggleRecallMode,
     updateRecallConfig,
     toggleAgentGuard,
+    toggleTemporaryChatMode,
     updateModeRoute,
     resetModeRoutes,
     updateProviderConfig,
@@ -104,7 +110,10 @@ export function App() {
     executePrompt,
     selectQuickPromptFiles,
     hasActiveSession,
+    temporaryChatSessions,
     clearThreadSessions,
+    openTemporaryChatSession,
+    endTemporaryChatSession,
     servicesManifest,
     toggleExperimentalService,
     updateServiceManifest,
@@ -338,10 +347,10 @@ export function App() {
     openDrawer(providerId);
   };
 
-  const handleSendPrompt = async (promptText: string, files: AttachmentInput[] = []) => {
+  const handleSendPrompt = async (promptText: string, files: AttachmentInput[] = [], temporaryChat?: boolean) => {
     soundFx.playClick();
     try {
-      const result = await executePrompt(promptText, coreStatus.activeMode, undefined, undefined, undefined, files);
+      const result = await executePrompt(promptText, coreStatus.activeMode, undefined, undefined, undefined, files, temporaryChat);
       soundFx.playTaskSuccess();
       return result;
     } catch (err) {
@@ -705,10 +714,12 @@ export function App() {
                       servicesManifest={servicesManifest}
                       routeMatrix={routeMatrix}
                       modeRoutes={modeRoutes}
+                      temporaryChatSessions={temporaryChatSessions}
                       onProviderClick={handleSatelliteClick}
                       onModeChange={setMode}
                       onToggleBalancedMode={toggleBalancedMode}
                       onToggleAgentGuard={toggleAgentGuard}
+                      onToggleTemporaryChatMode={toggleTemporaryChatMode}
                       onCoreClick={() => handleTabChange('logs')}
                       onRoutesClick={() => handleTabChange('routes')}
                       onSettingsClick={() => handleTabChange('settings')}
@@ -763,6 +774,7 @@ export function App() {
                       onToggleDoubleAgentMode={toggleDoubleAgentMode}
                       onUpdateDoubleAgent={updateDoubleAgentConfig}
                       onToggleAgentGuard={toggleAgentGuard}
+                      onToggleTemporaryChatMode={toggleTemporaryChatMode}
                       onUpdateRecallConfig={updateRecallConfig}
                       onToggleRecallMode={toggleRecallMode}
                       onUpdateProviderConfig={updateProviderConfig}
@@ -774,6 +786,10 @@ export function App() {
                       onInstallRecipe={installRecipe}
                       onDeleteProvider={deleteProvider}
                       onUpdateServiceTitle={updateServiceTitle}
+                      onUpdateServiceManifest={updateServiceManifest}
+                      temporaryChatSessions={temporaryChatSessions}
+                      onOpenTemporaryChat={openTemporaryChatSession}
+                      onEndTemporaryChat={endTemporaryChatSession}
                       onResyncModels={resyncModels}
                       onSelectDirectory={selectDirectory}
                       onApplyPort={applyPort}
@@ -792,8 +808,12 @@ export function App() {
                 {activeTab === 'logs' && (
                   <div key="logs" className="h-full w-full provider-panel-enter">
                     <LogStream
-                      logs={logs}
-                      totalLogsCount={totalLogsCount}
+                      logs={categoryLogs}
+                      totalLogsCount={categoryCounts[selectedLogCategory]}
+                      category={selectedLogCategory}
+                      categoryCounts={categoryCounts}
+                      categoryClearSupported={categoryClearSupported}
+                      onSelectCategory={selectLogCategory}
                       onFetchMore={fetchMoreLogs}
                       onClearLogs={clearLogs}
                       onTerminateRequest={terminateRequest}
@@ -872,6 +892,7 @@ export function App() {
               <div className="w-[700px] min-w-[700px] h-full flex-1 no-drag">
                 <DrawerWebview
                   provider={currentDrawerProvider}
+                  browserTitle={getProviderDisplayName(currentDrawerProvider.id, servicesManifest, providers)}
                   accountStore={accountsRegistry ? accountsRegistry[currentDrawerProvider.id] : undefined}
                   healingReport={healingReports?.[currentDrawerProvider.id]}
                   localLLMConfig={config.localLLM}

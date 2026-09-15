@@ -1,4 +1,4 @@
-import { ProviderId } from '../../shared/types.js';
+import { ChatMode, ProviderId, TemporaryChatState } from '../../shared/types.js';
 
 export interface ThreadMessage {
   role: 'user' | 'assistant' | 'system';
@@ -17,6 +17,9 @@ export interface ThreadSession {
   history: ThreadMessage[];    // Multi-turn message history for Local LLM & summarization
   lastSummary?: string;        // Compact continuity summary on rollover
   presetPromptsSent?: boolean; // Tracks whether Transgentic app preset prompts (e.g. Recall, Balanced directives) have been sent in this chat session
+  chatMode?: ChatMode;
+  temporaryState?: TemporaryChatState;
+  temporarySessionKey?: string;
 }
 
 export class ThreadManager {
@@ -82,7 +85,8 @@ export class ThreadManager {
     threadId: string,
     provider: ProviderId,
     webChatUrl: string,
-    projectName?: string
+    projectName?: string,
+    options?: { chatMode?: ChatMode; temporaryState?: TemporaryChatState; temporarySessionKey?: string }
   ): ThreadSession {
     const key = this.getCompositeKey(threadId, provider);
     const existing = this.sessions.get(key);
@@ -97,6 +101,9 @@ export class ThreadManager {
       history: existing?.history || [],
       lastSummary: existing?.lastSummary,
       presetPromptsSent: existing?.presetPromptsSent || false,
+      chatMode: options?.chatMode || existing?.chatMode || 'normal',
+      temporaryState: options?.temporaryState || existing?.temporaryState,
+      temporarySessionKey: options?.temporarySessionKey || existing?.temporarySessionKey,
     };
     this.sessions.set(key, session);
     this.notify();
@@ -190,6 +197,18 @@ export class ThreadManager {
       this.notify();
     }
     return deleted;
+  }
+
+  public removeTemporarySessionByKey(temporarySessionKey: string): number {
+    let removed = 0;
+    for (const [key, session] of this.sessions.entries()) {
+      if (session.temporarySessionKey === temporarySessionKey) {
+        this.sessions.delete(key);
+        removed++;
+      }
+    }
+    if (removed > 0) this.notify();
+    return removed;
   }
 
   /**

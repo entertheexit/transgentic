@@ -8,7 +8,7 @@ import { globalThreadManager } from '../src/main/registry/threadManager.js';
 // Opt-in smoke test: use a real local model through HTTP MCP, with isolated logs/auth/routes.
 // TRANSGENTIC_LIVE_LOCAL_CONFIG must point to a Transgentic config with an enabled Local LLM.
 vi.mock('../src/main/storage/logStorage.js', () => ({
-  globalLogStorage: { insert: vi.fn(), update: vi.fn() },
+  globalLogStorage: { insert: vi.fn(), update: vi.fn(), wasCleared: vi.fn().mockReturnValue(false) },
 }));
 vi.mock('../src/main/security/clientAuth.js', () => ({
   ClientAuthManager: { verifyToken: (token: string) => token === 'isolated-local-smoke-test' },

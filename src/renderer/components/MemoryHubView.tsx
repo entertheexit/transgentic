@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { BlindedTokenMap } from '../../shared/types.js';
 import {
@@ -463,7 +464,7 @@ export const MemoryHubView: React.FC<MemoryHubViewProps> = ({
       </div>
 
       {/* Clearance Confirmation Modal */}
-      <AnimatePresence>
+      {createPortal(<AnimatePresence>
         {showConfirmModal && (
           <motion.div
             key="clearance-confirm-backdrop"
@@ -553,7 +554,7 @@ export const MemoryHubView: React.FC<MemoryHubViewProps> = ({
             </motion.div>
           </motion.div>
         )}
-      </AnimatePresence>
+      </AnimatePresence>, document.body)}
     </div>
   );
 };

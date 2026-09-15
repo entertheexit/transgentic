@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   modalBackdropVariants,
@@ -19,6 +19,8 @@ import {
   RouteMode,
   ModeRouteConfig,
   normalizeRouteMode,
+  isTemporaryChatPreferred,
+  type ChatExecutionStatus,
 } from '../../shared/types.js';
 import type { AttachmentInput, DesktopAttachmentSelection } from '../../shared/attachments.js';
 import {
@@ -66,12 +68,13 @@ interface RadialHubProps {
   onModeChange: (mode: RouteMode) => void;
   onToggleBalancedMode?: (enabled?: boolean) => void;
   onToggleAgentGuard?: (mode: RouteMode, enabled?: boolean) => void;
+  onToggleTemporaryChatMode?: (mode: RouteMode, enabled?: boolean) => Promise<boolean>;
   onCoreClick?: () => void;
   onRoutesClick?: () => void;
   onSettingsClick?: () => void;
   onLocalLLMClick?: () => void;
   localLLMEnabled?: boolean;
-  onSendPrompt?: (prompt: string, files?: AttachmentInput[]) => Promise<any>;
+  onSendPrompt?: (prompt: string, files?: AttachmentInput[], temporaryChat?: boolean) => Promise<any>;
   onSelectFiles?: (mode?: TaskMode) => Promise<DesktopAttachmentSelection[]>;
   hasActiveSession?: boolean;
   onClearSession?: () => Promise<void>;
@@ -79,6 +82,7 @@ interface RadialHubProps {
   onOpenAuthModal?: () => void;
   routeMatrix?: RouteMatrix | null;
   modeRoutes?: Record<RouteMode, ModeRouteConfig>;
+  temporaryChatSessions?: import('../../shared/types.js').TemporaryChatSessionInfo[];
 }
 
 const PROVIDERS_CONFIG: Array<{
@@ -154,10 +158,13 @@ const SAMPLE_PROMPTS = [
 interface QuickPromptAnswer {
   prompt: string;
   response: string;
+  isError?: boolean;
   provider?: ProviderId;
   model?: string;
   mediaPath?: string;
   timestamp: number;
+  temporaryChatSessionKeys?: string[];
+  chatExecution?: ChatExecutionStatus;
 }
 
 export const RadialHub: React.FC<RadialHubProps> = ({
@@ -169,6 +176,7 @@ export const RadialHub: React.FC<RadialHubProps> = ({
   onModeChange,
   onToggleBalancedMode,
   onToggleAgentGuard,
+  onToggleTemporaryChatMode,
   onCoreClick,
   onRoutesClick,
   onSettingsClick,
@@ -182,12 +190,19 @@ export const RadialHub: React.FC<RadialHubProps> = ({
   onOpenAuthModal,
   routeMatrix,
   modeRoutes,
+  temporaryChatSessions = [],
 }) => {
   const [showInfoModal, setShowInfoModal] = useState(false);
   const [showAgentGuardModal, setShowAgentGuardModal] = useState(false);
   const [showAnswerModal, setShowAnswerModal] = useState(false);
   const [copiedAnswer, setCopiedAnswer] = useState(false);
   const [copiedPromptIdx, setCopiedPromptIdx] = useState<number | null>(null);
+  const routeMode = normalizeRouteMode(coreStatus.activeMode);
+  const route = routeMatrix?.main?.[routeMode];
+  const routedProvider = (route && route.defaultService !== undefined ? route.defaultService : modeRoutes?.[routeMode]?.primary) as ProviderId | undefined;
+  const routedTemporaryCapability = routedProvider ? providers[routedProvider]?.temporaryChat : undefined;
+  const temporaryChatSupported = Boolean(routedTemporaryCapability?.supported && routedTemporaryCapability.availability !== 'unavailable');
+  const temporaryChat = isTemporaryChatPreferred(config, coreStatus.activeMode);
   const [latestAnswer, setLatestAnswer] = useState<QuickPromptAnswer | null>(() => {
     try {
       const saved = localStorage.getItem('transgentic_latest_quick_answer');
@@ -196,6 +211,14 @@ export const RadialHub: React.FC<RadialHubProps> = ({
       return null;
     }
   });
+
+  useEffect(() => {
+    const keys = latestAnswer?.temporaryChatSessionKeys;
+    if (keys?.length && !keys.some(key => temporaryChatSessions.some(session => session.key === key))) {
+      setLatestAnswer(null);
+      setShowAnswerModal(false);
+    }
+  }, [latestAnswer?.temporaryChatSessionKeys, temporaryChatSessions]);
 
   const isModeServiceSelected = (() => {
     const routeMode = normalizeRouteMode(coreStatus.activeMode);
@@ -209,6 +232,9 @@ export const RadialHub: React.FC<RadialHubProps> = ({
     }
     return true;
   })();
+  const temporaryChatLabel = !isModeServiceSelected || !temporaryChatSupported
+    ? 'Temporary Chat Unsupported'
+    : temporaryChat ? 'Temporary Chat Enabled' : 'Temporary Chat Disabled';
 
   const handleCopySamplePrompt = (text: string, idx: number) => {
     soundFx.playClick();
@@ -249,20 +275,23 @@ export const RadialHub: React.FC<RadialHubProps> = ({
 
   const visibleProviders = [...baseProviders, ...dynamicProviders];
 
-  // Find latest successful log created strictly via Quick Prompt with response text
+  // Keep the latest completed Quick Prompt outcome, including failures, available after Hub remounts.
   const latestQuickPromptLog = logs?.find(
-    (l) => l.isQuickPrompt === true && (l.status === 'success' || l.status === 'fallback') && (l.responseText || l.responseSnippet)
+    (l) => l.isQuickPrompt === true && l.status !== 'pending' && (l.responseText || l.responseSnippet || l.error)
   );
 
-  // Derive latest answer: prioritize any locally captured prompt answer, or fall back to most recent successful Quick Prompt log
-  const currentAnswer: QuickPromptAnswer | null = latestAnswer || (latestQuickPromptLog ? {
+  const loggedAnswer: QuickPromptAnswer | null = latestQuickPromptLog ? {
     prompt: latestQuickPromptLog.promptText || latestQuickPromptLog.promptSnippet || '',
-    response: latestQuickPromptLog.responseText || latestQuickPromptLog.responseSnippet || '',
+    response: latestQuickPromptLog.responseText || latestQuickPromptLog.responseSnippet || latestQuickPromptLog.error || '',
+    isError: latestQuickPromptLog.status === 'failed',
     provider: latestQuickPromptLog.fallbackProvider || latestQuickPromptLog.targetProvider,
     model: latestQuickPromptLog.modelUsed,
     mediaPath: latestQuickPromptLog.mediaPath,
     timestamp: latestQuickPromptLog.timestamp,
-  } : null);
+    chatExecution: latestQuickPromptLog.chatExecution,
+  } : null;
+  const currentAnswer: QuickPromptAnswer | null = latestAnswer && (!loggedAnswer || latestAnswer.timestamp >= loggedAnswer.timestamp)
+    ? latestAnswer : loggedAnswer;
 
   const isBalancedMode = config?.balancedMode ?? config?.coding?.balancedMode ?? true;
   const isAgentGuard = isAgentHaltGuardEnabled(config, coreStatus.activeMode);
@@ -286,14 +315,23 @@ export const RadialHub: React.FC<RadialHubProps> = ({
           model: res?.metadata?.modelUsed || res?.modelUsed,
           mediaPath: res?.mediaPath,
           timestamp: Date.now(),
+          temporaryChatSessionKeys: res?.metadata?.temporaryChatSessionKeys,
+          chatExecution: res?.metadata?.chatExecution,
         };
         setLatestAnswer(ansObj);
-        try {
-          localStorage.setItem('transgentic_latest_quick_answer', JSON.stringify(ansObj));
-        } catch { }
+        if (!temporaryChat) {
+          try {
+            localStorage.setItem('transgentic_latest_quick_answer', JSON.stringify(ansObj));
+          } catch { }
+        }
       }
       return res;
     }
+  };
+
+  const handleQuickPromptError = (message: string, prompt = '') => {
+    setLatestAnswer({ prompt, response: message, isError: true, timestamp: Date.now() });
+    try { localStorage.removeItem('transgentic_latest_quick_answer'); } catch {}
   };
 
   const handleClear = async () => {
@@ -530,12 +568,30 @@ export const RadialHub: React.FC<RadialHubProps> = ({
         </div>
 
         {/* Dedicated Statistics & Telemetry Sub-bar under Main Card */}
-        <div className="flex items-center justify-between px-2 py-0.5 text-[10px] font-mono text-slate-400">
-          <div className="flex items-center gap-1.5 text-slate-500">
-            <span className="w-1.5 h-1.5 rounded-full bg-cyan-400/80" />
-            <span>MCP Gateway Active</span>
+        <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 px-2 py-0.5 text-[10px] font-mono text-slate-400">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <span className="flex shrink-0 items-center gap-1.5 text-slate-500">
+              <span className="w-1.5 h-1.5 rounded-full bg-cyan-400/80" />
+              <span>Gateway Active</span>
+            </span>
+            <button type="button"
+              onClick={() => { if (temporaryChatSupported && isModeServiceSelected) void onToggleTemporaryChatMode?.(routeMode, !temporaryChat); }}
+              disabled={!isModeServiceSelected || !temporaryChatSupported || !onToggleTemporaryChatMode}
+              aria-label={`${temporaryChatLabel} for ${routeMode} mode`}
+              aria-pressed={temporaryChat && isModeServiceSelected && temporaryChatSupported}
+              className="flex items-center gap-1.5 whitespace-nowrap rounded px-1 text-slate-500 hover:bg-white/5 disabled:cursor-not-allowed"
+              title={!isModeServiceSelected || !temporaryChatSupported
+                ? (routedTemporaryCapability?.reason || 'Temporary Chat is unavailable for the selected provider')
+                : temporaryChat
+                  ? 'Temporary Chat is preferred for this mode. Click to turn it off for future requests.'
+                  : 'Click to prefer Temporary Chat for future requests in this mode.'}
+            >
+              <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${temporaryChat && isModeServiceSelected && temporaryChatSupported
+                ? `bg-indigo-400 ${coreStatus.state === 'processing' ? 'animate-ping' : ''}` : 'bg-slate-600'}`} />
+              <span>{temporaryChatLabel}</span>
+            </button>
           </div>
-          <div className="flex items-center gap-2.5">
+          <div className="flex shrink-0 items-center gap-1.5">
             <span className="text-slate-300 font-medium">
               <strong className="text-cyan-400 font-bold">{coreStatus.requestCount}</strong> {coreStatus.requestCount === 0 || coreStatus.requestCount === 1 ? 'request' : 'requests'}
             </span>
@@ -564,9 +620,12 @@ export const RadialHub: React.FC<RadialHubProps> = ({
           hasActiveSession={hasActiveSession}
           onClearSession={handleClear}
           hasAnswer={!!currentAnswer}
+          hasError={!!currentAnswer?.isError}
           onViewAnswer={() => setShowAnswerModal(true)}
+          onError={handleQuickPromptError}
           isServiceDeselected={!isModeServiceSelected}
           activeMode={coreStatus.activeMode}
+          temporaryChat={temporaryChat}
         />
       </div>
 
@@ -956,18 +1015,18 @@ export const RadialHub: React.FC<RadialHubProps> = ({
               exit="exit"
               transition={modalContentTransition}
               onClick={(e) => e.stopPropagation()}
-              className="relative w-full max-w-lg max-h-[85vh] bg-[#0c1017] border border-cyan-500/40 rounded-xl shadow-[0_20px_50px_rgba(0,0,0,0.95)] flex flex-col overflow-hidden text-left"
+              className={`relative w-full max-w-lg max-h-[85vh] bg-[#0c1017] border rounded-xl shadow-[0_20px_50px_rgba(0,0,0,0.95)] flex flex-col overflow-hidden text-left ${currentAnswer.isError ? 'border-rose-500/40' : 'border-cyan-500/40'}`}
             >
               {/* Modal Header */}
               <div className="flex items-center justify-between px-5 py-3 border-b border-white/10 bg-black/40 shrink-0 gap-2">
                 <div className="flex items-center gap-2">
-                  <div className="w-6 h-6 rounded-lg bg-cyan-500/20 border border-cyan-500/40 flex items-center justify-center text-cyan-400">
-                    <MessageSquareText className="w-3.5 h-3.5" />
+                  <div className={`w-6 h-6 rounded-lg border flex items-center justify-center ${currentAnswer.isError ? 'bg-rose-500/20 border-rose-500/40 text-rose-400' : 'bg-cyan-500/20 border-cyan-500/40 text-cyan-400'}`}>
+                    {currentAnswer.isError ? <CircleX className="w-3.5 h-3.5" /> : <MessageSquareText className="w-3.5 h-3.5" />}
                   </div>
                   <div>
                     <div className="flex items-center gap-2">
-                      <span className="text-cyan-300 font-mono font-bold text-xs uppercase tracking-wider">
-                        Answer
+                      <span className={`${currentAnswer.isError ? 'text-rose-300' : 'text-cyan-300'} font-mono font-bold text-xs uppercase tracking-wider`}>
+                        {currentAnswer.isError ? 'Error' : 'Answer'}
                       </span>
                       {currentAnswer.provider && (
                         <span className="text-[9.5px] font-mono text-slate-300 bg-white/10 px-1.5 py-0.5 rounded border border-white/10">
@@ -980,34 +1039,17 @@ export const RadialHub: React.FC<RadialHubProps> = ({
                           <span>{currentAnswer.model}</span>
                         </span>
                       )}
+                      {currentAnswer.chatExecution?.actualMode === 'temporary' && currentAnswer.chatExecution.verified && (
+                        <span className="text-[9px] font-mono text-indigo-200 border border-indigo-400/40 rounded px-1.5 py-0.5">Temporary verified</span>
+                      )}
+                      {currentAnswer.chatExecution?.fallbackReason && (
+                        <span className="text-[9px] font-mono text-amber-300 border border-amber-500/30 rounded px-1.5 py-0.5" title={currentAnswer.chatExecution.fallbackReason}>Normal fallback</span>
+                      )}
                     </div>
                   </div>
                 </div>
 
                 <div className="flex items-center gap-1.5">
-                  <button
-                    onClick={() => {
-                      soundFx.playClick();
-                      navigator.clipboard.writeText(currentAnswer.response);
-                      setCopiedAnswer(true);
-                      setTimeout(() => setCopiedAnswer(false), 2500);
-                    }}
-                    className="flex items-center gap-1 px-2 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 text-[10px] font-mono border border-white/10 transition-all cursor-pointer"
-                    title="Copy full response to clipboard"
-                  >
-                    {copiedAnswer ? (
-                      <>
-                        <Check className="w-3 h-3 text-emerald-400" />
-                        <span className="text-emerald-400">Copied</span>
-                      </>
-                    ) : (
-                      <>
-                        <Copy className="w-3 h-3 text-slate-400" />
-                        <span>Copy</span>
-                      </>
-                    )}
-                  </button>
-
                   <button
                     onClick={() => {
                       soundFx.playClick();
@@ -1037,16 +1079,33 @@ export const RadialHub: React.FC<RadialHubProps> = ({
 
                 {/* AI Answer Text */}
                 <div className="space-y-1">
-                  <div className="text-[9px] font-mono uppercase tracking-wider text-cyan-400 font-semibold flex items-center justify-between">
-                    <span>Response</span>
+                  <div className={`text-[9px] font-mono uppercase tracking-wider font-semibold flex items-center justify-between ${currentAnswer.isError ? 'text-rose-400' : 'text-cyan-400'}`}>
+                    <span>{currentAnswer.isError ? 'Error details' : 'Response'}</span>
                     {currentAnswer.timestamp && (
                       <span className="text-[9px] font-mono text-slate-500 font-normal">
                         {new Date(currentAnswer.timestamp).toLocaleTimeString()}
                       </span>
                     )}
                   </div>
-                  <div className="text-xs text-slate-100 font-mono leading-relaxed bg-black/40 p-3.5 rounded-xl border border-cyan-500/20 break-words whitespace-pre-wrap select-text selection:bg-cyan-500 selection:text-black">
+                  <div className={`relative rounded-xl border bg-black/40 p-3.5 pr-12 text-xs font-mono leading-relaxed text-slate-100 break-words whitespace-pre-wrap select-text ${currentAnswer.isError ? 'border-rose-500/20 selection:bg-rose-500' : 'border-cyan-500/20 selection:bg-cyan-500'} selection:text-black`}>
                     {currentAnswer.response}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        soundFx.playClick();
+                        void navigator.clipboard.writeText(currentAnswer.response).then(() => {
+                          setCopiedAnswer(true);
+                          setTimeout(() => setCopiedAnswer(false), 2500);
+                        }).catch(() => soundFx.playWarnTone());
+                      }}
+                      className={`absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded-lg border transition-colors ${copiedAnswer
+                        ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400'
+                        : 'border-white/10 bg-white/5 text-slate-400 hover:border-white/20 hover:bg-white/10 hover:text-slate-100'}`}
+                      title={copiedAnswer ? 'Response copied' : 'Copy full response to clipboard'}
+                      aria-label={copiedAnswer ? 'Response copied' : 'Copy full response'}
+                    >
+                      {copiedAnswer ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                    </button>
                   </div>
                 </div>
 

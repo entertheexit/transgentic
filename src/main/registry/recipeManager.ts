@@ -475,7 +475,12 @@ export class RecipeManager {
    */
   public initializeAllCustomRecipes(): void {
     const recipes = this.loadPersistedRecipes();
+    for (const providerId of ['chatgpt', 'claude', 'gemini', 'grok'] as ProviderId[]) {
+      const effectiveRecipe = this.getRecipe(providerId);
+      if (effectiveRecipe) globalSessionManager.registerAdapter(new CustomRecipeAdapter(effectiveRecipe));
+    }
     for (const r of recipes) {
+      if (['chatgpt', 'claude', 'gemini', 'grok'].includes(r.id.replace(/^custom_|^recipe_/, ''))) continue;
       try {
         const providerId = (r.id.startsWith('custom_') || r.id.startsWith('webview_') ? r.id : `custom_${r.id}`) as ProviderId;
         const partitionKey = r.partition || PartitionLifecycleManager.getPartitionKey(providerId);

@@ -1,7 +1,7 @@
 import { session } from 'electron';
 import { BaseProviderAdapter, ProviderAdapterResult } from './adapterBase.js';
 import { ProviderId, TaskMode } from '../../shared/types.js';
-import { CustomRecipe, normalizeSelectorList, toCombinedCssSelector, RecipeModes, RecipeAttachmentRevealStep, SelectorCandidate } from '../../shared/types/recipe.js';
+import { CustomRecipe, normalizeSelectorList, toCombinedCssSelector, RecipeModes, RecipeAttachmentRevealStep, RecipeElementLocator, RecipeClickStep, SelectorCandidate } from '../../shared/types/recipe.js';
 import { ProjectMetadata } from '../storage/projectManager.js';
 import type { StagedAttachment } from '../../shared/attachments.js';
 
@@ -13,6 +13,7 @@ export class CustomRecipeAdapter extends BaseProviderAdapter {
   public readonly recipe: CustomRecipe;
   readonly providerId: ProviderId;
   readonly partition: string;
+  private temporaryChatRequired = false;
 
   constructor(recipe: CustomRecipe) {
     super();
@@ -28,6 +29,115 @@ export class CustomRecipeAdapter extends BaseProviderAdapter {
 
   get url(): string {
     return this.recipe.url || `https://${this.recipe.domainMatch}`;
+  }
+
+  public supportsTemporaryChat(): boolean {
+    const config = this.recipe.temporaryChat;
+    return Boolean(config?.enabled && config.activationSteps?.length && config.activeWhen && config.inactiveWhen);
+  }
+
+  public setTemporaryChatRequired(required: boolean): void {
+    this.temporaryChatRequired = required;
+    this.suppressScriptDiagnostics = required;
+  }
+
+  protected override async executeScript<T>(code: string): Promise<T> {
+    if (this.temporaryChatRequired && (!this.webContents || this.webContents.isDestroyed())) {
+      throw new Error('[TEMPORARY_CHAT_ENDED] Temporary Chat browser view is unavailable. Start a new Temporary Chat.');
+    }
+    return super.executeScript<T>(code);
+  }
+
+  public async verifyTemporaryChat(): Promise<boolean> {
+    const locator = this.recipe.temporaryChat?.activeWhen;
+    return Boolean(locator && await this.locatorExists(locator));
+  }
+
+  public async inspectTemporaryChatAvailability(): Promise<{ availability: 'available' | 'unknown' | 'unavailable'; reason?: string }> {
+    if (!this.supportsTemporaryChat()) return { availability: 'unavailable', reason: 'This recipe does not support Temporary Chat.' };
+    if (!await this.checkAuthStatus()) return { availability: 'unavailable', reason: 'Sign in to check Temporary Chat availability.' };
+    const config = this.recipe.temporaryChat!;
+    if (await this.verifyTemporaryChat()) return { availability: 'available' };
+    if (config.inactiveWhen && await this.locatorExists(config.inactiveWhen)) return { availability: 'available' };
+    return { availability: 'unknown', reason: 'Temporary Chat will be verified when a new conversation starts.' };
+  }
+
+  public async activateTemporaryChat(abortSignal?: AbortSignal): Promise<void> {
+    const config = this.recipe.temporaryChat;
+    if (!this.supportsTemporaryChat() || !config?.activeWhen || !config.inactiveWhen || !config.activationSteps?.length) {
+      throw new Error('[TEMPORARY_CHAT_UNSUPPORTED] This provider recipe does not support Temporary Chat.');
+    }
+    const release = await this.acquireDomLock();
+    try {
+      if (!this.webContents || this.webContents.isDestroyed()) throw new Error('[TEMPORARY_CHAT_ENDED] Temporary Chat browser view is unavailable.');
+      const target = this.recipe.newChatUrl || this.url;
+      await this.webContents.loadURL(target);
+      await this.waitForPageReady(6_000);
+      if (!await this.checkAuthStatus()) throw new Error('[TEMPORARY_CHAT_LOGIN_REQUIRED] Sign in before starting Temporary Chat.');
+      if (await this.verifyTemporaryChat()) {
+        this.temporaryChatRequired = true;
+        return;
+      }
+      let sawInactiveState = await this.locatorExists(config.inactiveWhen);
+      for (const step of config.activationSteps) {
+        await this.executeClickStep(step, abortSignal);
+        if (!sawInactiveState) sawInactiveState = await this.locatorExists(config.inactiveWhen);
+      }
+      if (!sawInactiveState && !await this.verifyTemporaryChat()) {
+        throw new Error('[TEMPORARY_CHAT_UNAVAILABLE] The provider did not expose Temporary Chat for this account.');
+      }
+      const deadline = Date.now() + 5_000;
+      while (Date.now() < deadline) {
+        if (abortSignal?.aborted) throw Object.assign(new Error('Request cancelled.'), { name: 'AbortError' });
+        if (await this.verifyTemporaryChat()) {
+          this.temporaryChatRequired = true;
+          return;
+        }
+        await new Promise(resolve => setTimeout(resolve, 125));
+      }
+      throw new Error('[TEMPORARY_CHAT_VERIFICATION_FAILED] The provider did not confirm that Temporary Chat is active.');
+    } finally {
+      release();
+    }
+  }
+
+  private async waitForPageReady(timeoutMs: number): Promise<void> {
+    if (!this.webContents || this.webContents.isDestroyed() || !this.webContents.isLoading()) return;
+    await new Promise<void>(resolve => {
+      let done = false;
+      const finish = () => { if (!done) { done = true; resolve(); } };
+      this.webContents!.once('did-finish-load', finish);
+      setTimeout(finish, timeoutMs);
+    });
+  }
+
+  private async locatorExists(locator: RecipeElementLocator): Promise<boolean> {
+    return await this.executeScript<boolean>(`
+      (function() {
+        const locator = ${JSON.stringify(locator)};
+        const normalize = value => String(value || '').replace(/\\s+/g, ' ').trim().toLocaleLowerCase();
+        const names = (Array.isArray(locator.name) ? locator.name : locator.name ? [locator.name] : []).map(normalize);
+        const implicitRole = el => el.getAttribute('role') || (el.tagName === 'BUTTON' ? 'button' : /^H[1-6]$/.test(el.tagName) ? 'heading' : '');
+        const accessibleNames = el => [el.getAttribute('aria-label'), el.getAttribute('title'), el.textContent].filter(Boolean).map(normalize);
+        const nameMatches = value => locator.nameMatch === 'contains' ? names.some(name => value.includes(name)) : names.includes(value);
+        const visible = el => { const style = getComputedStyle(el); const rect = el.getBoundingClientRect(); return style.display !== 'none' && style.visibility !== 'hidden' && Number(style.opacity || 1) !== 0 && rect.width > 0 && rect.height > 0; };
+        const selectors = Array.isArray(locator.selectors) ? locator.selectors : locator.selectors ? [locator.selectors] : [];
+        const candidates = selectors.flatMap(selector => { try { return Array.from(document.querySelectorAll(selector)); } catch { return []; } });
+        if (!selectors.length) candidates.push(...Array.from(document.querySelectorAll(locator.role === 'button' ? 'button,[role="button"]' : locator.role === 'heading' ? 'h1,h2,h3,h4,h5,h6,[role="heading"]' : '[role]')));
+        return candidates.some(el => (!locator.role || normalize(implicitRole(el)) === normalize(locator.role)) && (!names.length || accessibleNames(el).some(nameMatches)) && visible(el));
+      })()
+    `).catch(() => false);
+  }
+
+  private async executeClickStep(step: RecipeClickStep, abortSignal?: AbortSignal): Promise<void> {
+    try {
+      return await this.executeAttachmentRevealStep(step, abortSignal);
+    } catch (error: any) {
+      const message = String(error?.message || '');
+      if (message.includes('ambiguous')) throw new Error('[TEMPORARY_CHAT_ACTIVATION_AMBIGUOUS] More than one provider control matched the Temporary Chat activation step.');
+      if (message.includes('not found')) throw new Error('[TEMPORARY_CHAT_ACTIVATION_MISSING] The provider Temporary Chat activation control was not found.');
+      throw error;
+    }
   }
 
   async checkAuthStatus(): Promise<boolean> {
@@ -220,8 +330,15 @@ export class CustomRecipeAdapter extends BaseProviderAdapter {
   ): Promise<ProviderAdapterResult> {
     // 1. Ensure WebContents is active
     if (!this.webContents || this.webContents.isDestroyed()) {
+      if (this.temporaryChatRequired) {
+        throw new Error('[TEMPORARY_CHAT_ENDED] Temporary Chat browser view is unavailable. Start a new Temporary Chat.');
+      }
       const { globalSessionManager } = await import('./sessionManager.js');
       this.webContents = await globalSessionManager.ensureWebContents(this.providerId);
+    }
+
+    if (this.temporaryChatRequired && !await this.verifyTemporaryChat()) {
+      throw new Error('[TEMPORARY_CHAT_ENDED] The provider no longer confirms that this conversation is temporary. Start a new Temporary Chat.');
     }
 
     const modeKey = (mode === 'general' || mode === 'writing' || mode === 'coding' ? 'text' : mode) as keyof RecipeModes;
@@ -283,6 +400,9 @@ export class CustomRecipeAdapter extends BaseProviderAdapter {
     let attached = false;
     let submitted = false;
     try {
+      if (this.temporaryChatRequired && !await this.verifyTemporaryChat()) {
+        throw new Error('[TEMPORARY_CHAT_VERIFICATION_FAILED] Temporary Chat verification was lost before attachments or prompt entry.');
+      }
       if (attachments.length) {
         if (!upload) throw new Error(`Provider "${this.name}" does not declare attachment upload support for ${mode} mode.`);
         const unsupported = attachments.find(file => {
@@ -295,12 +415,20 @@ export class CustomRecipeAdapter extends BaseProviderAdapter {
         await this.attachFiles(upload, attachments, abortSignal);
       }
 
+      if (this.temporaryChatRequired && !await this.verifyTemporaryChat()) {
+        throw new Error('[TEMPORARY_CHAT_VERIFICATION_FAILED] Temporary Chat verification was lost before prompt entry.');
+      }
+
       // Dispatch only after every attachment is present and ready.
       const rawInput = modeConfig?.inputSelector || this.recipe.selectors.inputPrompt;
       const inputSelector = toCombinedCssSelector(rawInput);
       const inputResult = await this.dispatchRealisticInput(inputSelector, prompt);
       if (!inputResult?.success) throw new Error(`Failed to inject prompt into "${this.name}": ${inputResult?.error || 'Target input not found'}`);
       await new Promise((r) => setTimeout(r, 250));
+
+      if (this.temporaryChatRequired && !await this.verifyTemporaryChat()) {
+        throw new Error('[TEMPORARY_CHAT_VERIFICATION_FAILED] Temporary Chat verification was lost before submission.');
+      }
 
       const rawSubmit = modeConfig?.submitSelector || this.recipe.selectors.submitButton;
       const submitSelector = toCombinedCssSelector(rawSubmit);
@@ -314,13 +442,24 @@ export class CustomRecipeAdapter extends BaseProviderAdapter {
     // Short buffer for page to register submission and begin streaming
     await new Promise((r) => setTimeout(r, 600));
 
+    if (this.temporaryChatRequired && !await this.verifyTemporaryChat()) {
+      throw new Error('[TEMPORARY_CHAT_SUBMISSION_UNCERTAIN] The prompt may have been submitted, but the provider no longer confirms Temporary Chat. It was not retried elsewhere.');
+    }
+
     // 5. Polling with dynamic timeout budget
-    return await this.pollGeneration({
-      mode,
-      metadata: project,
-      onChunk,
-      abortSignal,
-    });
+    try {
+      const result = await this.pollGeneration({ mode, metadata: project, onChunk, abortSignal });
+      if (this.temporaryChatRequired && !await this.verifyTemporaryChat()) {
+        throw new Error('[TEMPORARY_CHAT_SUBMISSION_UNCERTAIN] The provider response completed after Temporary Chat verification was lost. It was not retried elsewhere.');
+      }
+      return result;
+    } catch (error: any) {
+      if (this.temporaryChatRequired && !String(error?.message || '').includes('[TEMPORARY_CHAT_')) {
+        throw new Error(`[TEMPORARY_CHAT_SUBMISSION_UNCERTAIN] The prompt may have been submitted, and the response could not be completed: ${error?.message || 'unknown provider error'}`);
+      }
+      if (!this.temporaryChatRequired) throw new Error(`[WEBVIEW_SUBMISSION_UNCERTAIN] The prompt may have been submitted, and the response could not be completed: ${error?.message || 'unknown provider error'}`);
+      throw error;
+    }
   }
 
   private async attachFiles(upload: NonNullable<RecipeModes[keyof RecipeModes]>['inputAttachments'], attachments: readonly StagedAttachment[], abortSignal?: AbortSignal): Promise<void> {
@@ -447,6 +586,7 @@ export class CustomRecipeAdapter extends BaseProviderAdapter {
           const locator = ${JSON.stringify(step.target)};
           const normalize = value => String(value || '').replace(/\\s+/g, ' ').trim().toLocaleLowerCase();
           const names = (Array.isArray(locator.name) ? locator.name : locator.name ? [locator.name] : []).map(normalize);
+          const nameMatches = value => locator.nameMatch === 'contains' ? names.some(name => value.includes(name)) : names.includes(value);
           const implicitRole = el => {
             const explicit = el.getAttribute('role');
             if (explicit) return explicit.toLowerCase();
@@ -470,7 +610,7 @@ export class CustomRecipeAdapter extends BaseProviderAdapter {
           for (const pool of pools) {
             const matches = pool.filter(el => {
               if (locator.role && implicitRole(el) !== String(locator.role).toLowerCase()) return false;
-              if (names.length && !accessibleNames(el).some(value => names.includes(value))) return false;
+              if (names.length && !accessibleNames(el).some(nameMatches)) return false;
               return visible(el) && !el.disabled && el.getAttribute('aria-disabled') !== 'true';
             });
             if (matches.length > 1) return { success: false, ambiguous: true };

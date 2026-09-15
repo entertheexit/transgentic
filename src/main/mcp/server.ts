@@ -7,7 +7,7 @@ import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
 import { globalBlindingEngine } from '../security/dataBlinding.js';
-import { globalLogStorage } from '../storage/logStorage.js';
+import { globalLogStorage, logCategory } from '../storage/logStorage.js';
 import { DynamicRouter } from './router.js';
 import { globalRateLimiter } from './rateLimiter.js';
 import { globalSessionManager } from '../webviews/sessionManager.js';
@@ -69,6 +69,9 @@ import {
   normalizeTaskMode,
   isAgentHaltGuardEnabled,
   isRecallEnabledForMode,
+  isTemporaryChatPreferred,
+  type ChatPolicy,
+  type ChatExecutionStatus,
 } from '../../shared/types.js';
 import { getExtensionDownloadUrl } from '../../shared/release.js';
 import { app as electronApp } from 'electron';
@@ -80,6 +83,18 @@ interface SseClient {
   id: string;
   res: Response;
   targetProvider?: ProviderId;
+}
+
+function completionLogTranscript(messages: unknown): string {
+  if (!Array.isArray(messages)) return '';
+  return JSON.stringify(messages.map(message => {
+    if (!message || typeof message !== 'object') return message;
+    const content = (message as any).content;
+    return { ...message, content: Array.isArray(content) ? content.map(part => {
+      if (part?.type === 'image_url' || part?.type === 'file') return { type: part.type, name: part.name || part.filename || part.file?.filename, payload: '[attachment payload omitted]' };
+      return part;
+    }) : content };
+  })).replace(/data:[^\s"']{1,150};base64,[A-Za-z0-9+/=]{16,}/gi, '[attachment payload omitted]');
 }
 
 export class TransgenticMcpServer {
@@ -284,9 +299,37 @@ export class TransgenticMcpServer {
       const abort = () => controller.abort();
       req.once('aborted', abort);
       res.once('close', () => { if (!res.writableEnded) abort(); });
+      const startTime = Date.now();
+      const modelId = typeof req.body?.model === 'string' ? req.body.model : '';
+      const completionMode: TaskMode = modelId === 'transgentic/coding' ? 'coding'
+        : modelId === 'transgentic/writing' ? 'writing' : 'general';
+      const policy: ChatPolicy = req.body?.temporary_chat === true ? 'require-temporary'
+        : req.body?.temporary_chat === false ? 'normal'
+          : isTemporaryChatPreferred(this.config || undefined, completionMode) ? 'prefer-temporary' : 'normal';
+      const transcript = completionLogTranscript(req.body?.messages);
+      const requestContext = globalBlindingEngine.createRequestContext();
+      const blindedTranscript = globalBlindingEngine.blind(transcript, requestContext, { persist: false });
+      const apiLog: McpRequestLog = {
+        id: `api_${crypto.randomUUID()}`, timestamp: startTime, mode: completionMode,
+        targetProvider: modelId.startsWith('transgentic/provider/') ? modelId.slice('transgentic/provider/'.length) : 'none',
+        status: 'pending', outcome: undefined, maskedSecretsCount: blindedTranscript.replacementsCount,
+        promptSnippet: blindedTranscript.maskedText.slice(0, 160), promptText: blindedTranscript.maskedText,
+        temporaryChat: policy !== 'normal', chatExecution: { policy, verified: false }, transport: 'api',
+      };
+      this.addLog(apiLog);
       try {
         const remote = req.socket.remoteAddress || '';
-        const result = await this.completionGateway.complete(req.body, controller.signal, { loopback: remote === '127.0.0.1' || remote === '::1' || remote === '::ffff:127.0.0.1' });
+        const principal = crypto.createHash('sha256').update(ClientAuthManager.getMasterToken()).digest('hex');
+        const result = await this.completionGateway.complete(req.body, controller.signal, { loopback: remote === '127.0.0.1' || remote === '::1' || remote === '::ffff:127.0.0.1', principal });
+        apiLog.status = 'success'; apiLog.outcome = result.reviewError ? 'partial' : 'completed'; apiLog.targetProvider = result.provider;
+        apiLog.modelUsed = result.model; apiLog.chatExecution = result.chatExecution || apiLog.chatExecution;
+        apiLog.executionBranches = result.executionBranches;
+        if (result.reviewError) apiLog.error = globalBlindingEngine.blind(result.reviewError, requestContext, { persist: false }).maskedText;
+        const responseText = JSON.stringify(result.message);
+        const blindedResponse = globalBlindingEngine.blind(responseText, requestContext, { persist: false });
+        apiLog.maskedSecretsCount += blindedResponse.replacementsCount;
+        apiLog.responseText = blindedResponse.maskedText; apiLog.responseSnippet = blindedResponse.maskedText.slice(0, 240);
+        apiLog.durationMs = Date.now() - startTime; this.updateLog(apiLog);
         const id = `chatcmpl-${crypto.randomUUID()}`;
         const created = Math.floor(Date.now() / 1000);
         if (req.body?.stream === true) {
@@ -297,7 +340,7 @@ export class TransgenticMcpServer {
           const base = { id, object: 'chat.completion.chunk', created, model: req.body.model };
           const delta = { role: 'assistant', ...(result.message.content != null ? { content: result.message.content } : {}), ...(result.message.tool_calls ? { tool_calls: result.message.tool_calls.map((call, index) => ({ index, ...call })) } : {}) };
           res.write(`data: ${JSON.stringify({ ...base, choices: [{ index: 0, delta, finish_reason: null }] })}\n\n`);
-          res.write(`data: ${JSON.stringify({ ...base, choices: [{ index: 0, delta: {}, finish_reason: result.finishReason }], ...(result.usage ? { usage: result.usage } : {}) })}\n\n`);
+          res.write(`data: ${JSON.stringify({ ...base, choices: [{ index: 0, delta: {}, finish_reason: result.finishReason }], ...(result.usage ? { usage: result.usage } : {}), transgentic: { provider: result.provider, providerModel: result.model, chatExecution: result.chatExecution, executionBranches: result.executionBranches, conversationId: result.conversationId, contextReset: result.contextReset, reviewError: result.reviewError } })}\n\n`);
           res.end('data: [DONE]\n\n');
           return;
         }
@@ -305,15 +348,28 @@ export class TransgenticMcpServer {
           id, object: 'chat.completion', created, model: req.body.model,
           choices: [{ index: 0, message: result.message, finish_reason: result.finishReason }],
           ...(result.usage ? { usage: result.usage } : {}),
-          transgentic: { provider: result.provider, providerModel: result.model },
+          transgentic: { provider: result.provider, providerModel: result.model, chatExecution: result.chatExecution, executionBranches: result.executionBranches, conversationId: result.conversationId, contextReset: result.contextReset, reviewError: result.reviewError },
         });
       } catch (error: any) {
+        apiLog.status = 'failed'; apiLog.outcome = controller.signal.aborted ? 'cancelled' : 'failed';
+        const blindedError = globalBlindingEngine.blind(String(error?.message || 'Completion request failed.'), requestContext, { persist: false });
+        apiLog.error = blindedError.maskedText; apiLog.maskedSecretsCount += blindedError.replacementsCount;
+        apiLog.durationMs = Date.now() - startTime; this.updateLog(apiLog);
         if (res.headersSent) { res.end(); return; }
         const message = controller.signal.aborted ? 'Completion request cancelled.' : error?.message || 'Completion request failed.';
         res.status(controller.signal.aborted ? 499 : 400).json({ error: { message, type: 'invalid_request_error', code: controller.signal.aborted ? 'request_cancelled' : 'completion_failed' } });
       } finally {
         req.removeListener('aborted', abort);
+        globalBlindingEngine.purgeRequestContext(requestContext);
       }
+    });
+
+    this.app.delete('/v1/conversations/:id', (req, res) => {
+      const id = req.params.id;
+      if (!/^[A-Za-z0-9_.:-]{1,128}$/.test(id)) { res.status(400).json({ error: 'Invalid conversation ID.' }); return; }
+      const principal = crypto.createHash('sha256').update(ClientAuthManager.getMasterToken()).digest('hex');
+      const ended = this.completionGateway.endConversation(id, principal);
+      res.json({ ended });
     });
 
     // 1. Unified MCP Endpoint (Streamable HTTP + SSE)
@@ -630,7 +686,7 @@ export class TransgenticMcpServer {
         const uri = params?.uri;
         let contentText = '';
         if (uri === 'transgentic://logs') {
-          contentText = JSON.stringify(this.requestLogs, null, 2);
+          contentText = JSON.stringify(globalLogStorage.getAll(), null, 2);
         } else if (uri === 'transgentic://vault') {
           contentText = JSON.stringify(globalBlindingEngine.getTokens(), null, 2);
         } else if (uri === 'transgentic://models') {
@@ -796,6 +852,28 @@ export class TransgenticMcpServer {
     return capable;
   }
 
+  private providerSupportsTemporaryChat(providerId: ProviderId): boolean {
+    if (providerId === 'localllm' || isCliProvider(providerId)) return false;
+    const service = ServiceManifestManager.getManifest().services[providerId];
+    if (!service || service.providerType === 'api' || providerId.startsWith('api_')) return false;
+    const adapter = globalSessionManager.getAdapter(providerId) as any;
+    return Boolean(adapter?.supportsTemporaryChat?.());
+  }
+
+  private filterTemporaryChatProviders(providers: ProviderId[], required: boolean, forcedProvider?: ProviderId): ProviderId[] {
+    if (!required) return providers;
+    const capable = providers.filter(provider => this.providerSupportsTemporaryChat(provider) &&
+      globalSessionManager.getStatus(provider)?.temporaryChat?.availability !== 'unavailable');
+    if (forcedProvider && capable.length === 0) {
+      const status = globalSessionManager.getStatus(forcedProvider)?.temporaryChat;
+      if (status?.availability === 'unavailable') {
+        throw new Error(`[TEMPORARY_CHAT_UNAVAILABLE] ${status.reason || `${getProviderDisplayName(forcedProvider)} cannot use native Temporary Chat for this account.`}`);
+      }
+      throw new Error(`[TEMPORARY_CHAT_UNSUPPORTED] ${getProviderDisplayName(forcedProvider)} does not support provider-native Temporary Chat.`);
+    }
+    return capable;
+  }
+
   private getToolDefinitions() {
     const chatgptModels = ModelRegistryManager.getUsableModels('chatgpt').map((m) => m.id);
     const claudeModels = ModelRegistryManager.getUsableModels('claude').map((m) => m.id);
@@ -811,6 +889,8 @@ export class TransgenticMcpServer {
       threadId: { type: 'string', description: 'Alias for thread_id.' },
       new_thread: { type: 'boolean', default: false, description: 'If true, forces creation of a brand new chat thread.' },
       newThread: { type: 'boolean', default: false, description: 'Alias for new_thread.' },
+      temporary_chat: { type: 'boolean', description: 'Require or explicitly disable provider-native Temporary Chat. If omitted, the selected task-mode preference applies.' },
+      temporaryChat: { type: 'boolean', description: 'Alias for temporary_chat.' },
       project_name: { type: 'string', description: 'Optional workspace/project grouping name.' },
       projectName: { type: 'string', description: 'Alias for project_name.' },
     };
@@ -1079,6 +1159,8 @@ export class TransgenticMcpServer {
     const projectName = args.project_name || args.projectName;
     const threadId = args.thread_id || args.threadId;
     const newThread = Boolean(args.new_thread ?? args.newThread ?? false);
+    const temporaryChat = args.temporary_chat ?? args.temporaryChat;
+    if (temporaryChat !== undefined && typeof temporaryChat !== 'boolean') throw new Error('temporary_chat must be a boolean.');
 
     let mode: AcceptedTaskMode = defaultMode || 'general';
     let provider: ProviderId | undefined = directProvider || args.provider;
@@ -1122,7 +1204,7 @@ export class TransgenticMcpServer {
     if (name === 'edit_video') { mode = 'video'; isStrictExplicitMode = true; attachmentRequirement = 'image-or-video'; }
     if (attachmentRequirement && (!Array.isArray(args.files) || args.files.length === 0)) throw new Error(`${name} requires at least one attachment.`);
 
-    return await this.orchestratePrompt(prompt, mode, provider, projectName, requestedModel, abortSignal, threadId, newThread, undefined, isStrictExplicitMode, caller, args.files, attachmentRequirement);
+    return await this.orchestratePrompt(prompt, mode, provider, projectName, requestedModel, abortSignal, threadId, newThread, undefined, isStrictExplicitMode, caller, args.files, attachmentRequirement, temporaryChat);
   }
 
   private async executePipelineCandidateChain(params: {
@@ -1150,6 +1232,8 @@ export class TransgenticMcpServer {
     isolateConversation?: boolean;
     cliRequest?: CliRequestOptions;
     requestEnvelope?: NormalizedRequestEnvelope;
+    temporaryChat: boolean;
+    chatPolicy: ChatPolicy;
   }): Promise<{
     text: string;
     finalResponseWithLocalPath: string;
@@ -1159,6 +1243,10 @@ export class TransgenticMcpServer {
     account: any;
     wasNewChat: boolean;
     wasRolledOver: boolean;
+    contextReset: boolean;
+    temporaryChat: boolean;
+    chatExecution: ChatExecutionStatus;
+    temporarySessionKey?: string;
   }> {
     const {
       candidateProviders,
@@ -1180,6 +1268,8 @@ export class TransgenticMcpServer {
       forcedProvider,
       reportProgress,
       isolateConversation,
+      temporaryChat,
+      chatPolicy,
     } = params;
     const attachments = params.requestEnvelope?.attachments.files || [];
     const attachmentIdentity = params.requestEnvelope?.attachments.identity || '';
@@ -1193,10 +1283,25 @@ export class TransgenticMcpServer {
     let lastCandidateError: any = null;
     let wasRolledOver = false;
     let wasNewChat = false;
+    let contextReset = false;
+    let successfulTemporaryChat = false;
+    let successfulFallbackReason: string | undefined;
 
     for (let i = 0; i < candidateProviders.length; i++) {
       const providerId = candidateProviders[i];
       throwIfCancelled(reqAbortController?.signal || abortSignal);
+      const supportsTemporary = this.providerSupportsTemporaryChat(providerId);
+      const observedAvailability = globalSessionManager.getStatus(providerId)?.temporaryChat;
+      const unavailable = observedAvailability?.availability === 'unavailable';
+      const candidateTemporaryChat = temporaryChat && supportsTemporary && !unavailable;
+      const fallbackReason = temporaryChat && !candidateTemporaryChat
+        ? (unavailable ? observedAvailability?.reason || 'Temporary Chat is unavailable for the active account.' : `${getProviderDisplayName(providerId)} does not support native Temporary Chat.`)
+        : undefined;
+      if (chatPolicy === 'require-temporary' && !candidateTemporaryChat) {
+        lastCandidateError = new Error(`[TEMPORARY_CHAT_UNSUPPORTED] ${getProviderDisplayName(providerId)} does not support provider-native Temporary Chat.`);
+        if (forcedProvider) throw lastCandidateError;
+        continue;
+      }
       reportProgress?.(`Routing to ${getProviderDisplayName(providerId)}`);
 
       if (isCliProvider(providerId)) {
@@ -1239,6 +1344,7 @@ export class TransgenticMcpServer {
           globalThreadManager.recordTurn(scopedThreadId, providerId, maskedText, executionResult.text);
           globalThreadManager.markPresetPromptsSent(scopedThreadId, providerId);
           successfulProvider = providerId; successfulAccount = globalCliRuntime.identity(providerId);
+          successfulTemporaryChat = false; successfulFallbackReason = fallbackReason;
           wasNewChat = fresh || executionResult.wasNewChat; wasRolledOver = Boolean(rollover);
           globalRateLimiter.markSuccess(providerId);
           break;
@@ -1321,6 +1427,7 @@ export class TransgenticMcpServer {
 
           executionResult = { text: completion.text, provider: 'localllm', modelUsed: modelName };
           successfulProvider = 'localllm';
+          successfulTemporaryChat = false; successfulFallbackReason = fallbackReason;
           successfulAccount = { id: 'localllm_default', alias: `Local (${localLlmConfig.preset})` };
           wasNewChat = isLocalNewChat;
           break;
@@ -1366,6 +1473,7 @@ export class TransgenticMcpServer {
           executionResult = { text: result.message.content, provider: providerId, modelUsed: result.model };
           successfulProvider = providerId;
           successfulAccount = { id: `${providerId}_api`, alias: serviceEntry?.name || providerId };
+          successfulTemporaryChat = false; successfulFallbackReason = fallbackReason;
           globalRateLimiter.markSuccess(providerId);
           wasNewChat = true;
           break;
@@ -1426,7 +1534,7 @@ export class TransgenticMcpServer {
       // Different conversations/accounts and independently cancellable requests must
       // never share a provider result. Preserve byte-exact prompts in the key.
       const dedupScope = JSON.stringify([effectiveThreadId, activeAccount.id, isAgenticClient,
-        isBalanced, Boolean(newThread), attachmentIdentity, abortSignal ? reqId : 'shared']);
+        isBalanced, Boolean(newThread), candidateTemporaryChat, attachmentIdentity, abortSignal ? reqId : 'shared']);
 
       const inFlight = DuplicateActionGuard.getInFlight(
         providerId,
@@ -1445,6 +1553,7 @@ export class TransgenticMcpServer {
           throwIfCancelled(reqAbortController?.signal || abortSignal);
           successfulProvider = providerId;
           successfulAccount = activeAccount;
+          successfulTemporaryChat = candidateTemporaryChat; successfulFallbackReason = fallbackReason;
           break; // Shared adapter output still needs normal response finalization below.
         } catch (err) {
           throwIfCancelled(reqAbortController?.signal || abortSignal);
@@ -1481,7 +1590,6 @@ export class TransgenticMcpServer {
           this.updateCoreState('processing', providerId, `Processing on ${providerId} (${activeAccount.alias})...`);
           globalSessionManager.updateProviderState(providerId, 'busy');
 
-          const contents = await globalSessionManager.ensureWebContents(providerId, activeAccount.partitionKey);
           await globalRateLimiter.applyJitter(effectiveMode);
 
           const projectMeta = {
@@ -1490,39 +1598,75 @@ export class TransgenticMcpServer {
             requestId: reqId,
           };
 
-          const statusCheck = await adapter.checkRateLimit();
+          const scopedThreadId = `${effectiveThreadId}_${activeAccount.id}`;
+          const temporarySessionKey = JSON.stringify([scopedThreadId, providerId, activeAccount.id, pipeline]);
+          let existingSession = globalThreadManager.getSession(scopedThreadId, providerId);
+          const isTooLong = !newThread && existingSession && globalThreadManager.shouldRollover(scopedThreadId, providerId, 10, 30000);
+          let executionAdapter = adapter;
+          let contents;
+
+          if (candidateTemporaryChat) {
+            if (existingSession?.chatMode === 'normal') contextReset = true;
+            const forceNewTemporary = Boolean(
+              newThread ||
+              isTooLong ||
+              existingSession?.chatMode === 'normal' ||
+              (isolateConversation && !existingSession)
+            );
+            const temporary = await globalSessionManager.ensureTemporaryConversation({
+              key: temporarySessionKey,
+              providerId,
+              accountId: activeAccount.id,
+              partitionKey: activeAccount.partitionKey,
+              forceNew: forceNewTemporary,
+              abortSignal: reqAbortController?.signal || abortSignal,
+            });
+            executionAdapter = temporary.adapter;
+            contents = temporary.webContents;
+            isNewChat = forceNewTemporary || !existingSession || !globalThreadManager.hasPresetPromptsBeenSent(scopedThreadId, providerId);
+            if (isTooLong) wasRolledOver = true;
+            if (forceNewTemporary) globalThreadManager.removeSession(scopedThreadId, providerId);
+            globalThreadManager.setSession(scopedThreadId, providerId, '', projectName, {
+              chatMode: 'temporary',
+              temporaryState: 'verified',
+              temporarySessionKey,
+            });
+            existingSession = globalThreadManager.getSession(scopedThreadId, providerId);
+          } else {
+            if (existingSession?.chatMode === 'temporary') {
+              contextReset = true;
+              if (existingSession.temporarySessionKey) globalSessionManager.endTemporaryConversation(existingSession.temporarySessionKey);
+              globalThreadManager.removeSession(scopedThreadId, providerId);
+              existingSession = null;
+              isNewChat = true;
+            }
+            contents = await globalSessionManager.ensureWebContents(providerId, activeAccount.partitionKey);
+
+            if (newThread || isTooLong || isNewChat || (isolateConversation && !existingSession)) {
+              isNewChat = true;
+              await executionAdapter.navigateToNewChat({ forceReload: true });
+              globalThreadManager.removeSession(scopedThreadId, providerId);
+              if (isTooLong) wasRolledOver = true;
+            } else if (existingSession?.webChatUrl) {
+              const currentUrl = (contents?.getURL() || '').trim();
+              if (currentUrl && !currentUrl.includes(existingSession.webChatUrl) && currentUrl !== existingSession.webChatUrl) {
+                await executionAdapter.navigateToConversation(existingSession.webChatUrl);
+              }
+              isNewChat = !globalThreadManager.hasPresetPromptsBeenSent(scopedThreadId, providerId);
+            } else {
+              const currentUrl = (contents?.getURL() || '').trim();
+              if (currentUrl) {
+                globalThreadManager.setSession(scopedThreadId, providerId, currentUrl, projectName, { chatMode: 'normal' });
+              }
+              isNewChat = !globalThreadManager.hasPresetPromptsBeenSent(scopedThreadId, providerId);
+            }
+          }
+
+          const statusCheck = await executionAdapter.checkRateLimit();
           if (statusCheck.isRateLimited) {
             throw new Error(`[RATE_LIMIT] ${providerId} reported rate limit or usage cap.`);
           }
-
           globalRateLimiter.recordRequest(providerId);
-
-          const scopedThreadId = `${effectiveThreadId}_${activeAccount.id}`;
-          const existingSession = globalThreadManager.getSession(scopedThreadId, providerId);
-          const isTooLong = !newThread && existingSession && globalThreadManager.shouldRollover(scopedThreadId, providerId, 10, 30000);
-
-          if (newThread || isTooLong || (isolateConversation && !existingSession)) {
-            isNewChat = true;
-            await adapter.navigateToNewChat();
-            globalThreadManager.removeSession(scopedThreadId, providerId);
-            if (isTooLong) {
-              wasRolledOver = true;
-            }
-          } else if (existingSession?.webChatUrl) {
-            const currentUrl = (contents?.getURL() || '').trim();
-            if (currentUrl && !currentUrl.includes(existingSession.webChatUrl) && currentUrl !== existingSession.webChatUrl) {
-              await adapter.navigateToConversation(existingSession.webChatUrl);
-            }
-            const presetsAlreadySent = globalThreadManager.hasPresetPromptsBeenSent(scopedThreadId, providerId);
-            isNewChat = !presetsAlreadySent;
-          } else {
-            const currentUrl = (contents?.getURL() || '').trim();
-            if (currentUrl) {
-              globalThreadManager.setSession(scopedThreadId, providerId, currentUrl, projectName);
-            }
-            const presetsAlreadySent = globalThreadManager.hasPresetPromptsBeenSent(scopedThreadId, providerId);
-            isNewChat = !presetsAlreadySent;
-          }
 
           if (targetModel) {
             await ModelScraperEngine.selectRequestedModel(providerId, targetModel, contents);
@@ -1535,7 +1679,7 @@ export class TransgenticMcpServer {
             } else if (isAgenticClient) {
               promptToSend = wrapUnbalancedAgenticPrompt(promptToSend, taskIntent || effectiveMode);
             }
-            if (this.config?.recall) {
+            if (this.config?.recall && !candidateTemporaryChat) {
               promptToSend = applyRecallPipeline(promptToSend, this.config.recall, effectiveMode);
             }
           }
@@ -1557,15 +1701,15 @@ export class TransgenticMcpServer {
           }
 
           let adapterResult: any;
-          const releaseDomLock = await adapter.acquireDomLock();
+          const releaseDomLock = await executionAdapter.acquireDomLock();
           try {
             throwIfCancelled(reqAbortController?.signal || abortSignal);
             reportProgress?.(`Generating response with ${getProviderDisplayName(providerId)}`);
             try {
-              adapterResult = await adapter.executePrompt(promptToSend, effectiveMode, projectMeta, undefined, reqAbortController?.signal || abortSignal, attachments);
+              adapterResult = await executionAdapter.executePrompt(promptToSend, effectiveMode, projectMeta, undefined, reqAbortController?.signal || abortSignal, attachments);
             } catch (promptErr: any) {
-              if (promptErr?.message && /conversation (?:is getting|too) long|context[ _]length/i.test(promptErr.message)) {
-                await adapter.navigateToNewChat();
+              if (!candidateTemporaryChat && promptErr?.message && /conversation (?:is getting|too) long|context[ _]length/i.test(promptErr.message)) {
+                await executionAdapter.navigateToNewChat({ forceReload: true, assumeLocked: true });
                 globalThreadManager.removeSession(scopedThreadId, providerId);
                 wasRolledOver = true;
                 let rolloverPrompt = maskedText;
@@ -1574,10 +1718,10 @@ export class TransgenticMcpServer {
                 } else if (isAgenticClient) {
                   rolloverPrompt = wrapUnbalancedAgenticPrompt(rolloverPrompt, taskIntent || effectiveMode);
                 }
-                if (this.config?.recall) {
+                if (this.config?.recall && !candidateTemporaryChat) {
                   rolloverPrompt = applyRecallPipeline(rolloverPrompt, this.config.recall, effectiveMode);
                 }
-                adapterResult = await adapter.executePrompt(rolloverPrompt, effectiveMode, projectMeta, undefined, reqAbortController?.signal || abortSignal, attachments);
+                adapterResult = await executionAdapter.executePrompt(rolloverPrompt, effectiveMode, projectMeta, undefined, reqAbortController?.signal || abortSignal, attachments);
               } else {
                 throw promptErr;
               }
@@ -1597,9 +1741,17 @@ export class TransgenticMcpServer {
 
           globalThreadManager.recordTurn(scopedThreadId, providerId, maskedText, adapterResult.text || '');
           globalThreadManager.markPresetPromptsSent(scopedThreadId, providerId);
-          const activeUrl = await adapter.getConversationUrl();
-          if (activeUrl && activeUrl !== adapter.url) {
-            globalThreadManager.setSession(scopedThreadId, providerId, activeUrl, projectName);
+          if (candidateTemporaryChat) {
+            globalThreadManager.setSession(scopedThreadId, providerId, '', projectName, {
+              chatMode: 'temporary',
+              temporaryState: 'verified',
+              temporarySessionKey,
+            });
+          } else {
+            const activeUrl = await executionAdapter.getConversationUrl();
+            if (activeUrl && activeUrl !== executionAdapter.url) {
+              globalThreadManager.setSession(scopedThreadId, providerId, activeUrl, projectName, { chatMode: 'normal' });
+            }
           }
 
           let savedMediaRelPath: string | undefined = undefined;
@@ -1650,6 +1802,7 @@ export class TransgenticMcpServer {
         resolveInFlight(executionResult);
         successfulProvider = providerId;
         successfulAccount = activeAccount;
+        successfulTemporaryChat = candidateTemporaryChat; successfulFallbackReason = fallbackReason;
         wasNewChat = isNewChat;
         break;
       } catch (candidateErr: any) {
@@ -1670,6 +1823,9 @@ export class TransgenticMcpServer {
           AccountRegistryManager.markRateLimited(providerId, activeAccount.id, 3600);
           globalRateLimiter.markRateLimited(providerId);
           globalSessionManager.updateProviderState(providerId, 'rate_limited');
+        } else if (candidateErr.message?.includes('[TEMPORARY_CHAT_')) {
+          AccountRegistryManager.markReady(providerId, activeAccount.id);
+          globalSessionManager.updateProviderState(providerId, 'ready');
         } else {
           AccountRegistryManager.markStatus(providerId, activeAccount.id, 'error');
           globalSessionManager.updateProviderState(providerId, 'disconnected');
@@ -1678,6 +1834,14 @@ export class TransgenticMcpServer {
         lastCandidateError = candidateErr;
         console.warn(`[Transgentic] Provider ${providerId} (${activeAccount.alias}) failed: ${candidateErr.message}.`);
 
+        if (chatPolicy === 'prefer-temporary' && candidateTemporaryChat && candidateErr.message?.includes('[TEMPORARY_CHAT_UNAVAILABLE]')) {
+          globalSessionManager.markTemporaryUnavailable(providerId, 'Native Temporary Chat is unavailable for this account.');
+          return await this.executePipelineCandidateChain({ ...params, candidateProviders: [providerId], forcedProvider: providerId });
+        }
+
+        if (candidateTemporaryChat && candidateErr.message?.includes('[TEMPORARY_CHAT_')) {
+          throw candidateErr;
+        }
         if (forcedProvider) {
           throw candidateErr;
         }
@@ -1731,6 +1895,8 @@ export class TransgenticMcpServer {
     if (globalLocalZeroLeakManager.hasSecretsForRequest(reqId)) {
       finalResponseWithLocalPath = globalLocalZeroLeakManager.restoreResponse(finalResponseWithLocalPath, reqId);
     }
+    if (contextReset) finalResponseWithLocalPath =
+      'Conversation mode changed. Transgentic opened a fresh chat; earlier browser context was not carried over.\n\n' + finalResponseWithLocalPath;
 
     if (wasRolledOver && isAgenticClient) {
       const providerName = successfulProvider === 'localllm' ? 'Local LLM' : (successfulProvider?.toUpperCase() || 'AI Service');
@@ -1739,7 +1905,7 @@ export class TransgenticMcpServer {
       const rolloverNotice = (
         `\n\n---\n` +
         `[TRANSGENTIC AUTO-NEW-CHAT NOTICE]:\n` +
-        `The conversation with ${providerName} reached the maximum conversation length budget. Transgentic has automatically archived the previous thread and opened a fresh new chat session for your next request to preserve token budget, avoid webview bloat, and maintain high-speed responses.\n\n` +
+        `The conversation with ${providerName} reached the maximum conversation length budget. Transgentic opened a fresh ${temporaryChat ? 'verified Temporary Chat' : 'chat session'} for this request.\n\n` +
         `COMPACT CONTINUITY SUMMARY:\n` +
         `- Completed Query: "${promptBrief}"\n` +
         `- Output Summary: "${outputBrief}"\n` +
@@ -1759,6 +1925,12 @@ export class TransgenticMcpServer {
       account: successfulAccount,
       wasNewChat,
       wasRolledOver,
+      contextReset,
+      temporaryChat: successfulTemporaryChat,
+      chatExecution: { policy: chatPolicy, actualMode: successfulTemporaryChat ? 'temporary' : 'normal', verified: successfulTemporaryChat, ...(successfulFallbackReason ? { fallbackReason: successfulFallbackReason } : {}) },
+      ...(successfulTemporaryChat
+        ? { temporarySessionKey: JSON.stringify([`${effectiveThreadId}_${successfulAccount.id}`, successfulProvider, successfulAccount.id, pipeline]) }
+        : {}),
     };
   }
 
@@ -1775,15 +1947,18 @@ export class TransgenticMcpServer {
     isStrictExplicitMode?: boolean,
     caller?: CallerContext,
     rawFiles?: unknown,
-    attachmentRequirement?: 'image-only' | 'image-or-video'
+    attachmentRequirement?: 'image-only' | 'image-or-video',
+    temporaryChat?: boolean
   ): Promise<any> {
     const startTime = Date.now();
     this.requestCounter++;
     const reqId = `req_${Date.now()}_${this.requestCounter}`;
     const contextId = globalBlindingEngine.createRequestContext();
 
-    // 1. Data Blinding Pipeline (with Request-Scoped Context)
-    const { maskedText, replacementsCount } = globalBlindingEngine.blind(rawPrompt, contextId);
+    let maskedText = rawPrompt;
+    let replacementsCount = 0;
+    let resolvedTemporaryChat = false;
+    let resolvedChatPolicy: ChatPolicy = 'normal';
     let log: McpRequestLog | null = null;
     let reqAbortController: AbortController | null = null;
     const responseProfile: ResponseProfile = isQuickPrompt ? 'plain' : (caller?.profile || 'agentic');
@@ -1799,18 +1974,10 @@ export class TransgenticMcpServer {
       const { mode: effectiveMode, intent: taskIntent, isAutoDetected } = DynamicRouter.classifyMode(rawPrompt, mode, isStrictExplicitMode);
       effectiveResponseMode = effectiveMode;
       throwIfCancelled(abortSignal);
-      const staged = await AttachmentManager.stage(rawFiles, { loopback: caller?.isLoopback === true, mode: effectiveMode, signal: abortSignal });
-      attachments = staged.envelope.files;
-      attachmentCleanup = staged.cleanup;
-      requestEnvelope = {
-        promptText: rawPrompt,
-        mode: effectiveMode,
-        attachments: staged.envelope,
-        caller: { transport: isQuickPrompt ? 'desktop' : caller?.isLoopback ? 'loopback' : 'remote', sessionId: caller?.sessionId },
-      };
-      if (attachmentRequirement === 'image-only' && attachments.some(file => file.kind !== 'image')) throw new Error('edit_image accepts image attachments only.');
-      if (attachmentRequirement === 'image-or-video' && attachments.some(file => file.kind !== 'image' && file.kind !== 'video')) throw new Error('edit_video accepts image or video attachments only.');
+
       if (effectiveMode === 'audio') {
+        resolvedTemporaryChat = temporaryChat === true;
+        ({ maskedText, replacementsCount } = globalBlindingEngine.blind(rawPrompt, contextId, { persist: !resolvedTemporaryChat }));
         const unavailableLog: McpRequestLog = {
           id: reqId,
           timestamp: startTime,
@@ -1826,22 +1993,60 @@ export class TransgenticMcpServer {
           responseSnippet: AUDIO_MODE_UNAVAILABLE_MESSAGE.slice(0, 160),
           durationMs: Date.now() - startTime,
           autoClassified: isAutoDetected,
-          isQuickPrompt: !!isQuickPrompt,
+          isQuickPrompt: Boolean(isQuickPrompt),
+          temporaryChat: resolvedTemporaryChat,
         };
         this.addLog(unavailableLog);
         this.updateCoreState('idle');
         return withResponseDetails({
           isError: true,
           content: [{ type: 'text', text: AUDIO_MODE_UNAVAILABLE_MESSAGE }],
-          metadata: { mode: 'audio', intent: 'audio', directive: 'audio_provider_unavailable', durationMs: Date.now() - startTime },
+          metadata: { mode: 'audio', intent: 'audio', directive: 'audio_provider_unavailable', durationMs: Date.now() - startTime, temporaryChat: resolvedTemporaryChat },
         }, { status: 'failed', mode: 'audio', responseProfile });
       }
+
       const balancedModeConfig = this.config?.balancedMode ?? this.config?.coding?.balancedMode ?? true;
       const isBalanced = isQuickPrompt ? (effectiveMode === 'coding' && balancedModeConfig) : balancedModeConfig;
       const doubleAgentCfg = this.config?.doubleAgent ?? { enabled: false, includeLocalLlm: false };
       const scenario = determineDispatchScenario(isBalanced, doubleAgentCfg, effectiveMode);
       const shouldRunScenario2 = !forcedProvider && scenario === 'scenario_2_dual_dispatch';
 
+      let candidateProviders: ProviderId[] = forcedProvider
+        ? [forcedProvider]
+        : DynamicRouter.getCandidateChain(effectiveMode, undefined, true, 'main', doubleAgentCfg.includeLocalLlm);
+      if (caller?.cliRequest?.workspaceId) {
+        if (forcedProvider && !isCliProvider(forcedProvider)) throw new Error('Workspace execution requires a CLI provider.');
+        candidateProviders = candidateProviders.filter(isCliProvider);
+      }
+
+      const conversationId =
+        threadId ||
+        (isQuickPrompt ? 'quick_prompt_session' : (projectName ? `project_${projectName}` : 'default_mcp_thread'));
+      let effectiveThreadId = caller
+        ? JSON.stringify([isQuickPrompt ? 'quick_prompt' : 'mcp', caller.sessionId, responseProfile, effectiveMode, conversationId])
+        : conversationId;
+      if (caller?.cliRequest?.workspaceId) {
+        effectiveThreadId = JSON.stringify([effectiveThreadId, caller.cliRequest.workspaceId, caller.cliRequest.allowCommands, caller.cliRequest.allowProjectEditing]);
+      }
+
+      resolvedChatPolicy = temporaryChat === true ? 'require-temporary'
+        : temporaryChat === false ? 'normal'
+          : isTemporaryChatPreferred(this.config || undefined, effectiveMode) ? 'prefer-temporary' : 'normal';
+      resolvedTemporaryChat = resolvedChatPolicy !== 'normal';
+
+      ({ maskedText, replacementsCount } = globalBlindingEngine.blind(rawPrompt, contextId, { persist: !resolvedTemporaryChat }));
+
+      const staged = await AttachmentManager.stage(rawFiles, { loopback: caller?.isLoopback === true, mode: effectiveMode, signal: abortSignal });
+      attachments = staged.envelope.files;
+      attachmentCleanup = staged.cleanup;
+      requestEnvelope = {
+        promptText: rawPrompt,
+        mode: effectiveMode,
+        attachments: staged.envelope,
+        caller: { transport: isQuickPrompt ? 'desktop' : caller?.isLoopback ? 'loopback' : 'remote', sessionId: caller?.sessionId },
+      };
+      if (attachmentRequirement === 'image-only' && attachments.some(file => file.kind !== 'image')) throw new Error('edit_image accepts image attachments only.');
+      if (attachmentRequirement === 'image-or-video' && attachments.some(file => file.kind !== 'image' && file.kind !== 'video')) throw new Error('edit_video accepts image or video attachments only.');
       // Micro-task classification for Coding mode ONLY
       const microTask = effectiveMode === 'coding'
         ? classifyMicroTask(rawPrompt)
@@ -1852,26 +2057,9 @@ export class TransgenticMcpServer {
       const isLocalMicroTaskEnabled = Boolean(activeLocalLlmConfig?.localMicroTask);
 
       // 3. Resolve Candidate Chain of Providers (Main pipeline)
-      let candidateProviders: ProviderId[] = forcedProvider
-        ? [forcedProvider]
-        : DynamicRouter.getCandidateChain(effectiveMode, undefined, true, 'main', doubleAgentCfg.includeLocalLlm);
-
       candidateProviders = this.filterAttachmentCapableProviders(candidateProviders, attachments, effectiveMode, requestedModel, forcedProvider);
-
-      if (caller?.cliRequest?.workspaceId) {
-        if (forcedProvider && !isCliProvider(forcedProvider)) throw new Error('Workspace execution requires a CLI provider.');
-        candidateProviders = candidateProviders.filter(isCliProvider);
-      }
+      candidateProviders = this.filterTemporaryChatProviders(candidateProviders, resolvedChatPolicy === 'require-temporary', forcedProvider);
       const isLocalLlmInRoute = candidateProviders.includes('localllm');
-
-      const conversationId =
-        threadId ||
-        (isQuickPrompt ? 'quick_prompt_session' : (projectName ? `project_${projectName}` : 'default_mcp_thread'));
-      let effectiveThreadId = caller
-        ? JSON.stringify([isQuickPrompt ? 'quick_prompt' : 'mcp', caller.sessionId, responseProfile, effectiveMode, conversationId])
-        : conversationId;
-
-      if (caller?.cliRequest?.workspaceId) effectiveThreadId = JSON.stringify([effectiveThreadId, caller.cliRequest.workspaceId, caller.cliRequest.allowCommands, caller.cliRequest.allowProjectEditing]);
       const defaultProvider = candidateProviders[0];
       const defaultAccount = (isCliProvider(defaultProvider) ? globalCliRuntime.identity(defaultProvider) : defaultProvider ? AccountRegistryManager.getActiveAccount(defaultProvider) : undefined);
       const defaultScopedThreadId = isCliProvider(defaultProvider)
@@ -1891,6 +2079,7 @@ export class TransgenticMcpServer {
         isLocalMicroTaskEnabled &&
         microTask.isMicroTask &&
         !forcedProvider &&
+        !resolvedTemporaryChat &&
         !caller?.cliRequest?.workspaceId &&
         !candidateProviders.some(p => isCliProvider(p) && DynamicRouter.getRule(effectiveMode).cliWorkspaces?.[p]) &&
         isLocalLlmAvailable &&
@@ -1903,6 +2092,9 @@ export class TransgenticMcpServer {
       }
 
       if (candidateProviders.length === 0 && !shouldRunScenario2) {
+        if (resolvedChatPolicy === 'require-temporary') {
+          throw new Error('[TEMPORARY_CHAT_UNSUPPORTED] No routed provider supports provider-native Temporary Chat for this request.');
+        }
         const directiveText = isAgenticClient
           ? formatCodexFallbackDirective(effectiveMode, isLocalMicroTaskEnabled && isLocalLlmAvailable)
           : `No AI service is available for ${effectiveMode} mode. Select an available service in Routing.`;
@@ -1924,6 +2116,7 @@ export class TransgenticMcpServer {
           autoClassified: isAutoDetected,
           isQuickPrompt: !!isQuickPrompt,
           isMicroTask: microTask.isMicroTask,
+          temporaryChat: resolvedTemporaryChat,
         };
         this.addLog(fallbackLog);
         this.updateCoreState('idle');
@@ -1960,6 +2153,9 @@ export class TransgenticMcpServer {
         microTaskCategory: microTask.category,
         bypassedWebviewDispatch,
         bypassedCloudDispatch: bypassedWebviewDispatch,
+        temporaryChat: resolvedTemporaryChat,
+        chatExecution: { policy: resolvedChatPolicy, verified: false },
+        transport: isQuickPrompt ? 'desktop' : 'mcp',
         ...attachmentLogSummary(attachments),
       };
       this.addLog(log);
@@ -1983,16 +2179,28 @@ export class TransgenticMcpServer {
       let finalResponseWithLocalPath = '';
       let wasRolledOver = false;
       let wasNewChat = false;
+      let contextReset = false;
       let providers: ProviderOutcome[] = [];
       let artifacts: string[] = [];
+      let temporaryChatSessionKeys: string[] = [];
+      let executionBranches: ChatExecutionStatus[] = [];
       let partial = false;
 
       // 4. Execution Dispatching: Scenario 2 vs Single Pipeline
       if (shouldRunScenario2) {
-        const mainCandidates = this.filterAttachmentCapableProviders(DynamicRouter.getCandidateChain(effectiveMode, undefined, true, 'main', doubleAgentCfg.includeLocalLlm).filter(p => !caller?.cliRequest?.workspaceId || isCliProvider(p)), attachments, effectiveMode, requestedModel);
-        const coCandidates = this.filterAttachmentCapableProviders(DynamicRouter.getCandidateChain(effectiveMode, undefined, true, 'co', doubleAgentCfg.includeLocalLlm).filter(p => !caller?.cliRequest?.workspaceId || isCliProvider(p)), attachments, effectiveMode, requestedModel);
+        const mainCandidates = this.filterTemporaryChatProviders(
+          this.filterAttachmentCapableProviders(DynamicRouter.getCandidateChain(effectiveMode, undefined, true, 'main', doubleAgentCfg.includeLocalLlm).filter(p => !caller?.cliRequest?.workspaceId || isCliProvider(p)), attachments, effectiveMode, requestedModel),
+          resolvedChatPolicy === 'require-temporary'
+        );
+        const coCandidates = this.filterTemporaryChatProviders(
+          this.filterAttachmentCapableProviders(DynamicRouter.getCandidateChain(effectiveMode, undefined, true, 'co', doubleAgentCfg.includeLocalLlm).filter(p => !caller?.cliRequest?.workspaceId || isCliProvider(p)), attachments, effectiveMode, requestedModel),
+          resolvedChatPolicy === 'require-temporary'
+        );
 
-        if (mainCandidates.length === 0 && coCandidates.length === 0) {
+        if (mainCandidates.length === 0 || coCandidates.length === 0) {
+          if (resolvedChatPolicy === 'require-temporary') {
+            throw new Error('[TEMPORARY_CHAT_UNSUPPORTED] Both Double Agent pipelines require a provider with native Temporary Chat support.');
+          }
           throw new Error(`No available AI services found for mode "${effectiveMode}" in either Main or Co pipelines.`);
         }
 
@@ -2022,6 +2230,8 @@ export class TransgenticMcpServer {
             bypassedWebviewDispatch,
             forcedProvider,
             requestEnvelope,
+            temporaryChat: resolvedTemporaryChat,
+            chatPolicy: resolvedChatPolicy,
           }),
           () => this.executePipelineCandidateChain({
             candidateProviders: coCandidates,
@@ -2048,6 +2258,8 @@ export class TransgenticMcpServer {
             bypassedWebviewDispatch,
             forcedProvider,
             requestEnvelope,
+            temporaryChat: resolvedTemporaryChat,
+            chatPolicy: resolvedChatPolicy,
           }),
           mainCandidates[0] || 'chatgpt',
           coCandidates[0] || 'claude'
@@ -2064,6 +2276,10 @@ export class TransgenticMcpServer {
             model: dualResult.coResult?.modelUsed, error: dualResult.coError?.message },
         ];
         artifacts = [...new Set([dualResult.mainResult?.mediaPath, dualResult.coResult?.mediaPath].filter((p): p is string => Boolean(p)))];
+        temporaryChatSessionKeys = [dualResult.mainResult?.temporarySessionKey, dualResult.coResult?.temporarySessionKey]
+          .filter((key): key is string => Boolean(key));
+        executionBranches = [dualResult.mainResult?.chatExecution, dualResult.coResult?.chatExecution]
+          .filter((status): status is ChatExecutionStatus => Boolean(status));
         successfulProvider = dualResult.mainResult?.provider || dualResult.coResult?.provider || mainCandidates[0];
         successfulAccount = {
           id: (dualResult.mainResult as any)?.account?.id || dualResult.mainResult?.accountProfileId || (dualResult.coResult as any)?.account?.id || dualResult.coResult?.accountProfileId || 'dual',
@@ -2078,6 +2294,7 @@ export class TransgenticMcpServer {
         };
         wasRolledOver = Boolean(dualResult.mainResult?.wasRolledOver || dualResult.coResult?.wasRolledOver);
         wasNewChat = Boolean(dualResult.mainResult?.wasNewChat || dualResult.coResult?.wasNewChat);
+        contextReset = Boolean(dualResult.mainResult?.contextReset || dualResult.coResult?.contextReset);
       } else {
         const pipelineResult = await this.executePipelineCandidateChain({
           candidateProviders,
@@ -2104,6 +2321,8 @@ export class TransgenticMcpServer {
           bypassedWebviewDispatch,
           forcedProvider,
           requestEnvelope,
+          temporaryChat: resolvedTemporaryChat,
+          chatPolicy: resolvedChatPolicy,
         });
 
         finalResponseWithLocalPath = pipelineResult.finalResponseWithLocalPath;
@@ -2113,8 +2332,11 @@ export class TransgenticMcpServer {
         executionResult = pipelineResult;
         wasRolledOver = pipelineResult.wasRolledOver;
         wasNewChat = pipelineResult.wasNewChat;
+        contextReset = pipelineResult.contextReset;
         providers = [{ role: 'main', status: 'completed', provider: successfulProvider!, model: executionResult.modelUsed }];
         artifacts = activeMediaPath ? [activeMediaPath] : [];
+        temporaryChatSessionKeys = pipelineResult.temporarySessionKey ? [pipelineResult.temporarySessionKey] : [];
+        executionBranches = [pipelineResult.chatExecution];
       }
 
       throwIfCancelled(reqAbortController.signal);
@@ -2142,6 +2364,14 @@ export class TransgenticMcpServer {
         : finalResponseWithLocalPath.slice(0, 240);
       log.mediaPath = activeMediaPath;
       log.modelUsed = executionResult.modelUsed;
+      log.executionBranches = executionBranches;
+      log.chatExecution = executionBranches.length === 1 ? executionBranches[0] : {
+        policy: resolvedChatPolicy,
+        actualMode: executionBranches.every(branch => branch.actualMode === 'temporary') ? 'temporary' : 'normal',
+        verified: executionBranches.length > 0 && executionBranches.every(branch => branch.verified),
+        ...(executionBranches.find(branch => branch.fallbackReason)?.fallbackReason
+          ? { fallbackReason: executionBranches.find(branch => branch.fallbackReason)!.fallbackReason } : {}),
+      };
       log.attachmentDestinations = providers.filter(provider => provider.status === 'completed').map(provider => String(provider.provider));
       if (log.presetPromptsAttached === undefined) {
         log.presetPromptsAttached = wasNewChat;
@@ -2218,10 +2448,32 @@ export class TransgenticMcpServer {
           accountUsed: successfulAccount.alias,
           maskedSecretsCount: replacementsCount,
           durationMs: Date.now() - startTime,
+          temporaryChat: resolvedTemporaryChat,
+          chatExecution: log.chatExecution,
+          executionBranches,
+          contextReset,
+          ...(temporaryChatSessionKeys.length ? { temporaryChatSessionKeys } : {}),
         },
       }, { status: partial ? 'partial' : 'completed', mode: effectiveMode, responseProfile, providers, artifacts });
     } catch (err: any) {
       const cancelled = Boolean(abortSignal?.aborted || reqAbortController?.signal.aborted || err?.name === 'AbortError');
+      if (!log) {
+        log = {
+          id: reqId,
+          timestamp: startTime,
+          mode: effectiveResponseMode,
+          targetProvider: forcedProvider || 'none',
+          status: 'pending',
+          maskedSecretsCount: replacementsCount,
+          promptSnippet: maskedText.slice(0, 160),
+          promptText: maskedText,
+          isQuickPrompt: Boolean(isQuickPrompt),
+          temporaryChat: resolvedTemporaryChat,
+          chatExecution: { policy: resolvedChatPolicy, verified: false },
+          transport: isQuickPrompt ? 'desktop' : 'mcp',
+        };
+        this.addLog(log);
+      }
       if (log) {
         log.status = 'failed';
         log.outcome = cancelled ? 'cancelled' : 'failed';
@@ -2263,6 +2515,7 @@ export class TransgenticMcpServer {
             mode: effectiveResponseMode,
             agentHaltTriggered: true,
             durationMs: Date.now() - startTime,
+            temporaryChat: resolvedTemporaryChat,
           },
         }, { status: 'failed', mode: effectiveResponseMode, responseProfile, failedProvider: providerId });
       }
@@ -2270,7 +2523,7 @@ export class TransgenticMcpServer {
       const errorText = cancelled ? 'Request cancelled.' : (err?.message || 'Request execution stopped');
       const content = [{ type: 'text', text: errorText }];
       if (!cancelled && isAgenticClient) content.push({ type: 'text', text: '[TRANSGENTIC GUIDANCE]: This request failed. Consider another approach within the user\'s requested scope.' });
-      return withResponseDetails({ isError: true, content, metadata: { mode: effectiveResponseMode, providerUsed: providerId } },
+      return withResponseDetails({ isError: true, content, metadata: { mode: effectiveResponseMode, providerUsed: providerId, temporaryChat: resolvedTemporaryChat } },
         { status: cancelled ? 'cancelled' : 'failed', mode: effectiveResponseMode, responseProfile, failedProvider: providerId });
     } finally {
       detachAbort?.();
@@ -2359,13 +2612,13 @@ export class TransgenticMcpServer {
     };
   }
 
-  public getRequestLogs(limit = 20, offset = 0): { logs: McpRequestLog[]; total: number } {
-    return globalLogStorage.query(limit, offset);
+  public getRequestLogs(limit = 20, offset = 0, category?: import('../../shared/types.js').ChatMode): { logs: McpRequestLog[]; total: number } {
+    return globalLogStorage.query(limit, offset, category);
   }
 
-  public clearRequestLogs(): void {
-    globalLogStorage.clear();
-    this.requestLogs = [];
+  public clearRequestLogs(category?: import('../../shared/types.js').ChatMode): void {
+    globalLogStorage.clear(category);
+    this.requestLogs = category ? this.requestLogs.filter(log => logCategory(log) !== category) : [];
   }
 
   private updateCoreState(state: CoreStatus['state'], activeProvider?: ProviderId, taskDesc?: string): void {
@@ -2376,6 +2629,7 @@ export class TransgenticMcpServer {
   }
 
   private addLog(log: McpRequestLog): void {
+    if (globalLogStorage.wasCleared(log.id)) return;
     this.requestLogs.unshift(log);
     if (this.requestLogs.length > 100) this.requestLogs.pop();
     globalLogStorage.insert(log);
@@ -2387,6 +2641,7 @@ export class TransgenticMcpServer {
   }
 
   private updateLog(log: McpRequestLog): void {
+    if (globalLogStorage.wasCleared(log.id)) return;
     const idx = this.requestLogs.findIndex((l) => l.id === log.id);
     if (idx !== -1) {
       this.requestLogs[idx] = { ...log };

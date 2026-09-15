@@ -4,6 +4,35 @@ import type { CustomRecipe } from './types/recipe.js';
 import type { AttachmentKind } from './attachments.js';
 
 export type ProviderId = 'chatgpt' | 'claude' | 'gemini' | 'grok' | 'localllm' | (string & {});
+export type ChatMode = 'normal' | 'temporary';
+export type ChatPolicy = 'normal' | 'prefer-temporary' | 'require-temporary';
+export interface ChatExecutionStatus {
+  policy: ChatPolicy;
+  actualMode?: ChatMode;
+  verified: boolean;
+  fallbackReason?: string;
+}
+export type TemporaryChatState = 'preparing' | 'verified' | 'unverified' | 'ended';
+
+export interface TemporaryChatCapability {
+  supported: boolean;
+  availability: 'unknown' | 'available' | 'unavailable';
+  reason?: string;
+}
+
+export interface TemporaryChatSessionInfo {
+  key: string;
+  mode?: ChatMode;
+  providerId: ProviderId;
+  accountId: string;
+  partitionKey: string;
+  sessionId: string;
+  generation: number;
+  state: TemporaryChatState;
+  recipeVersion: string;
+  createdAt: number;
+  lastActiveAt: number;
+}
 
 export const MODE_SCHEMA_VERSION = 2 as const;
 export const TASK_MODES = ['general', 'coding', 'image', 'video', 'music'] as const;
@@ -58,6 +87,7 @@ export interface ProviderStatus {
   rateLimitCount: number;
   modelName?: string;
   isAuthenticated: boolean;
+  temporaryChat?: TemporaryChatCapability;
 }
 
 export type CoreStatusState = 'idle' | 'routing' | 'processing' | 'fallback' | 'rate_limited';
@@ -96,6 +126,10 @@ export interface McpRequestLog {
   balancedModeApplied?: boolean;
   autoClassified?: boolean;
   isQuickPrompt?: boolean;
+  temporaryChat?: boolean;
+  chatExecution?: ChatExecutionStatus;
+  executionBranches?: ChatExecutionStatus[];
+  transport?: 'desktop' | 'mcp' | 'api';
   autoRollover?: boolean;
   presetPromptsAttached?: boolean;
   accountProfileId?: string;
@@ -266,6 +300,29 @@ export const DEFAULT_AGENT_HALT_GUARD: AgentHaltGuardConfig = {
   music: true,
 };
 
+export type TemporaryChatModeConfig = Record<RouteMode, boolean>;
+export const DEFAULT_TEMPORARY_CHAT: TemporaryChatModeConfig = {
+  general: true,
+  coding: true,
+  image: false,
+  video: false,
+  music: false,
+};
+
+export function normalizeTemporaryChatConfig(input?: Partial<TemporaryChatModeConfig> | null): TemporaryChatModeConfig {
+  return {
+    general: typeof input?.general === 'boolean' ? input.general : DEFAULT_TEMPORARY_CHAT.general,
+    coding: typeof input?.coding === 'boolean' ? input.coding : DEFAULT_TEMPORARY_CHAT.coding,
+    image: typeof input?.image === 'boolean' ? input.image : DEFAULT_TEMPORARY_CHAT.image,
+    video: typeof input?.video === 'boolean' ? input.video : DEFAULT_TEMPORARY_CHAT.video,
+    music: typeof input?.music === 'boolean' ? input.music : DEFAULT_TEMPORARY_CHAT.music,
+  };
+}
+
+export function isTemporaryChatPreferred(config: Pick<TransgenticConfig, 'temporaryChat'> | undefined, mode: TaskMode): boolean {
+  return normalizeTemporaryChatConfig(config?.temporaryChat)[normalizeRouteMode(mode)];
+}
+
 export function isAgentHaltGuardEnabled(
   config?: TransgenticConfig,
   mode: TaskMode = 'general'
@@ -349,6 +406,7 @@ export interface TransgenticConfig {
   coding?: CodingModeConfig;
   recall?: RecallConfig;
   agentHaltGuard?: AgentHaltGuardConfig | boolean;
+  temporaryChat?: TemporaryChatModeConfig;
   localLLM?: LocalLLMConfig;
   healing?: HealingConfig;
 }
@@ -445,8 +503,8 @@ export interface IpcApi {
   removeCliWorkspace?: (id: string) => Promise<import('./cli.js').CliState>;
   getCoreStatus: () => Promise<CoreStatus>;
   getProviderStatuses: () => Promise<Record<ProviderId, ProviderStatus>>;
-  getRequestLogs: (limit?: number, offset?: number) => Promise<{ logs: McpRequestLog[]; total: number }>;
-  clearRequestLogs: () => Promise<void>;
+  getRequestLogs: (limit?: number, offset?: number, category?: ChatMode) => Promise<{ logs: McpRequestLog[]; total: number }>;
+  clearRequestLogs: (category?: ChatMode) => Promise<void>;
   terminateRequest?: (logId: string) => Promise<boolean>;
   terminateAllPendingRequests?: () => Promise<number>;
   getBlindedSecrets: () => Promise<BlindedTokenMap[]>;
@@ -462,6 +520,7 @@ export interface IpcApi {
   toggleRecallMode?: (mode: RouteMode, enabled?: boolean) => Promise<boolean>;
   toggleAgentGuard?: (mode: RouteMode, enabled?: boolean) => Promise<boolean>;
   updateAgentGuard?: (config: any) => Promise<any>;
+  toggleTemporaryChatMode?: (mode: RouteMode, enabled?: boolean) => Promise<boolean>;
   getModeRoutes: () => Promise<Record<RouteMode, ModeRouteConfig>>;
   getRouteMatrix?: () => Promise<RouteMatrix>;
   updateModeRoute: (mode: RouteMode, config: Partial<ModeRouteConfig> | Partial<ModePipelineConfig>, pipeline?: 'main' | 'co') => Promise<any>;
@@ -485,9 +544,12 @@ export interface IpcApi {
   reloadProvider: (providerId: ProviderId) => Promise<void>;
   openProviderWindow: (providerId: ProviderId, partitionKey?: string) => Promise<void>;
   openSystemBrowser: (providerId: ProviderId) => Promise<void>;
-  executePrompt: (prompt: string, mode?: TaskMode, preferredProvider?: ProviderId, model?: string, cliRequest?: import('./cli.js').CliRequestOptions) => Promise<any>;
+  executePrompt: (prompt: string, mode?: TaskMode, preferredProvider?: ProviderId, model?: string, cliRequest?: import('./cli.js').CliRequestOptions, files?: import('./attachments.js').AttachmentInput[], temporaryChat?: boolean) => Promise<any>;
   getThreadSessions: () => Promise<any[]>;
   clearThreadSessions: (params?: { providerId?: ProviderId; threadId?: string; scope?: 'quick_prompt' | 'all' }) => Promise<{ success: boolean; sessions: any[] }>;
+  getTemporaryChatSessions?: () => Promise<TemporaryChatSessionInfo[]>;
+  openTemporaryChatSession?: (key: string) => Promise<boolean>;
+  endTemporaryChatSession?: (key: string) => Promise<boolean>;
   getServicesManifest: () => Promise<ServicesManifest>;
   toggleExperimentalService?: (serviceId: ProviderId, enabled: boolean) => Promise<ServicesManifest>;
   updateServiceManifest?: (serviceId: ProviderId, updates: Partial<ServiceManifestEntry>) => Promise<ServicesManifest>;
@@ -532,6 +594,7 @@ export interface IpcApi {
   onRequestLogAdded?: (callback: (log: McpRequestLog) => void) => () => void;
   onModelsUpdated?: (callback: (registry: RegistryStore) => void) => () => void;
   onThreadsUpdated?: (callback: (sessions: any[]) => void) => () => void;
+  onTemporaryChatSessionsUpdated?: (callback: (sessions: TemporaryChatSessionInfo[]) => void) => () => void;
   onServicesManifestUpdated?: (callback: (manifest: ServicesManifest) => void) => () => void;
   onAccountsUpdated?: (callback: (accounts: AccountRegistryStore) => void) => () => void;
   onHealingUpdated?: (callback: (status: any) => void) => () => void;

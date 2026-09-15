@@ -3,6 +3,7 @@ import {
   ProviderId,
   TaskMode,
   AgentHaltGuardConfig,
+  TemporaryChatModeConfig,
   DEFAULT_AGENT_HALT_GUARD,
   isAgentHaltGuardEnabled,
   RecallModesConfig,
@@ -87,6 +88,7 @@ export interface AppConfig {
   coding: CodingModeConfig;
   recall?: RecallConfig;
   agentHaltGuard?: AgentHaltGuardConfig | boolean;
+  temporaryChat?: TemporaryChatModeConfig;
   localLLM: LocalLLMConfig;
   healing: HealingConfig;
   interMessageCooldownMs?: number;

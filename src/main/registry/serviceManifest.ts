@@ -271,7 +271,7 @@ export class ServiceManifestManager {
                   models: Array.from(mergedModelsMap.values()),
                 };
               } else if (srvId.startsWith('api_') || srvId.startsWith('webview_') || srvId.startsWith('custom_') || srvId.startsWith('recipe_')) {
-                const srv = { ...(srvData as any) };
+                const { temporaryChatByDefault: _retiredTemporaryPreference, ...srv } = srvData as any;
                 if (Array.isArray(srv.models)) srv.models = srv.models.map(normalizeModelModes);
                 if (srv.providerType === 'api' || srvId.startsWith('api_')) {
                   if (!Array.isArray(srv.attachmentKinds)) srv.attachmentKinds = [];

@@ -79,7 +79,8 @@ export class DataBlindingEngine {
    */
   public blind(
     text: string,
-    contextId?: string
+    contextId?: string,
+    options?: { persist?: boolean }
   ): { maskedText: string; replacementsCount: number; tokens: BlindedTokenMap[] } {
     if (!text || typeof text !== 'string') {
       return { maskedText: text, replacementsCount: 0, tokens: [] };
@@ -98,7 +99,7 @@ export class DataBlindingEngine {
           return match;
         }
 
-        const token = this.getOrCreateToken(match, type, contextId);
+        const token = this.getOrCreateToken(match, type, contextId, options?.persist !== false);
         replacementsCount++;
         const entry = this.vault.get(token);
         if (entry && !createdTokens.some((t) => t.token === token)) {
@@ -126,7 +127,7 @@ export class DataBlindingEngine {
 
       const entropy = DataBlindingEngine.calculateEntropy(word);
       if (entropy > 4.2 && word.length >= 24) {
-        const token = this.getOrCreateToken(word, 'generic_secret', contextId);
+        const token = this.getOrCreateToken(word, 'generic_secret', contextId, options?.persist !== false);
         masked = masked.split(word).join(token);
         replacementsCount++;
         const entry = this.vault.get(token);
@@ -251,9 +252,10 @@ export class DataBlindingEngine {
   private getOrCreateToken(
     original: string,
     type: BlindedTokenMap['type'],
-    contextId?: string
+    contextId?: string,
+    persist = true
   ): string {
-    if (this.reverseVault.has(original)) {
+    if (persist && this.reverseVault.has(original)) {
       return this.reverseVault.get(original)!;
     }
 
@@ -271,8 +273,10 @@ export class DataBlindingEngine {
     };
 
     this.vault.set(token, entry);
-    this.reverseVault.set(original, token);
-    globalMemoryDb.insertSecret(token, original, type, preview, entry.detectedAt);
+    if (persist) {
+      this.reverseVault.set(original, token);
+      globalMemoryDb.insertSecret(token, original, type, preview, entry.detectedAt);
+    }
     this.notifyListeners();
     return token;
   }

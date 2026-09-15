@@ -170,7 +170,11 @@ export interface PipelineExecutionResult {
   accountAlias?: string;
   accountProfileId?: string;
   wasRolledOver?: boolean;
+  contextReset?: boolean;
   wasNewChat?: boolean;
+  temporaryChat?: boolean;
+  chatExecution?: import('../../shared/types.js').ChatExecutionStatus;
+  temporarySessionKey?: string;
 }
 
 export interface DualDispatchResult {

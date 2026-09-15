@@ -10,13 +10,14 @@ const __dirname = path.dirname(__filename);
 import { BaseProviderAdapter } from './adapterBase.js';
 import { CustomRecipeAdapter } from './customRecipeAdapter.js';
 import { BUILTIN_RECIPES } from '../../shared/types/recipe.js';
-import { ProviderId, ProviderStatus, ProviderStatusState } from '../../shared/types.js';
+import { ProviderId, ProviderStatus, ProviderStatusState, TemporaryChatSessionInfo } from '../../shared/types.js';
 import { SessionProfileManager } from '../security/antiDetection.js';
 import { globalRateLimiter } from '../mcp/rateLimiter.js';
 import { ModelRegistryManager } from '../registry/modelRegistry.js';
 import { ModelScraperEngine } from '../registry/modelScrapers.js';
 import { AccountRegistryManager } from '../registry/accountRegistry.js';
 import { ServiceManifestManager } from '../registry/serviceManifest.js';
+import { globalThreadManager } from '../registry/threadManager.js';
 
 function getStealthPreloadPath(): string | undefined {
   try {
@@ -32,6 +33,18 @@ function getStealthPreloadPath(): string | undefined {
   return undefined;
 }
 
+interface TemporaryConversationEntry extends TemporaryChatSessionInfo {
+  window: BrowserWindow;
+  adapter: CustomRecipeAdapter;
+}
+interface NormalConversationEntry extends TemporaryConversationEntry { mode: 'normal'; }
+
+export interface TemporaryConversationHandle {
+  info: TemporaryChatSessionInfo;
+  adapter: CustomRecipeAdapter;
+  webContents: WebContents;
+}
+
 export class SessionManager {
   private adapters: Map<ProviderId, BaseProviderAdapter> = new Map();
   public sessions: Map<ProviderId, Session> = new Map();
@@ -39,7 +52,14 @@ export class SessionManager {
   private statuses: Map<ProviderId, ProviderStatus> = new Map();
   private openWindows: Map<string, BrowserWindow> = new Map();
   private backgroundWindows: Map<string, BrowserWindow> = new Map();
+  private temporaryConversations = new Map<string, TemporaryConversationEntry>();
+  private normalConversations = new Map<string, NormalConversationEntry>();
+  private temporaryGeneration = 0;
+  private static readonly MAX_TEMPORARY_CONVERSATIONS = 8;
+  private static readonly TEMPORARY_TTL_MS = 24 * 60 * 60 * 1000;
   private statusListeners: Array<(statuses: Record<ProviderId, ProviderStatus>) => void> = [];
+  private temporaryConversationListeners: Array<(sessions: TemporaryChatSessionInfo[]) => void> = [];
+  private temporaryConversationEndedListeners: Array<(session: TemporaryChatSessionInfo) => void> = [];
   private healthCheckInterval: NodeJS.Timeout | null = null;
 
   constructor() {
@@ -51,6 +71,15 @@ export class SessionManager {
 
   public registerAdapter(adapter: BaseProviderAdapter): void {
     const id = adapter.providerId;
+    const previous = this.adapters.get(id);
+    if (
+      previous instanceof CustomRecipeAdapter &&
+      adapter instanceof CustomRecipeAdapter &&
+      previous.recipe.version !== adapter.recipe.version
+    ) {
+    this.endTemporaryConversations(id);
+    this.endNormalConversations(id);
+    }
     this.adapters.set(id, adapter);
     this.statuses.set(id, {
       id,
@@ -64,6 +93,8 @@ export class SessionManager {
   }
 
   public unregisterAdapter(providerId: ProviderId): void {
+    this.endTemporaryConversations(providerId);
+    this.endNormalConversations(providerId);
     this.adapters.delete(providerId);
     this.statuses.delete(providerId);
     this.sessions.delete(providerId);
@@ -158,6 +189,8 @@ export class SessionManager {
 
     this.healthCheckInterval = setInterval(() => {
       this.refreshAllStatuses().catch(() => {});
+      this.cleanupTemporaryConversations();
+      this.cleanupNormalConversations();
     }, intervalMs);
   }
 
@@ -417,6 +450,13 @@ export class SessionManager {
         state: isRateLimited ? 'rate_limited' : status.state,
         rateLimitedUntil: isRateLimited ? (activeAcc?.rateLimitedUntil || (Date.now() + remaining * 1000)) : undefined,
         rateLimitCount: rateMetrics.rateLimitCount,
+        temporaryChat: {
+          supported: adapter instanceof CustomRecipeAdapter && adapter.supportsTemporaryChat(),
+          availability: adapter instanceof CustomRecipeAdapter && adapter.supportsTemporaryChat()
+            ? (status.temporaryChat?.availability || 'unknown')
+            : 'unavailable',
+          ...(status.temporaryChat?.reason ? { reason: status.temporaryChat.reason } : {}),
+        },
       };
     }
     return result as Record<ProviderId, ProviderStatus>;
@@ -608,6 +648,14 @@ export class SessionManager {
           isDomAuth = await adapter!.checkAuthStatus();
           const rateStatus = await adapter!.checkRateLimit();
           isRateLimited = rateStatus.isRateLimited;
+          if (adapter instanceof CustomRecipeAdapter && adapter.supportsTemporaryChat()) {
+            const availability = await adapter.inspectTemporaryChatAvailability();
+            current.temporaryChat = {
+              supported: true,
+              availability: availability.availability,
+              ...(availability.reason ? { reason: availability.reason } : {}),
+            };
+          }
         } catch {
           isDomAuth = null;
         }
@@ -659,6 +707,7 @@ export class SessionManager {
         if (activeAcc && activeAcc.status !== 'unauthenticated') {
           AccountRegistryManager.markStatus(id, activeAcc.id, 'unauthenticated');
         }
+        if (previousAuth && activeAcc) this.endTemporaryConversations(id, activeAcc.id);
       }
     } catch {
       current.state = 'disconnected';
@@ -680,6 +729,243 @@ export class SessionManager {
       if (state === 'ready') current.lastActive = Date.now();
       this.notifyStatusChange();
     }
+  }
+  public markTemporaryUnavailable(id: ProviderId, reason: string): void {
+    const current = this.statuses.get(id);
+    if (!current) return;
+    current.temporaryChat = { supported: true, availability: 'unavailable', reason };
+    this.notifyStatusChange();
+  }
+
+  public async ensureTemporaryConversation(params: {
+    key: string;
+    providerId: ProviderId;
+    accountId: string;
+    partitionKey: string;
+    forceNew?: boolean;
+    abortSignal?: AbortSignal;
+  }): Promise<TemporaryConversationHandle> {
+    const existing = this.temporaryConversations.get(params.key);
+    if (existing && !params.forceNew) {
+      if (existing.providerId !== params.providerId || existing.accountId !== params.accountId || existing.partitionKey !== params.partitionKey) {
+        throw new Error('[TEMPORARY_CHAT_ENDED] Temporary Chat belongs to a different provider or account. Start a new Temporary Chat.');
+      }
+      if (existing.window.isDestroyed() || !await existing.adapter.verifyTemporaryChat()) {
+        existing.state = 'ended';
+        this.endTemporaryConversation(params.key);
+        throw new Error('[TEMPORARY_CHAT_ENDED] The original Temporary Chat can no longer be verified. Start a new Temporary Chat.');
+      }
+      existing.state = 'verified';
+      existing.lastActiveAt = Date.now();
+      existing.adapter.setTemporaryChatRequired(true);
+      this.notifyTemporaryConversations();
+      return this.toTemporaryConversationHandle(existing);
+    }
+    if (existing) this.endTemporaryConversation(params.key);
+    if (this.temporaryConversations.size + this.normalConversations.size >= SessionManager.MAX_TEMPORARY_CONVERSATIONS) {
+      throw new Error('[TEMPORARY_CHAT_LIMIT] Eight managed browser conversations are already open. End one before starting another.');
+    }
+    const source = this.adapters.get(params.providerId);
+    if (!(source instanceof CustomRecipeAdapter) || !source.supportsTemporaryChat()) {
+      throw new Error('[TEMPORARY_CHAT_UNSUPPORTED] This provider does not support native Temporary Chat.');
+    }
+    this.configureSession(params.partitionKey);
+    const adapter = new CustomRecipeAdapter(source.recipe);
+    adapter.setCustomPartition(params.partitionKey);
+    const win = new BrowserWindow({
+      width: 1100,
+      height: 800,
+      show: false,
+      title: `Transgentic - ${adapter.name} - Temporary Chat`,
+      webPreferences: {
+        partition: params.partitionKey,
+        nodeIntegration: false,
+        contextIsolation: true,
+        preload: getStealthPreloadPath(),
+      },
+    });
+    win.webContents.setUserAgent(SessionProfileManager.getNormalizedUserAgent());
+    win.webContents.on('dom-ready', () => {
+      win.webContents.executeJavaScript(SessionProfileManager.getPreloadCompatibilityScript(), true).catch(() => {});
+    });
+    adapter.setWebContents(win.webContents);
+    const now = Date.now();
+    const entry: TemporaryConversationEntry = {
+      key: params.key,
+      mode: 'temporary',
+      providerId: params.providerId,
+      accountId: params.accountId,
+      partitionKey: params.partitionKey,
+      sessionId: crypto.randomUUID(),
+      generation: ++this.temporaryGeneration,
+      state: 'preparing',
+      recipeVersion: source.recipe.version,
+      createdAt: now,
+      lastActiveAt: now,
+      window: win,
+      adapter,
+    };
+    this.temporaryConversations.set(params.key, entry);
+    win.on('closed', () => {
+      const current = this.temporaryConversations.get(params.key);
+      if (current === entry) {
+        entry.state = 'ended';
+        adapter.detach();
+        this.temporaryConversations.delete(params.key);
+        globalThreadManager.removeTemporarySessionByKey(params.key);
+        this.notifyTemporaryConversationEnded(entry);
+        this.notifyTemporaryConversations();
+      }
+    });
+    try {
+      await adapter.activateTemporaryChat(params.abortSignal);
+      entry.state = 'verified';
+      entry.lastActiveAt = Date.now();
+      this.notifyTemporaryConversations();
+      return this.toTemporaryConversationHandle(entry);
+    } catch (error) {
+      entry.state = 'unverified';
+      this.endTemporaryConversation(params.key);
+      throw error;
+    }
+  }
+
+  private toTemporaryConversationHandle(entry: TemporaryConversationEntry): TemporaryConversationHandle {
+    const { window: _window, adapter: _adapter, ...info } = entry;
+    return { info: { ...info }, adapter: entry.adapter, webContents: entry.window.webContents };
+  }
+
+  public getTemporaryConversation(key: string): TemporaryConversationHandle | undefined {
+    const entry = this.temporaryConversations.get(key);
+    return entry ? this.toTemporaryConversationHandle(entry) : undefined;
+  }
+  public getManagedConversation(key: string): TemporaryConversationHandle | undefined {
+    const entry = this.temporaryConversations.get(key) || this.normalConversations.get(key);
+    return entry ? this.toTemporaryConversationHandle(entry) : undefined;
+  }
+
+  public listTemporaryConversations(): TemporaryChatSessionInfo[] {
+    return [
+      ...Array.from(this.temporaryConversations.values()),
+      ...Array.from(this.normalConversations.values()),
+    ].map(({ window: _window, adapter: _adapter, ...info }) => ({ ...info }));
+  }
+
+  public onTemporaryConversationsUpdate(listener: (sessions: TemporaryChatSessionInfo[]) => void): () => void {
+    this.temporaryConversationListeners.push(listener);
+    return () => { this.temporaryConversationListeners = this.temporaryConversationListeners.filter(item => item !== listener); };
+  }
+
+  public onTemporaryConversationEnded(listener: (session: TemporaryChatSessionInfo) => void): () => void {
+    this.temporaryConversationEndedListeners.push(listener);
+    return () => { this.temporaryConversationEndedListeners = this.temporaryConversationEndedListeners.filter(item => item !== listener); };
+  }
+
+  private notifyTemporaryConversations(): void {
+    const sessions = this.listTemporaryConversations();
+    for (const listener of this.temporaryConversationListeners) listener(sessions);
+  }
+
+  private notifyTemporaryConversationEnded(entry: TemporaryConversationEntry): void {
+    const { window: _window, adapter: _adapter, ...info } = entry;
+    for (const listener of this.temporaryConversationEndedListeners) listener({ ...info });
+  }
+
+  public openTemporaryConversation(key: string): boolean {
+    const entry = this.temporaryConversations.get(key) || this.normalConversations.get(key);
+    if (!entry || entry.window.isDestroyed()) return false;
+    entry.window.show();
+    entry.window.focus();
+    entry.lastActiveAt = Date.now();
+    return true;
+  }
+
+  public endTemporaryConversation(key: string): boolean {
+    if (this.normalConversations.has(key)) return this.endNormalConversation(key);
+    const entry = this.temporaryConversations.get(key);
+    if (!entry) return false;
+    this.temporaryConversations.delete(key);
+    entry.state = 'ended';
+    entry.adapter.detach();
+    globalThreadManager.removeTemporarySessionByKey(key);
+    if (!entry.window.isDestroyed()) entry.window.close();
+    this.notifyTemporaryConversationEnded(entry);
+    this.notifyTemporaryConversations();
+    return true;
+  }
+
+  public endTemporaryConversations(providerId?: ProviderId, accountId?: string): void {
+    for (const [key, entry] of Array.from(this.temporaryConversations.entries())) {
+      if ((!providerId || entry.providerId === providerId) && (!accountId || entry.accountId === accountId)) {
+        this.endTemporaryConversation(key);
+      }
+    }
+    this.endNormalConversations(providerId, accountId);
+  }
+
+  private cleanupTemporaryConversations(): void {
+    const cutoff = Date.now() - SessionManager.TEMPORARY_TTL_MS;
+    for (const [key, entry] of this.temporaryConversations.entries()) {
+      if (entry.lastActiveAt < cutoff || entry.window.isDestroyed()) this.endTemporaryConversation(key);
+    }
+  }
+
+  public async ensureNormalConversation(params: { key: string; providerId: ProviderId; accountId: string; partitionKey: string; forceNew?: boolean; abortSignal?: AbortSignal }): Promise<TemporaryConversationHandle> {
+    const previous = this.normalConversations.get(params.key);
+    if (previous && !params.forceNew) {
+      if (previous.providerId !== params.providerId || previous.accountId !== params.accountId || previous.partitionKey !== params.partitionKey) {
+        throw new Error('[CONVERSATION_BOUND] This conversation belongs to a different provider or account.');
+      }
+      if (previous.window.isDestroyed()) { this.endNormalConversation(params.key); throw new Error('[CONVERSATION_ENDED] The browser conversation has ended.'); }
+      previous.lastActiveAt = Date.now();
+      return this.toTemporaryConversationHandle(previous);
+    }
+    if (previous) this.endNormalConversation(params.key);
+    if (this.temporaryConversations.size + this.normalConversations.size >= SessionManager.MAX_TEMPORARY_CONVERSATIONS) throw new Error('[CONVERSATION_LIMIT] Eight managed browser conversations are already open. End one before starting another.');
+    const source = this.adapters.get(params.providerId);
+    if (!(source instanceof CustomRecipeAdapter)) throw new Error('[CONVERSATION_UNSUPPORTED] This provider has no WebView recipe.');
+    this.configureSession(params.partitionKey);
+    const adapter = new CustomRecipeAdapter(source.recipe);
+    adapter.setCustomPartition(params.partitionKey);
+    const win = new BrowserWindow({ width: 1100, height: 800, show: false, title: `Transgentic - ${adapter.name} - Conversation`,
+      webPreferences: { partition: params.partitionKey, nodeIntegration: false, contextIsolation: true, preload: getStealthPreloadPath() } });
+    win.webContents.setUserAgent(SessionProfileManager.getNormalizedUserAgent());
+    win.webContents.on('dom-ready', () => { win.webContents.executeJavaScript(SessionProfileManager.getPreloadCompatibilityScript(), true).catch(() => {}); });
+    adapter.setWebContents(win.webContents);
+    const now = Date.now();
+    const entry: NormalConversationEntry = { key: params.key, mode: 'normal', providerId: params.providerId, accountId: params.accountId,
+      partitionKey: params.partitionKey, sessionId: crypto.randomUUID(), generation: ++this.temporaryGeneration, state: 'preparing',
+      recipeVersion: source.recipe.version, createdAt: now, lastActiveAt: now, window: win, adapter };
+    this.normalConversations.set(params.key, entry);
+    win.on('closed', () => { if (this.normalConversations.get(params.key) === entry) {
+      this.normalConversations.delete(params.key); adapter.detach(); entry.state = 'ended'; this.notifyTemporaryConversations();
+    }});
+    try {
+      await adapter.navigateToNewChat({ forceReload: true });
+      if (params.abortSignal?.aborted) throw Object.assign(new Error('Request cancelled.'), { name: 'AbortError' });
+      if (!await adapter.checkAuthStatus()) throw new Error('[CONVERSATION_LOGIN_REQUIRED] Sign in before using this provider.');
+      entry.state = 'verified'; this.notifyTemporaryConversations();
+      return this.toTemporaryConversationHandle(entry);
+    } catch (error) { this.endNormalConversation(params.key); throw error; }
+  }
+
+  public endNormalConversation(key: string): boolean {
+    const entry = this.normalConversations.get(key);
+    if (!entry) return false;
+    this.normalConversations.delete(key); entry.state = 'ended'; entry.adapter.detach();
+    if (!entry.window.isDestroyed()) entry.window.close();
+    this.notifyTemporaryConversations(); return true;
+  }
+
+  public endNormalConversations(providerId?: ProviderId, accountId?: string): void {
+    for (const [key, entry] of Array.from(this.normalConversations.entries())) {
+      if ((!providerId || entry.providerId === providerId) && (!accountId || entry.accountId === accountId)) this.endNormalConversation(key);
+    }
+  }
+
+  private cleanupNormalConversations(): void {
+    const cutoff = Date.now() - SessionManager.TEMPORARY_TTL_MS;
+    for (const [key, entry] of this.normalConversations.entries()) if (entry.lastActiveAt < cutoff || entry.window.isDestroyed()) this.endNormalConversation(key);
   }
 
   public onStatusUpdate(callback: (statuses: Record<ProviderId, ProviderStatus>) => void): () => void {
@@ -703,6 +989,8 @@ export class SessionManager {
    * (cookies, localStorage, indexedDB, cache, service workers, auth cache, etc.).
    */
   public async clearAllBrowserStorage(): Promise<{ clearedPartitions: number }> {
+    this.endTemporaryConversations();
+    this.endNormalConversations();
     // 1. Close all open drawer/background windows
     for (const [, win] of this.openWindows.entries()) {
       if (!win.isDestroyed()) {
@@ -789,6 +1077,8 @@ export class SessionManager {
       clearInterval(this.healthCheckInterval);
       this.healthCheckInterval = null;
     }
+    this.endTemporaryConversations();
+    this.endNormalConversations();
   }
 }
 

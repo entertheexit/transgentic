@@ -1,7 +1,13 @@
 import fs from 'fs';
 import path from 'path';
 import { app } from 'electron';
-import { McpRequestLog, MODE_SCHEMA_VERSION } from '../../shared/types.js';
+import { McpRequestLog, MODE_SCHEMA_VERSION, type ChatMode } from '../../shared/types.js';
+
+export function logCategory(log: McpRequestLog): ChatMode {
+  return log.chatExecution?.policy
+    ? (log.chatExecution.policy === 'normal' ? 'normal' : 'temporary')
+    : log.temporaryChat ? 'temporary' : 'normal';
+}
 
 export function migratePersistedLog(log: McpRequestLog): McpRequestLog {
   const legacyMode = log.modeSchemaVersion !== MODE_SCHEMA_VERSION && log.mode === 'audio' ? 'music' : log.mode;
@@ -16,6 +22,7 @@ export function migratePersistedLog(log: McpRequestLog): McpRequestLog {
 export class PersistentLogStorage {
   private inMemoryCache: McpRequestLog[] = [];
   private isLoaded = false;
+  private clearedPendingIds = new Set<string>();
 
   private getStoragePath(): string {
     try {
@@ -35,7 +42,7 @@ export class PersistentLogStorage {
         const parsed = JSON.parse(raw);
         if (Array.isArray(parsed)) {
           let hasUnfinished = false;
-          this.inMemoryCache = parsed.map((l: McpRequestLog) => {
+          this.inMemoryCache = parsed.slice(0, 1000).map((l: McpRequestLog) => {
             l = migratePersistedLog(l);
             if (l.status === 'pending' || (l.status as any) === 'processing' || (l.status as any) === 'routing' || l.status === 'fallback') {
               hasUnfinished = true;
@@ -76,6 +83,7 @@ export class PersistentLogStorage {
 
   public insert(log: McpRequestLog): void {
     this.ensureLoaded();
+    if (this.clearedPendingIds.has(log.id)) return;
     log = { ...log, modeSchemaVersion: MODE_SCHEMA_VERSION };
     const existingIdx = this.inMemoryCache.findIndex((l) => l.id === log.id);
     if (existingIdx !== -1) {
@@ -83,11 +91,13 @@ export class PersistentLogStorage {
     } else {
       this.inMemoryCache.unshift({ ...log });
     }
+    if (this.inMemoryCache.length > 1000) this.inMemoryCache.length = 1000;
     this.flushToDisk();
   }
 
   public update(log: McpRequestLog): void {
     this.ensureLoaded();
+    if (this.clearedPendingIds.has(log.id)) return;
     log = { ...log, modeSchemaVersion: MODE_SCHEMA_VERSION };
     const idx = this.inMemoryCache.findIndex((l) => l.id === log.id);
     if (idx !== -1) {
@@ -95,13 +105,15 @@ export class PersistentLogStorage {
     } else {
       this.inMemoryCache.unshift({ ...log });
     }
+    if (this.inMemoryCache.length > 1000) this.inMemoryCache.length = 1000;
     this.flushToDisk();
   }
 
-  public query(limit = 20, offset = 0): { logs: McpRequestLog[]; total: number } {
+  public query(limit = 20, offset = 0, category?: ChatMode): { logs: McpRequestLog[]; total: number } {
     this.ensureLoaded();
-    const total = this.inMemoryCache.length;
-    const logs = this.inMemoryCache.slice(offset, offset + limit);
+    const matching = category ? this.inMemoryCache.filter(log => logCategory(log) === category) : this.inMemoryCache;
+    const total = matching.length;
+    const logs = matching.slice(offset, offset + limit);
     return { logs, total };
   }
 
@@ -135,10 +147,19 @@ export class PersistentLogStorage {
     return undefined;
   }
 
-  public clear(): void {
-    this.inMemoryCache = [];
+  public clear(category?: ChatMode): void {
+    this.ensureLoaded();
+    const removed = category ? this.inMemoryCache.filter(log => logCategory(log) === category) : this.inMemoryCache;
+    for (const log of removed) {
+      if (log.status === 'pending' || (log.status as string) === 'processing' || (log.status as string) === 'routing' || log.status === 'fallback') {
+        this.clearedPendingIds.add(log.id);
+      }
+    }
+    this.inMemoryCache = category ? this.inMemoryCache.filter(log => logCategory(log) !== category) : [];
     this.flushToDisk();
   }
+
+  public wasCleared(id: string): boolean { return this.clearedPendingIds.has(id); }
 }
 
 export const globalLogStorage = new PersistentLogStorage();
