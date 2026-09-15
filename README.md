@@ -51,7 +51,7 @@ Its two main uses are carrying available planning context into a task through **
 
 | Use it from | Configure where work goes | Receive |
 | :--- | :--- | :--- |
-| OpenAI-compatible clients such as Cline | General and Coding route settings across eligible API, CLI, and Local LLM services; Writing uses General | Chat completions and tool calls; the client owns project actions |
+| OpenAI-compatible clients such as Cline | General and Coding route settings across eligible Webview, API, CLI, and Local LLM services; Writing uses General | Chat completions and tool calls; the client owns project actions |
 | Agentic IDEs and MCP clients | Local models, APIs, built-in CLI services, web adapters, or custom recipes | Model answers with caller-appropriate guidance |
 | Scripts and custom applications | Per-mode Main and Co-Agent routes with configured fallbacks | Text, code, saved-media paths, and structured outcomes |
 | Desktop Quick Prompt | The same provider and routing settings | In-app answers without IDE workflow reminders |
@@ -154,7 +154,7 @@ For scripts and terminal-based workflows, see the [command-line request examples
 | API key | Your Transgentic access token |
 | Model | `transgentic/coding` |
 
-The stable route models are `transgentic/general`, `transgentic/writing`, and `transgentic/coding`. Writing retains its backend mode and prose guidance while using the General route configuration. Enabled API providers, enabled Local LLM, and enabled, connected CLI services in Provider Mode also appear as direct `transgentic/provider/<provider-id>` models in `GET /v1/models`. Webview services are excluded until their recipes can verify temporary-chat or equivalent memory isolation. See the [completion gateway guide](docs/COMPLETION_GATEWAY.md).
+The stable route models are `transgentic/general`, `transgentic/writing`, and `transgentic/coding`. Writing retains its backend mode and prose guidance while using the General route configuration. Eligible Webview and API providers, enabled Local LLM, and enabled, connected CLI services in Provider Mode also appear as direct `transgentic/provider/<provider-id>` models in `GET /v1/models`. Webview requests use their selected account and recipe; native Temporary Chat is available only when the recipe declares and verifies it. See the [completion gateway guide](docs/COMPLETION_GATEWAY.md).
 
 ### 4. Check the result
 
@@ -277,6 +277,10 @@ For transport details, selection examples, and plain-client configuration, see [
 - **Conversation continuity:**
 
   Reuses scoped provider conversations and bounded local history. New-chat, expiry, and rollover rules determine when a conversation changes.
+
+- **Native Temporary Chat:**
+
+  ChatGPT, Claude, and Gemini recipes can activate and verify their provider-native temporary or incognito mode. The saved preference is per task mode and applies to desktop, MCP/SSE, and completion requests. Unsupported providers use normal chat for preferred temporary requests; explicitly required Temporary Chat fails instead. Transgentic saves request and response logs locally, including temporary requests.
 
 - **Preset prompt gating:**
 

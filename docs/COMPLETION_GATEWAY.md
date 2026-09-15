@@ -27,13 +27,17 @@ The stable route models are:
 
 `transgentic/writing` is advertised as a stable backend mode for prose and long-form work. It keeps Writing-specific request identity and uses the General provider route, fallbacks, and per-mode policies. Completion Recall, compaction, and review remain controlled by their existing widgets.
 
-`GET /v1/models` also lists compatible direct providers as `transgentic/provider/<provider-id>`. A CLI appears there only while enabled, connected, and in Provider Mode. Webview providers stay unlisted until their recipe can verify temporary-chat or equivalent account-memory isolation.
+`GET /v1/models` also lists compatible direct providers as `transgentic/provider/<provider-id>`. A CLI appears there only while enabled, connected, and in Provider Mode. Eligible Webview providers use their selected account and recipe, including native Temporary Chat activation where declared and verified.
 
 ## Request behavior
 
-Route models use the existing Main route and fallback order without an extra classification request. Each request starts a fresh backend conversation. Transgentic sends the caller's structured history once and does not resume a native CLI session or attach hidden Transgentic conversation context.
+Route models use the existing Main route and fallback order without an extra classification request. Without `conversation_id`, each request starts a fresh backend conversation; Webview requests use an isolated browser view that closes after the request. Transgentic sends the caller's structured history once and does not resume a native CLI session or attach hidden Transgentic conversation context.
 
-API and Local LLM providers receive structured messages and tools. CLI providers receive one serialized transcript. For tool-capable requests, their output must match a strict validated tool-call envelope. Transgentic returns valid tool calls to the caller and never executes them on the host. Unknown tools and malformed arguments fail the request instead of triggering a repair generation.
+An explicit `conversation_id` retains a Webview conversation for incremental new messages. The retained view is bound to the authenticated access identity, provider, account, and model. Use `new_thread: true` with that ID to reset it, or `DELETE /v1/conversations/<id>` to end it. Ended views cannot be rebuilt from a URL or logs.
+
+The saved Temporary Chat preference applies by task mode. `temporary_chat: true` requires verified provider-native Temporary Chat; `false` requests normal chat; omission uses the mode preference. A preferred temporary request can use a normal chat when the selected provider does not support native Temporary Chat, and the `transgentic` response metadata reports the actual mode and reason. Activation or verification failures stop before submission rather than silently downgrading. Transgentic saves request and response logs locally for both normal and temporary requests.
+
+API and Local LLM providers receive structured messages and tools. CLI and Webview providers receive one serialized transcript for a fresh request. For tool-capable requests, their output must match a strict validated tool-call envelope. Transgentic returns valid tool calls to the caller and never executes them on the host. Unknown tools and malformed arguments fail the request instead of triggering a repair generation.
 
 `/v1/chat/completions` accepts standard user `image_url` parts and inline `file` parts. It does not provide `/v1/files` or `/v1/responses`; provider-owned `file_id` references are rejected because they cannot be transferred safely between routed providers. Inline inputs use the same 10-file, 50-MB-per-file, and 100-MB-total validation as MCP. Provider Mode CLI destinations receive native image input where supported; documents are staged read-only and referenced from the isolated scratch boundary.
 
