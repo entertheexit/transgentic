@@ -9,6 +9,7 @@ Source setup, isolated tests, and desktop packaging for developers modifying Tra
 - [Source setup](#source-setup)
 - [Tests](#tests)
 - [Builds](#builds)
+- [Signed macOS and draft releases](#signed-macos-and-draft-releases)
 - [Documentation and publication checks](#documentation-and-publication-checks)
 
 ## Source setup
@@ -49,6 +50,7 @@ Scripts are defined in [package.json](../package.json).
 | :--- | :--- |
 | `npm run build` | Compile renderer and desktop |
 | `npm run build:mac` | Request macOS packaging |
+| `npm run build:mac:signed` | Build, sign, and notarize macOS packages with the local `transgentic-notary` Keychain profile |
 | `npm run build:mac:arm64` | Request macOS ARM64 packaging |
 | `npm run build:mac:x64` | Request macOS x64 packaging |
 | `npm run build:win` | Request Windows packaging |
@@ -57,6 +59,44 @@ Scripts are defined in [package.json](../package.json).
 | `npm run build:all` | Request macOS, Windows, and Linux targets |
 
 Packaging depends on the host toolchain, target requirements, and signing configuration. A script's presence does not establish that its installer has been tested on every platform. Building does not publish or update an existing release.
+
+`build:all` requests all targets from one host, but it is not the release workflow: macOS signing only works on macOS, Linux packaging is best run on Linux, and Windows packaging/signing has its own toolchain. The GitHub workflow therefore uses one native runner per operating system.
+
+## Signed macOS and draft releases
+
+Production macOS packages use the bundle identifier `one.transgentic.desktop`. The builder requires a Developer ID Application signature, Hardened Runtime, and Apple notarization; it fails instead of emitting an unsigned release when credentials are missing.
+
+The `Build draft release` GitHub Actions workflow runs automatically for a pushed `v*` tag, or manually for an existing tag. It builds macOS on macOS, Windows on Windows, and Linux on Ubuntu, then creates or updates a draft GitHub Release. Review its generated notes and artifacts before publishing the draft. Configure these repository secrets before running it:
+
+| Secret | Value |
+| :--- | :--- |
+| `MACOS_CERTIFICATE` | Base64-encoded `.p12` export containing the **Developer ID Application** certificate and private key |
+| `MACOS_CERTIFICATE_PASSWORD` | Password used when exporting that `.p12` |
+| `APPLE_API_KEY_BASE64` | Base64-encoded App Store Connect API private key (`.p8`) |
+| `APPLE_API_KEY_ID` | App Store Connect API key ID |
+| `APPLE_API_ISSUER` | App Store Connect API issuer ID |
+
+Encode each binary credential as a single line on macOS before copying it into the corresponding secret:
+
+```bash
+base64 -i DeveloperIDApplication.p12 | tr -d '\n'
+base64 -i AuthKey_KEYID.p8 | tr -d '\n'
+```
+
+The workflow builds both Intel and Apple Silicon DMG/ZIP packages, verifies the bundle identifier and strict code signature, validates the stapled notarization ticket, and asks Gatekeeper to assess each app. It also builds the configured Windows and Linux targets on their native GitHub runners. Only after all three jobs pass are the artifacts attached to a draft release.
+
+`transgentic-notary` is an arbitrary local Keychain profile name, not the App Store Connect API key's display name. Create it once with the downloaded API key:
+
+```bash
+xcrun notarytool store-credentials "transgentic-notary" \
+  --key "/path/to/AuthKey_KEYID.p8" \
+  --key-id "KEYID" \
+  --issuer "ISSUER-ID"
+```
+
+After that succeeds, `npm run build:mac:signed` builds, signs, and notarizes both macOS architectures using the Developer ID Application identity already installed in the login Keychain. The ordinary `build:mac` command also supports explicit `APPLE_API_KEY`, `APPLE_API_KEY_ID`, and `APPLE_API_ISSUER` environment variables. Do not place certificates, private keys, or passwords in the repository.
+
+Windows uses a separate Authenticode certificate or Microsoft Artifact Signing configuration; the Apple certificate cannot sign Windows executables. Until Windows signing credentials are configured, the workflow's Windows artifacts are unsigned and can trigger Microsoft Defender SmartScreen. Electron Builder does not apply a platform code-signing phase to Linux AppImage or DEB targets; signing a Linux package repository is a separate distribution concern.
 
 ## Documentation and publication checks
 

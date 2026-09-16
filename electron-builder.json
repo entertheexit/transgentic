@@ -1,6 +1,7 @@
 {
-  "appId": "com.transgentic.app",
+  "appId": "one.transgentic.desktop",
   "productName": "Transgentic",
+  "beforePack": "scripts/verify-macos-release-credentials.mjs",
   "directories": {
     "output": "release"
   },
@@ -21,7 +22,7 @@
   ],
   "mac": {
     "category": "public.app-category.developer-tools",
-    "identity": null,
+    "forceCodeSigning": true,
     "target": [
       {
         "target": "dmg",
@@ -33,8 +34,10 @@
       }
     ],
     "icon": "build/icon.icns",
-    "hardenedRuntime": false,
-    "gatekeeperAssess": false
+    "hardenedRuntime": true,
+    "entitlements": "build/entitlements.mac.plist",
+    "entitlementsInherit": "build/entitlements.mac.inherit.plist",
+    "notarize": true
   },
   "win": {
     "target": [
