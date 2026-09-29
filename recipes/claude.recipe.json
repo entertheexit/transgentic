@@ -1,5 +1,5 @@
 {
-  "version": "1.1.0",
+  "version": "1.1.2",
   "id": "claude",
   "modeSchemaVersion": 2,
   "title": "Anthropic Claude",
@@ -79,7 +79,20 @@
         "enabled": true,
         "contentSelector": ".font-claude-message, .prose",
         "mediaKind": "text",
-        "inputAttachments": { "fileInput": "input[type=\"file\"]", "acceptedKinds": ["image", "document"], "multiple": true }
+        "inputAttachments": {
+          "fileInput": [
+            "input[type=\"file\"][data-testid=\"file-upload\"]",
+            "input[type=\"file\"][aria-label=\"Upload files\"]",
+            "input[type=\"file\"]"
+          ],
+          "acceptedKinds": [
+            "image",
+            "document"
+          ],
+          "multiple": true,
+          "ready": "[data-cds-attachment]:has([data-cds-attachment-remove]):not(:has([role=\"status\"])):not(:has([role=\"progressbar\"]))",
+          "cleanup": "[data-cds-attachment-remove]"
+        }
       }
     }
   }

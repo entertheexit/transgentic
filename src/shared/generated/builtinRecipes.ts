@@ -3,12 +3,12 @@ import type { CustomRecipe } from '../types/recipe.js';
 
 export const BUILTIN_RECIPES: Record<'chatgpt' | 'claude' | 'gemini' | 'grok', CustomRecipe> = {
   "chatgpt": {
-    "version": "1.1.1",
+    "version": "1.2.1",
     "id": "chatgpt",
     "title": "OpenAI ChatGPT",
     "domainMatch": "chatgpt.com",
-    "url": "https://chatgpt.com",
-    "newChatUrl": "https://chatgpt.com",
+    "url": "https://chatgpt.com/",
+    "newChatUrl": "https://chatgpt.com/",
     "resetUrlPatterns": [
       {
         "pattern": "/projects",
@@ -60,18 +60,24 @@ export const BUILTIN_RECIPES: Record<'chatgpt' | 'claude' | 'gemini' | 'grok', C
       "inactiveWhen": {
         "role": "button",
         "name": "Temporary chat"
+      },
+      "continuation": {
+        "pathPrefix": "/c/",
+        "queryParam": "temporary-chat",
+        "queryValue": "true",
+        "provisionalPathPrefix": "/c/local-chatgpt%3A"
       }
     },
     "createdAt": "2026-01-01T00:00:00.000Z",
     "selectors": {
-      "inputPrompt": "#prompt-textarea, div.ProseMirror[contenteditable=\"true\"], textarea, div[contenteditable=\"true\"]",
-      "submitButton": "button[data-testid=\"send-button\"], button[aria-label*=\"Send prompt\" i], button[aria-label*=\"Send\" i], button.composer-submit-button-color, button[data-testid=\"composer-speech-button\"] + button",
+      "inputPrompt": "[data-composer-markdown][contenteditable=\"true\"], #prompt-textarea, div.ProseMirror[contenteditable=\"true\"], textarea[aria-label=\"Ask ChatGPT\"]",
+      "submitButton": "button[data-testid=\"send-button\"], button[type=\"submit\"][aria-label=\"Send\"], button[aria-label=\"Send prompt\"]",
       "stopButton": "button[data-testid=\"stop-button\"], button[aria-label*=\"Stop\" i]",
-      "modelDropdownTrigger": "[data-testid=\"model-selector-button\"], button[aria-haspopup=\"menu\"]"
+      "modelDropdownTrigger": "button[aria-label=\"Select ChatGPT model\"], [data-testid=\"model-selector-button\"]"
     },
     "response": {
-      "container": "[data-message-author-role=\"assistant\"], div[data-testid^=\"conversation-turn-\"]:not([data-message-author-role=\"user\"]), div.agent-turn",
-      "textSelector": ".response-content-markdown, .markdown, .prose",
+      "container": "[data-content-search-unit-key]:has(> [data-conversation-role=\"assistant\"]), [data-message-author-role=\"assistant\"], [data-testid^=\"conversation-turn-\"]:has([data-message-author-role=\"assistant\"]), div.agent-turn",
+      "textSelector": "[data-markdown-text-style=\"assistant-message\"], .response-content-markdown, .markdown, .prose",
       "actionButtons": "button[data-testid*=\"copy\" i], button[aria-label*=\"Copy\" i], button[aria-label*=\"Good response\" i], button[aria-label*=\"Bad response\" i]",
       "generatingIndicator": "[class*=\"imagegen-loading\"], [class*=\"placeholder-shimmer\"], .animate-pulse",
       "excludeSelectors": [
@@ -83,15 +89,20 @@ export const BUILTIN_RECIPES: Record<'chatgpt' | 'claude' | 'gemini' | 'grok', C
       "modes": {
         "text": {
           "enabled": true,
-          "contentSelector": ".response-content-markdown, .markdown, .prose",
+          "contentSelector": "[data-markdown-text-style=\"assistant-message\"], .response-content-markdown, .markdown, .prose",
           "mediaKind": "text",
           "inputAttachments": {
-            "fileInput": "input[type=\"file\"]",
+            "fileInput": [
+              "input[type=\"file\"][aria-label=\"Attach files\"]",
+              "input[type=\"file\"]:not([accept])"
+            ],
             "acceptedKinds": [
               "image",
               "document"
             ],
-            "multiple": true
+            "multiple": true,
+            "ready": "[data-composer-attachments] [role=\"button\"]:has(button[aria-label^=\"Remove \"]):not(:has([role=\"progressbar\"]))",
+            "cleanup": "[data-composer-attachments] button[aria-label^=\"Remove \"]"
           }
         },
         "image": {
@@ -99,11 +110,16 @@ export const BUILTIN_RECIPES: Record<'chatgpt' | 'claude' | 'gemini' | 'grok', C
           "contentSelector": "img[src*=\"backend-api/estuary/content\"], img[src*=\"estuary/content\"], img[alt*=\"Generated image\" i], div[class*=\"imagegen\"] img, div[id^=\"image-\"] img, img[src*=\"dall-e\"], img[src*=\"oaiusercontent\"], img.dall-e-image",
           "mediaKind": "image",
           "inputAttachments": {
-            "fileInput": "input[type=\"file\"]",
+            "fileInput": [
+              "input[type=\"file\"][aria-label=\"Attach files\"]",
+              "input[type=\"file\"]:not([accept])"
+            ],
             "acceptedKinds": [
               "image"
             ],
-            "multiple": true
+            "multiple": true,
+            "ready": "[data-composer-attachments] [role=\"button\"]:has(button[aria-label^=\"Remove \"]):not(:has([role=\"progressbar\"]))",
+            "cleanup": "[data-composer-attachments] button[aria-label^=\"Remove \"]"
           }
         },
         "video": {
@@ -122,7 +138,7 @@ export const BUILTIN_RECIPES: Record<'chatgpt' | 'claude' | 'gemini' | 'grok', C
     "modeSchemaVersion": 2
   },
   "claude": {
-    "version": "1.1.0",
+    "version": "1.1.2",
     "id": "claude",
     "modeSchemaVersion": 2,
     "title": "Anthropic Claude",
@@ -203,19 +219,25 @@ export const BUILTIN_RECIPES: Record<'chatgpt' | 'claude' | 'gemini' | 'grok', C
           "contentSelector": ".font-claude-message, .prose",
           "mediaKind": "text",
           "inputAttachments": {
-            "fileInput": "input[type=\"file\"]",
+            "fileInput": [
+              "input[type=\"file\"][data-testid=\"file-upload\"]",
+              "input[type=\"file\"][aria-label=\"Upload files\"]",
+              "input[type=\"file\"]"
+            ],
             "acceptedKinds": [
               "image",
               "document"
             ],
-            "multiple": true
+            "multiple": true,
+            "ready": "[data-cds-attachment]:has([data-cds-attachment-remove]):not(:has([role=\"status\"])):not(:has([role=\"progressbar\"]))",
+            "cleanup": "[data-cds-attachment-remove]"
           }
         }
       }
     }
   },
   "gemini": {
-    "version": "1.1.1",
+    "version": "1.1.2",
     "id": "gemini",
     "title": "Google Gemini",
     "domainMatch": "gemini.google.com",
@@ -287,12 +309,29 @@ export const BUILTIN_RECIPES: Record<'chatgpt' | 'claude' | 'gemini' | 'grok', C
           "contentSelector": ".response-content-markdown, .markdown, .prose",
           "mediaKind": "text",
           "inputAttachments": {
-            "fileInput": "input[type=\"file\"]",
+            "fileInput": [
+              "uploader > input[type=\"file\"]",
+              "input[type=\"file\"]"
+            ],
             "acceptedKinds": [
               "image",
               "document"
             ],
-            "multiple": true
+            "multiple": true,
+            "revealSteps": [
+              {
+                "action": "click",
+                "target": {
+                  "role": "button",
+                  "name": [
+                    "Upload & tools",
+                    "Add files"
+                  ]
+                }
+              }
+            ],
+            "ready": "uploader-file-preview:has(button[aria-label=\"close attachment\"]):not(:has([role=\"progressbar\"]))",
+            "cleanup": "uploader-file-preview button[aria-label=\"close attachment\"]"
           }
         },
         "image": {
@@ -301,11 +340,28 @@ export const BUILTIN_RECIPES: Record<'chatgpt' | 'claude' | 'gemini' | 'grok', C
           "downloadSelector": "[data-test-id=\"download-generated-image-button\"]",
           "mediaKind": "image",
           "inputAttachments": {
-            "fileInput": "input[type=\"file\"]",
+            "fileInput": [
+              "uploader > input[type=\"file\"]",
+              "input[type=\"file\"]"
+            ],
             "acceptedKinds": [
               "image"
             ],
-            "multiple": true
+            "multiple": true,
+            "revealSteps": [
+              {
+                "action": "click",
+                "target": {
+                  "role": "button",
+                  "name": [
+                    "Upload & tools",
+                    "Add files"
+                  ]
+                }
+              }
+            ],
+            "ready": "uploader-file-preview:has(button[aria-label=\"close attachment\"]):not(:has([role=\"progressbar\"]))",
+            "cleanup": "uploader-file-preview button[aria-label=\"close attachment\"]"
           }
         },
         "video": {
@@ -314,12 +370,29 @@ export const BUILTIN_RECIPES: Record<'chatgpt' | 'claude' | 'gemini' | 'grok', C
           "downloadSelector": "button[aria-label*=\"Download video\" i]",
           "mediaKind": "video",
           "inputAttachments": {
-            "fileInput": "input[type=\"file\"]",
+            "fileInput": [
+              "uploader > input[type=\"file\"]",
+              "input[type=\"file\"]"
+            ],
             "acceptedKinds": [
               "image",
               "video"
             ],
-            "multiple": true
+            "multiple": true,
+            "revealSteps": [
+              {
+                "action": "click",
+                "target": {
+                  "role": "button",
+                  "name": [
+                    "Upload & tools",
+                    "Add files"
+                  ]
+                }
+              }
+            ],
+            "ready": "uploader-file-preview:has(button[aria-label=\"close attachment\"]):not(:has([role=\"progressbar\"]))",
+            "cleanup": "uploader-file-preview button[aria-label=\"close attachment\"]"
           }
         },
         "music": {
@@ -333,13 +406,13 @@ export const BUILTIN_RECIPES: Record<'chatgpt' | 'claude' | 'gemini' | 'grok', C
     "modeSchemaVersion": 2
   },
   "grok": {
-    "version": "1.0",
+    "version": "1.1.0",
     "id": "grok",
     "modeSchemaVersion": 2,
     "title": "xAI Grok",
     "domainMatch": "grok.com",
-    "url": "https://grok.com",
-    "newChatUrl": "https://grok.com",
+    "url": "https://grok.com/",
+    "newChatUrl": "https://grok.com/",
     "authStrategy": "cookie_sync",
     "auth": {
       "authCookies": [
@@ -357,14 +430,16 @@ export const BUILTIN_RECIPES: Record<'chatgpt' | 'claude' | 'gemini' | 'grok', C
         "twitter.com"
       ],
       "minCookieLength": 25,
-      "loggedInSelector": "button[aria-haspopup=\"menu\"], button[aria-label*=\"user\" i], button[aria-label*=\"profile\" i], button[aria-label*=\"account\" i], [data-testid=\"UserAvatar\"], [data-testid=\"user-avatar\"], [data-testid=\"SideNav_AccountSwitcher_Button\"], img[alt*=\"avatar\" i]",
-      "loggedOutSelector": "a[href=\"/login\"], a[href=\"/signin\"], a[href=\"/signup\"], button[data-testid=\"login-button\"], button[data-testid=\"signin-button\"], button[data-testid=\"signup-button\"]",
+      "loggedInSelector": "button[aria-label*=\"user\" i], button[aria-label*=\"profile\" i], button[aria-label*=\"account\" i], [data-testid=\"UserAvatar\"], [data-testid=\"user-avatar\"], [data-testid=\"SideNav_AccountSwitcher_Button\"], img[alt*=\"avatar\" i]",
+      "loggedOutSelector": "a[href=\"/login\"], a[href=\"/signin\"], a[href=\"/signup\"], button[data-testid=\"login-button\"], button[data-testid=\"signin-button\"], button[data-testid=\"signup-button\"], a[href^=\"/sign-in\"], a[href^=\"/sign-up\"]",
       "loginUrls": [
         "/login",
         "/signin",
         "/signup",
         "/auth/",
-        "/i/flow/login"
+        "/i/flow/login",
+        "/sign-in",
+        "/sign-up"
       ]
     },
     "rateLimit": {
@@ -378,20 +453,20 @@ export const BUILTIN_RECIPES: Record<'chatgpt' | 'claude' | 'gemini' | 'grok', C
     },
     "createdAt": "2026-01-01T00:00:00.000Z",
     "selectors": {
-      "inputPrompt": "textarea[placeholder*=\"Ask\" i], textarea[placeholder*=\"Grok\" i], textarea[placeholder*=\"anything\" i], textarea[data-id=\"root\"], form textarea, textarea, div[contenteditable=\"true\"], div[role=\"textbox\"]",
-      "submitButton": "button[aria-label*=\"Submit\" i], button[aria-label*=\"Send\" i], button[aria-label*=\"Ask\" i], button[aria-label*=\"Grok\" i], button[data-testid*=\"send\" i], button[data-testid*=\"submit\" i], button[type=\"submit\"], form button[type=\"submit\"], form button:not([disabled])",
+      "inputPrompt": "textarea[aria-label=\"Ask Grok anything\"], textarea[placeholder*=\"Ask\" i], textarea[placeholder*=\"Grok\" i], textarea[data-id=\"root\"], form textarea, div[contenteditable=\"true\"][role=\"textbox\"]",
+      "submitButton": "button[data-testid=\"chat-submit\"], button[type=\"submit\"][aria-label=\"Submit\"], button[aria-label=\"Send\"], button[data-testid=\"send-button\"]",
       "stopButton": "button[aria-label*=\"Stop\" i]",
-      "modelDropdownTrigger": "button[aria-label*=\"Fast\" i], button[aria-label*=\"Grok\" i]"
+      "modelDropdownTrigger": "#model-select-trigger, button[aria-label=\"Model select\"]"
     },
     "response": {
-      "container": "#last-reply-container [id^=\"response-\"], [data-testid=\"assistant-message\"], .response-turn",
-      "textSelector": ".response-content-markdown, .streamdown-chat-md, main .prose",
+      "container": "#last-reply-container [id^=\"response-\"], [id^=\"response-\"], [data-testid=\"assistant-message\"], div.items-start .message-bubble, .response-turn",
+      "textSelector": ".response-content-markdown, .streamdown-chat-md, .prose",
       "actionButtons": "button[aria-label*=\"Copy\" i], svg[class*=\"copy\" i]",
       "generatingIndicator": "[data-testid*=\"generating-placeholder\"], .animate-pulse",
       "modes": {
         "text": {
           "enabled": true,
-          "contentSelector": ".response-content-markdown, .streamdown-chat-md, main .prose",
+          "contentSelector": ".response-content-markdown, .streamdown-chat-md, .prose",
           "mediaKind": "text",
           "inputAttachments": {
             "fileInput": "input[type=\"file\"]",

@@ -1,10 +1,10 @@
 {
-  "version": "1.1.1",
+  "version": "1.2.1",
   "id": "chatgpt",
   "title": "OpenAI ChatGPT",
   "domainMatch": "chatgpt.com",
-  "url": "https://chatgpt.com",
-  "newChatUrl": "https://chatgpt.com",
+  "url": "https://chatgpt.com/",
+  "newChatUrl": "https://chatgpt.com/",
   "resetUrlPatterns": [
     {
       "pattern": "/projects",
@@ -56,18 +56,24 @@
     "inactiveWhen": {
       "role": "button",
       "name": "Temporary chat"
+    },
+    "continuation": {
+      "pathPrefix": "/c/",
+      "queryParam": "temporary-chat",
+      "queryValue": "true",
+      "provisionalPathPrefix": "/c/local-chatgpt%3A"
     }
   },
   "createdAt": "2026-01-01T00:00:00.000Z",
   "selectors": {
-    "inputPrompt": "#prompt-textarea, div.ProseMirror[contenteditable=\"true\"], textarea, div[contenteditable=\"true\"]",
-    "submitButton": "button[data-testid=\"send-button\"], button[aria-label*=\"Send prompt\" i], button[aria-label*=\"Send\" i], button.composer-submit-button-color, button[data-testid=\"composer-speech-button\"] + button",
+    "inputPrompt": "[data-composer-markdown][contenteditable=\"true\"], #prompt-textarea, div.ProseMirror[contenteditable=\"true\"], textarea[aria-label=\"Ask ChatGPT\"]",
+    "submitButton": "button[data-testid=\"send-button\"], button[type=\"submit\"][aria-label=\"Send\"], button[aria-label=\"Send prompt\"]",
     "stopButton": "button[data-testid=\"stop-button\"], button[aria-label*=\"Stop\" i]",
-    "modelDropdownTrigger": "[data-testid=\"model-selector-button\"], button[aria-haspopup=\"menu\"]"
+    "modelDropdownTrigger": "button[aria-label=\"Select ChatGPT model\"], [data-testid=\"model-selector-button\"]"
   },
   "response": {
-    "container": "[data-message-author-role=\"assistant\"], div[data-testid^=\"conversation-turn-\"]:not([data-message-author-role=\"user\"]), div.agent-turn",
-    "textSelector": ".response-content-markdown, .markdown, .prose",
+    "container": "[data-content-search-unit-key]:has(> [data-conversation-role=\"assistant\"]), [data-message-author-role=\"assistant\"], [data-testid^=\"conversation-turn-\"]:has([data-message-author-role=\"assistant\"]), div.agent-turn",
+    "textSelector": "[data-markdown-text-style=\"assistant-message\"], .response-content-markdown, .markdown, .prose",
     "actionButtons": "button[data-testid*=\"copy\" i], button[aria-label*=\"Copy\" i], button[aria-label*=\"Good response\" i], button[aria-label*=\"Bad response\" i]",
     "generatingIndicator": "[class*=\"imagegen-loading\"], [class*=\"placeholder-shimmer\"], .animate-pulse",
     "excludeSelectors": [
@@ -79,15 +85,38 @@
     "modes": {
       "text": {
         "enabled": true,
-        "contentSelector": ".response-content-markdown, .markdown, .prose",
+        "contentSelector": "[data-markdown-text-style=\"assistant-message\"], .response-content-markdown, .markdown, .prose",
         "mediaKind": "text",
-        "inputAttachments": { "fileInput": "input[type=\"file\"]", "acceptedKinds": ["image", "document"], "multiple": true }
+        "inputAttachments": {
+          "fileInput": [
+            "input[type=\"file\"][aria-label=\"Attach files\"]",
+            "input[type=\"file\"]:not([accept])"
+          ],
+          "acceptedKinds": [
+            "image",
+            "document"
+          ],
+          "multiple": true,
+          "ready": "[data-composer-attachments] [role=\"button\"]:has(button[aria-label^=\"Remove \"]):not(:has([role=\"progressbar\"]))",
+          "cleanup": "[data-composer-attachments] button[aria-label^=\"Remove \"]"
+        }
       },
       "image": {
         "enabled": true,
         "contentSelector": "img[src*=\"backend-api/estuary/content\"], img[src*=\"estuary/content\"], img[alt*=\"Generated image\" i], div[class*=\"imagegen\"] img, div[id^=\"image-\"] img, img[src*=\"dall-e\"], img[src*=\"oaiusercontent\"], img.dall-e-image",
         "mediaKind": "image",
-        "inputAttachments": { "fileInput": "input[type=\"file\"]", "acceptedKinds": ["image"], "multiple": true }
+        "inputAttachments": {
+          "fileInput": [
+            "input[type=\"file\"][aria-label=\"Attach files\"]",
+            "input[type=\"file\"]:not([accept])"
+          ],
+          "acceptedKinds": [
+            "image"
+          ],
+          "multiple": true,
+          "ready": "[data-composer-attachments] [role=\"button\"]:has(button[aria-label^=\"Remove \"]):not(:has([role=\"progressbar\"]))",
+          "cleanup": "[data-composer-attachments] button[aria-label^=\"Remove \"]"
+        }
       },
       "video": {
         "enabled": true,

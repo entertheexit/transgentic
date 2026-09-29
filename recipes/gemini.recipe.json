@@ -1,5 +1,5 @@
 {
-  "version": "1.1.1",
+  "version": "1.1.2",
   "id": "gemini",
   "title": "Google Gemini",
   "domainMatch": "gemini.google.com",
@@ -70,21 +70,92 @@
         "enabled": true,
         "contentSelector": ".response-content-markdown, .markdown, .prose",
         "mediaKind": "text",
-        "inputAttachments": { "fileInput": "input[type=\"file\"]", "acceptedKinds": ["image", "document"], "multiple": true }
+        "inputAttachments": {
+          "fileInput": [
+            "uploader > input[type=\"file\"]",
+            "input[type=\"file\"]"
+          ],
+          "acceptedKinds": [
+            "image",
+            "document"
+          ],
+          "multiple": true,
+          "revealSteps": [
+            {
+              "action": "click",
+              "target": {
+                "role": "button",
+                "name": [
+                  "Upload & tools",
+                  "Add files"
+                ]
+              }
+            }
+          ],
+          "ready": "uploader-file-preview:has(button[aria-label=\"close attachment\"]):not(:has([role=\"progressbar\"]))",
+          "cleanup": "uploader-file-preview button[aria-label=\"close attachment\"]"
+        }
       },
       "image": {
         "enabled": true,
         "contentSelector": "single-image img.loaded, single-image img[src], generated-image img.loaded, generated-image img[src], .generated-images img",
         "downloadSelector": "[data-test-id=\"download-generated-image-button\"]",
         "mediaKind": "image",
-        "inputAttachments": { "fileInput": "input[type=\"file\"]", "acceptedKinds": ["image"], "multiple": true }
+        "inputAttachments": {
+          "fileInput": [
+            "uploader > input[type=\"file\"]",
+            "input[type=\"file\"]"
+          ],
+          "acceptedKinds": [
+            "image"
+          ],
+          "multiple": true,
+          "revealSteps": [
+            {
+              "action": "click",
+              "target": {
+                "role": "button",
+                "name": [
+                  "Upload & tools",
+                  "Add files"
+                ]
+              }
+            }
+          ],
+          "ready": "uploader-file-preview:has(button[aria-label=\"close attachment\"]):not(:has([role=\"progressbar\"]))",
+          "cleanup": "uploader-file-preview button[aria-label=\"close attachment\"]"
+        }
       },
       "video": {
         "enabled": true,
         "contentSelector": "generated-video video, video-player video, video",
         "downloadSelector": "button[aria-label*=\"Download video\" i]",
         "mediaKind": "video",
-        "inputAttachments": { "fileInput": "input[type=\"file\"]", "acceptedKinds": ["image", "video"], "multiple": true }
+        "inputAttachments": {
+          "fileInput": [
+            "uploader > input[type=\"file\"]",
+            "input[type=\"file\"]"
+          ],
+          "acceptedKinds": [
+            "image",
+            "video"
+          ],
+          "multiple": true,
+          "revealSteps": [
+            {
+              "action": "click",
+              "target": {
+                "role": "button",
+                "name": [
+                  "Upload & tools",
+                  "Add files"
+                ]
+              }
+            }
+          ],
+          "ready": "uploader-file-preview:has(button[aria-label=\"close attachment\"]):not(:has([role=\"progressbar\"]))",
+          "cleanup": "uploader-file-preview button[aria-label=\"close attachment\"]"
+        }
       },
       "music": {
         "enabled": true,

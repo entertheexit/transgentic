@@ -371,7 +371,15 @@ export class SessionManager {
     }
   }
 
+  public isManagedConversation(webContents: WebContents): boolean {
+    return [...this.temporaryConversations.values(), ...this.normalConversations.values()]
+      .some(entry => !entry.window.isDestroyed() && entry.window.webContents === webContents);
+  }
+
   public registerWebContents(id: ProviderId, webContents: WebContents): void {
+    // Managed conversations own their adapter and must never become the shared
+    // drawer/auth view: cookie refresh can reload that view to the provider root.
+    if (this.isManagedConversation(webContents)) return;
     const adapter = this.adapters.get(id);
     if (adapter) {
       adapter.setWebContents(webContents);

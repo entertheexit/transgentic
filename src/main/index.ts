@@ -511,7 +511,7 @@ function getStealthPreloadPath(): string | undefined {
 
     // Listen for URL changes, in-page navigation, and page load to auto-update auth state
     const handleNavigation = (url: string) => {
-      if (!url) return;
+      if (!url || globalSessionManager.isManagedConversation(contents)) return;
       const matched = globalSessionManager.getProviderFromUrl(url);
       if (matched) {
         globalSessionManager.registerWebContents(matched, contents);
@@ -525,7 +525,7 @@ function getStealthPreloadPath(): string | undefined {
       const u = contents.getURL();
       handleNavigation(u);
       const matchedP = globalSessionManager.getProviderFromUrl(u);
-      if (matchedP) {
+      if (matchedP && !globalSessionManager.isManagedConversation(contents)) {
         globalHealingManager.handleWebContentsLoaded(matchedP, contents);
       }
     });

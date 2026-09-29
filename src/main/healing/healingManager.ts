@@ -218,33 +218,19 @@ export class HealingManager {
     const attachmentConfigs = recipe
       ? Object.fromEntries(Object.entries(recipe.response.modes).flatMap(([mode, config]) => config?.inputAttachments ? [[mode, config.inputAttachments]] : []))
       : {};
-    const debuggerApi = (contents as any)?.debugger;
-    const attachedHere = Boolean(debuggerApi && !debuggerApi.isAttached());
-    try {
-      if (attachedHere) debuggerApi.attach('1.3');
-      if (debuggerApi?.sendCommand) {
-        await debuggerApi.sendCommand('Page.enable').catch(() => {});
-        await debuggerApi.sendCommand('Page.setInterceptFileChooserDialog', { enabled: true }).catch(() => {});
-      }
-      const report = await DomWatchdog.audit(
-        providerId,
-        contents as any,
-        { checkModelSelector: this.config.checkModelSelector },
-        this.getCustomSelectors(providerId),
-        attachmentConfigs
-      );
-
-      this.reports.set(providerId, report);
-      this.savePersistedData();
-      this.notifyListeners();
-      return report;
-    } finally {
-      if ((contents as any)?.executeJavaScript) {
-        await (contents as any).executeJavaScript(`(function(){try{document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',code:'Escape',bubbles:true}));document.dispatchEvent(new KeyboardEvent('keyup',{key:'Escape',code:'Escape',bubbles:true}))}catch{}})()`, true).catch(() => {});
-      }
-      if (debuggerApi?.sendCommand) await debuggerApi.sendCommand('Page.setInterceptFileChooserDialog', { enabled: false }).catch(() => {});
-      if (attachedHere && debuggerApi?.isAttached()) debuggerApi.detach();
-    }
+    // Audits also run on SPA navigation while a response is streaming. They
+    // must not open upload menus or send Escape (Claude treats it as Stop).
+    const report = await DomWatchdog.audit(
+      providerId,
+      contents as any,
+      { checkModelSelector: this.config.checkModelSelector },
+      this.getCustomSelectors(providerId),
+      attachmentConfigs
+    );
+    this.reports.set(providerId, report);
+    this.savePersistedData();
+    this.notifyListeners();
+    return report;
   }
 
   /**

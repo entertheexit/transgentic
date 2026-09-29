@@ -99,6 +99,8 @@ export interface RecipeTemporaryChat {
   activeWhen?: RecipeElementLocator;
   /** Positive proof that a newly opened conversation is in normal mode. */
   inactiveWhen?: RecipeElementLocator;
+  /** Native URL evidence after activation was verified in this same browser view. */
+  continuation?: { pathPrefix: string; queryParam: string; queryValue: string; provisionalPathPrefix?: string };
 }
 
 export interface RecipeAttachmentInput {
@@ -359,7 +361,16 @@ export function validateCustomRecipe(raw: any): { valid: boolean; errors: string
     if (!activeWhen) errors.push('temporaryChat.activeWhen requires selectors or role.');
     if (!inactiveWhen) errors.push('temporaryChat.inactiveWhen requires selectors or role.');
     if (!activationSteps.length || !activeWhen || !inactiveWhen) return undefined;
-    return { enabled: true, activationSteps, activeWhen, inactiveWhen };
+    const continuation = value.continuation;
+    if (continuation && (typeof continuation.pathPrefix !== 'string' || !continuation.pathPrefix.startsWith('/') || continuation.pathPrefix === '/' || typeof continuation.queryParam !== 'string' || !continuation.queryParam.trim() || typeof continuation.queryValue !== 'string' || !continuation.queryValue.trim())) {
+      errors.push('temporaryChat.continuation requires a non-root pathPrefix, queryParam and queryValue.');
+      return undefined;
+    }
+    if (continuation?.provisionalPathPrefix !== undefined && (typeof continuation.provisionalPathPrefix !== 'string' || !continuation.provisionalPathPrefix.startsWith(continuation.pathPrefix) || continuation.provisionalPathPrefix.length <= continuation.pathPrefix.length)) {
+      errors.push('temporaryChat.continuation.provisionalPathPrefix must extend pathPrefix.');
+      return undefined;
+    }
+    return { enabled: true, activationSteps, activeWhen, inactiveWhen, ...(continuation ? { continuation: { pathPrefix: continuation.pathPrefix, queryParam: continuation.queryParam, queryValue: continuation.queryValue, ...(continuation.provisionalPathPrefix ? { provisionalPathPrefix: continuation.provisionalPathPrefix } : {}) } } : {}) };
   };
 
   if (!raw || typeof raw !== 'object') {

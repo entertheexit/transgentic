@@ -1,11 +1,11 @@
 {
-  "version": "1.0",
+  "version": "1.1.0",
   "id": "grok",
   "modeSchemaVersion": 2,
   "title": "xAI Grok",
   "domainMatch": "grok.com",
-  "url": "https://grok.com",
-  "newChatUrl": "https://grok.com",
+  "url": "https://grok.com/",
+  "newChatUrl": "https://grok.com/",
   "authStrategy": "cookie_sync",
   "auth": {
     "authCookies": [
@@ -23,14 +23,16 @@
       "twitter.com"
     ],
     "minCookieLength": 25,
-    "loggedInSelector": "button[aria-haspopup=\"menu\"], button[aria-label*=\"user\" i], button[aria-label*=\"profile\" i], button[aria-label*=\"account\" i], [data-testid=\"UserAvatar\"], [data-testid=\"user-avatar\"], [data-testid=\"SideNav_AccountSwitcher_Button\"], img[alt*=\"avatar\" i]",
-    "loggedOutSelector": "a[href=\"/login\"], a[href=\"/signin\"], a[href=\"/signup\"], button[data-testid=\"login-button\"], button[data-testid=\"signin-button\"], button[data-testid=\"signup-button\"]",
+    "loggedInSelector": "button[aria-label*=\"user\" i], button[aria-label*=\"profile\" i], button[aria-label*=\"account\" i], [data-testid=\"UserAvatar\"], [data-testid=\"user-avatar\"], [data-testid=\"SideNav_AccountSwitcher_Button\"], img[alt*=\"avatar\" i]",
+    "loggedOutSelector": "a[href=\"/login\"], a[href=\"/signin\"], a[href=\"/signup\"], button[data-testid=\"login-button\"], button[data-testid=\"signin-button\"], button[data-testid=\"signup-button\"], a[href^=\"/sign-in\"], a[href^=\"/sign-up\"]",
     "loginUrls": [
       "/login",
       "/signin",
       "/signup",
       "/auth/",
-      "/i/flow/login"
+      "/i/flow/login",
+      "/sign-in",
+      "/sign-up"
     ]
   },
   "rateLimit": {
@@ -44,34 +46,54 @@
   },
   "createdAt": "2026-01-01T00:00:00.000Z",
   "selectors": {
-    "inputPrompt": "textarea[placeholder*=\"Ask\" i], textarea[placeholder*=\"Grok\" i], textarea[placeholder*=\"anything\" i], textarea[data-id=\"root\"], form textarea, textarea, div[contenteditable=\"true\"], div[role=\"textbox\"]",
-    "submitButton": "button[aria-label*=\"Submit\" i], button[aria-label*=\"Send\" i], button[aria-label*=\"Ask\" i], button[aria-label*=\"Grok\" i], button[data-testid*=\"send\" i], button[data-testid*=\"submit\" i], button[type=\"submit\"], form button[type=\"submit\"], form button:not([disabled])",
+    "inputPrompt": "textarea[aria-label=\"Ask Grok anything\"], textarea[placeholder*=\"Ask\" i], textarea[placeholder*=\"Grok\" i], textarea[data-id=\"root\"], form textarea, div[contenteditable=\"true\"][role=\"textbox\"]",
+    "submitButton": "button[data-testid=\"chat-submit\"], button[type=\"submit\"][aria-label=\"Submit\"], button[aria-label=\"Send\"], button[data-testid=\"send-button\"]",
     "stopButton": "button[aria-label*=\"Stop\" i]",
-    "modelDropdownTrigger": "button[aria-label*=\"Fast\" i], button[aria-label*=\"Grok\" i]"
+    "modelDropdownTrigger": "#model-select-trigger, button[aria-label=\"Model select\"]"
   },
   "response": {
-    "container": "#last-reply-container [id^=\"response-\"], [data-testid=\"assistant-message\"], .response-turn",
-    "textSelector": ".response-content-markdown, .streamdown-chat-md, main .prose",
+    "container": "#last-reply-container [id^=\"response-\"], [id^=\"response-\"], [data-testid=\"assistant-message\"], div.items-start .message-bubble, .response-turn",
+    "textSelector": ".response-content-markdown, .streamdown-chat-md, .prose",
     "actionButtons": "button[aria-label*=\"Copy\" i], svg[class*=\"copy\" i]",
     "generatingIndicator": "[data-testid*=\"generating-placeholder\"], .animate-pulse",
     "modes": {
       "text": {
         "enabled": true,
-        "contentSelector": ".response-content-markdown, .streamdown-chat-md, main .prose",
+        "contentSelector": ".response-content-markdown, .streamdown-chat-md, .prose",
         "mediaKind": "text",
-        "inputAttachments": { "fileInput": "input[type=\"file\"]", "acceptedKinds": ["image", "document"], "multiple": true }
+        "inputAttachments": {
+          "fileInput": "input[type=\"file\"]",
+          "acceptedKinds": [
+            "image",
+            "document"
+          ],
+          "multiple": true
+        }
       },
       "image": {
         "enabled": true,
         "contentSelector": "img[alt*=\"Generated image\" i], img[src*=\"grok\"], img.media-attachment",
         "mediaKind": "image",
-        "inputAttachments": { "fileInput": "input[type=\"file\"]", "acceptedKinds": ["image"], "multiple": true }
+        "inputAttachments": {
+          "fileInput": "input[type=\"file\"]",
+          "acceptedKinds": [
+            "image"
+          ],
+          "multiple": true
+        }
       },
       "video": {
         "enabled": true,
         "contentSelector": "video source, video[src], video",
         "mediaKind": "video",
-        "inputAttachments": { "fileInput": "input[type=\"file\"]", "acceptedKinds": ["image", "video"], "multiple": true }
+        "inputAttachments": {
+          "fileInput": "input[type=\"file\"]",
+          "acceptedKinds": [
+            "image",
+            "video"
+          ],
+          "multiple": true
+        }
       }
     }
   }

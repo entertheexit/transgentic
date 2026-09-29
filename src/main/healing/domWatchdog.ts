@@ -266,26 +266,28 @@ export class DomWatchdog {
               }
             } else {
               const revealSteps = upload.revealSteps?.length ? upload.revealSteps : upload.trigger ? [{ action: 'click', target: { selectors: upload.trigger } }] : [];
+              // Inspect only the first reveal control. Later steps and the native
+              // input may be mounted lazily; executing them during navigation can
+              // interrupt generation or alter a user's unfinished upload.
+              const first = revealSteps.length ? findLocator(revealSteps[0].target) : null;
+              const canReveal = !!first?.element;
               for (let index = 0; index < revealSteps.length; index++) {
                 const key = 'attachment.' + mode + '.revealSteps.' + index + '.selectors';
-                const found = findLocator(revealSteps[index].target);
-                if (!found.element) {
-                  attachmentLandmarks[key] = { found: false, exists: false, details: found.ambiguous ? 'Ambiguous locator' : 'Locator not found' };
+                if (index === 0 && !canReveal) {
+                  attachmentLandmarks[key] = { found: false, exists: false, details: first?.ambiguous ? 'Ambiguous locator' : 'Locator not found' };
                   missing.push(key);
-                  break;
+                } else {
+                  attachmentLandmarks[key] = { found: true, exists: index === 0, details: index === 0 ? 'Reveal control available (not activated by audit)' : 'Standby (requires earlier reveal steps)' };
                 }
-                attachmentLandmarks[key] = { found: true, exists: true, selector: found.selector, activeSelector: found.selector, tagName: found.element.tagName.toLowerCase() };
-                found.element.click();
-                await new Promise(resolve => setTimeout(resolve, 120));
               }
-              inputResult = findUnique(upload.fileInput);
-              if (inputResult.element) {
-                attachmentLandmarks[inputKey] = { found: true, exists: true, selector: inputResult.selector, activeSelector: inputResult.selector, tagName: inputResult.element.tagName.toLowerCase() };
+              if (canReveal && !inputResult.ambiguous && !inputResult.invalid) {
+                attachmentLandmarks[inputKey] = { found: true, exists: false, details: 'Standby (native input checked during attachment upload)' };
               } else {
-                attachmentLandmarks[inputKey] = { found: false, exists: false, details: inputResult.ambiguous ? 'Ambiguous native inputs' : 'Native input not found after reveal flow' };
+                attachmentLandmarks[inputKey] = { found: false, exists: false, details: inputResult.ambiguous ? 'Ambiguous native inputs' : inputResult.invalid ? 'Invalid selector' : 'Native input not found' };
                 missing.push(inputKey);
               }
             }
+
             for (const optionalKey of ['ready', 'cleanup']) {
               if (!upload[optionalKey]) continue;
               const key = 'attachment.' + mode + '.' + optionalKey;

@@ -123,4 +123,61 @@ describe('Temporary Chat contracts', () => {
     await expect(adapter.executePrompt('sentinel', 'general')).rejects.toThrow('[TEMPORARY_CHAT_ENDED]');
     expect(input).not.toHaveBeenCalled();
   });
+
+  it('accepts native URL continuation only after observing the temporary UI in the same view', async () => {
+    const adapter = new CustomRecipeAdapter(BUILTIN_RECIPES.chatgpt);
+    let url = 'https://chatgpt.com/c/test-chat?temporary-chat=true';
+    const view = { isDestroyed: () => false, getURL: () => url } as any;
+    adapter.setWebContents(view);
+    const locator = vi.spyOn(adapter as any, 'locatorExists').mockResolvedValue(false);
+    expect(await adapter.verifyTemporaryChat()).toBe(false);
+    adapter.setTemporaryChatRequired(true);
+    expect(await adapter.verifyTemporaryChat()).toBe(false);
+    locator.mockResolvedValueOnce(true);
+    expect(await adapter.verifyTemporaryChat()).toBe(true);
+    expect(await adapter.verifyTemporaryChat()).toBe(true);
+    url = 'https://chatgpt.com/c/another-chat?temporary-chat=true';
+    expect(await adapter.verifyTemporaryChat()).toBe(false);
+    url = 'https://chatgpt.com/c/test-chat?temporary-chat=false';
+    expect(await adapter.verifyTemporaryChat()).toBe(false);
+    url = 'https://chatgpt.com/c/test-chat';
+    expect(await adapter.verifyTemporaryChat()).toBe(false);
+    url = 'https://other.example/c/test-chat?temporary-chat=true';
+    expect(await adapter.verifyTemporaryChat()).toBe(false);
+    url = 'https://chatgpt.com/c/test-chat?temporary-chat=true&temporary-chat=false';
+    expect(await adapter.verifyTemporaryChat()).toBe(false);
+    url = 'https://chatgpt.com/c/test-chat?temporary-chat=true';
+    adapter.setWebContents({ ...view });
+    expect(await adapter.verifyTemporaryChat()).toBe(false);
+    adapter.setWebContents(view);
+    adapter.setTemporaryChatRequired(false);
+    expect(await adapter.verifyTemporaryChat()).toBe(false);
+  });
+
+  it('allows one optimistic-to-server URL transition without accepting another conversation', async () => {
+    const adapter = new CustomRecipeAdapter(BUILTIN_RECIPES.chatgpt);
+    let url = 'https://chatgpt.com/?temporary-chat=true';
+    adapter.setWebContents({ isDestroyed: () => false, getURL: () => url } as any);
+    const locator = vi.spyOn(adapter as any, 'locatorExists').mockResolvedValueOnce(true).mockResolvedValue(false);
+    expect(await adapter.verifyTemporaryChat()).toBe(true);
+    url = 'https://chatgpt.com/c/local-chatgpt%3Afirst?temporary-chat=true';
+    expect(await adapter.verifyTemporaryChat()).toBe(true);
+    url = 'https://chatgpt.com/c/local-chatgpt%3Asecond?temporary-chat=true';
+    expect(await adapter.verifyTemporaryChat()).toBe(false);
+    url = 'https://chatgpt.com/c/server-id?temporary-chat=true';
+    expect(await adapter.verifyTemporaryChat()).toBe(true);
+    expect(await adapter.verifyTemporaryChat()).toBe(true);
+    // A stale/visible native badge must not authorize another canonical chat.
+    locator.mockResolvedValue(true);
+    url = 'https://chatgpt.com/c/other-server-id?temporary-chat=true';
+    expect(await adapter.verifyTemporaryChat()).toBe(false);
+  });
+
+  it('preserves and validates declarative continuation evidence', () => {
+    const recipe = structuredClone(BUILTIN_RECIPES.chatgpt);
+    expect(validateCustomRecipe(recipe).recipe?.temporaryChat?.continuation).toEqual(recipe.temporaryChat?.continuation);
+    recipe.temporaryChat!.continuation!.pathPrefix = '/';
+    expect(validateCustomRecipe(recipe).valid).toBe(false);
+  });
+
 });

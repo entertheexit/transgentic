@@ -14,6 +14,22 @@ export class CustomRecipeAdapter extends BaseProviderAdapter {
   readonly providerId: ProviderId;
   readonly partition: string;
   private temporaryChatRequired = false;
+  private temporaryVerifiedView: ReturnType<BaseProviderAdapter['getWebContents']> = null;
+  private temporaryConversationPath: string | null = null;
+
+  public override setWebContents(webContents: NonNullable<ReturnType<BaseProviderAdapter['getWebContents']>>): void {
+    if (this.webContents !== webContents) {
+      this.temporaryVerifiedView = null;
+      this.temporaryConversationPath = null;
+    }
+    super.setWebContents(webContents);
+  }
+
+  public override detach(): void {
+    this.temporaryVerifiedView = null;
+    this.temporaryConversationPath = null;
+    super.detach();
+  }
 
   constructor(recipe: CustomRecipe) {
     super();
@@ -39,6 +55,10 @@ export class CustomRecipeAdapter extends BaseProviderAdapter {
   public setTemporaryChatRequired(required: boolean): void {
     this.temporaryChatRequired = required;
     this.suppressScriptDiagnostics = required;
+    if (!required) {
+      this.temporaryVerifiedView = null;
+      this.temporaryConversationPath = null;
+    }
   }
 
   protected override async executeScript<T>(code: string): Promise<T> {
@@ -50,7 +70,27 @@ export class CustomRecipeAdapter extends BaseProviderAdapter {
 
   public async verifyTemporaryChat(): Promise<boolean> {
     const locator = this.recipe.temporaryChat?.activeWhen;
-    return Boolean(locator && await this.locatorExists(locator));
+    if (!this.webContents || this.webContents.isDestroyed()) return false;
+    if (!this.temporaryConversationPath && locator && await this.locatorExists(locator)) {
+      this.temporaryVerifiedView = this.webContents;
+      return true;
+    }
+    // Some providers remove the native toggle once the first message is sent.
+    // A URL alone must never activate temporary mode or authorize a different chat.
+    const continuation = this.recipe.temporaryChat?.continuation;
+    if (!continuation || this.temporaryVerifiedView !== this.webContents) return false;
+    try {
+      const current = new URL(this.webContents.getURL());
+      if (current.origin !== new URL(this.url).origin || !current.pathname.startsWith(continuation.pathPrefix) || current.pathname.length <= continuation.pathPrefix.length || current.searchParams.getAll(continuation.queryParam).length !== 1 || current.searchParams.get(continuation.queryParam) !== continuation.queryValue) return false;
+      if (this.temporaryConversationPath && current.pathname !== this.temporaryConversationPath) {
+        // ChatGPT replaces its optimistic local ID with a server conversation ID.
+        // Permit that one transition, never a second provisional or canonical chat.
+        const provisional = continuation.provisionalPathPrefix;
+        if (!provisional || !this.temporaryConversationPath.startsWith(provisional) || current.pathname.startsWith(provisional)) return false;
+      }
+      this.temporaryConversationPath = current.pathname;
+      return true;
+    } catch { return false; }
   }
 
   public async inspectTemporaryChatAvailability(): Promise<{ availability: 'available' | 'unknown' | 'unavailable'; reason?: string }> {
@@ -69,9 +109,11 @@ export class CustomRecipeAdapter extends BaseProviderAdapter {
     }
     const release = await this.acquireDomLock();
     try {
+      this.temporaryVerifiedView = null;
+      this.temporaryConversationPath = null;
       if (!this.webContents || this.webContents.isDestroyed()) throw new Error('[TEMPORARY_CHAT_ENDED] Temporary Chat browser view is unavailable.');
       const target = this.recipe.newChatUrl || this.url;
-      await this.webContents.loadURL(target);
+      await this.loadNewChatPage(target);
       await this.waitForPageReady(6_000);
       if (!await this.checkAuthStatus()) throw new Error('[TEMPORARY_CHAT_LOGIN_REQUIRED] Sign in before starting Temporary Chat.');
       if (await this.verifyTemporaryChat()) {
@@ -432,7 +474,8 @@ export class CustomRecipeAdapter extends BaseProviderAdapter {
 
       const rawSubmit = modeConfig?.submitSelector || this.recipe.selectors.submitButton;
       const submitSelector = toCombinedCssSelector(rawSubmit);
-      await this.dispatchRealisticSubmit(submitSelector, inputSelector);
+      const submitResult = await this.dispatchRealisticSubmit(submitSelector, inputSelector);
+      if (!submitResult?.success) throw new Error(`Failed to submit prompt to "${this.name}": ${submitResult?.error || 'No actionable submit control'}`);
       submitted = true;
     } catch (error) {
       if (attached && !submitted) await this.clearAttachedFiles(upload).catch(() => {});
@@ -479,7 +522,7 @@ export class CustomRecipeAdapter extends BaseProviderAdapter {
       await debuggerApi.sendCommand('Page.enable').catch(() => {});
       await debuggerApi.sendCommand('Page.setInterceptFileChooserDialog', { enabled: true }).catch(() => {});
 
-      let input = await this.findDeclaredFileInput(debuggerApi, upload.fileInput);
+      let input = await this.findDeclaredFileInput(debuggerApi, upload.fileInput, attachments);
       if (!input.nodeId) {
         const revealSteps: RecipeAttachmentRevealStep[] = upload.revealSteps?.length
           ? upload.revealSteps
@@ -489,7 +532,7 @@ export class CustomRecipeAdapter extends BaseProviderAdapter {
         for (const step of revealSteps) {
           await this.executeAttachmentRevealStep(step, abortSignal);
         }
-        if (revealSteps.length && !chooserBackendNodeId) input = await this.waitForDeclaredFileInput(debuggerApi, upload.fileInput, abortSignal);
+        if (revealSteps.length && !chooserBackendNodeId) input = await this.waitForDeclaredFileInput(debuggerApi, upload.fileInput, abortSignal, attachments);
       }
 
       let setFileParams: Record<string, unknown> | undefined;
@@ -513,17 +556,40 @@ export class CustomRecipeAdapter extends BaseProviderAdapter {
 
     const selector = toCombinedCssSelector(upload.fileInput);
     const readySelector = toCombinedCssSelector(upload.ready);
+    // React/Angular uploaders may clear or unmount the input after accepting files.
+    // A recipe's completed attachment chips are authoritative in that case.
+    const readyScript = `(function() {
+      const readySelector = ${JSON.stringify(readySelector)};
+      if (readySelector) {
+        const visible = [...document.querySelectorAll(readySelector)].filter(element => {
+          const style = getComputedStyle(element);
+          return style.display !== 'none' && style.visibility !== 'hidden' && element.getClientRects().length > 0;
+        });
+        return visible.length === ${attachments.length};
+      }
+      return [...document.querySelectorAll(${JSON.stringify(selector)})]
+        .some(input => input.files && input.files.length === ${attachments.length});
+    })()`;
     const deadline = Date.now() + 15_000;
     while (Date.now() < deadline) {
       if (abortSignal?.aborted) { const error = new Error('Request cancelled.'); error.name = 'AbortError'; throw error; }
-      const ready = await this.executeScript<boolean>(`(function(){const input=document.querySelector(${JSON.stringify(selector)});if(!input||!input.files||input.files.length!==${attachments.length})return false;const readySel=${JSON.stringify(readySelector)};if(!readySel)return true;const nodes=[...document.querySelectorAll(readySel)];return nodes.length>=${attachments.length}&&nodes.every(el=>{const s=getComputedStyle(el);return s.display!=='none'&&s.visibility!=='hidden'})})()`).catch(() => false);
+      const ready = await this.executeScript<boolean>(readyScript).catch(() => false);
       if (ready) return;
       await new Promise(resolve => setTimeout(resolve, 150));
     }
     throw new Error(`Provider "${this.name}" did not confirm attachment readiness before submission.`);
   }
 
-  private async findDeclaredFileInput(debuggerApi: any, candidate: SelectorCandidate): Promise<{ nodeId?: number; ambiguous?: boolean }> {
+  private fileInputAccepts(accept: string | undefined, attachments: readonly StagedAttachment[]): boolean {
+    const types = (accept || '').toLowerCase().split(',').map(value => value.trim()).filter(Boolean);
+    if (!types.length) return true;
+    return attachments.every(file => types.some(type =>
+      type === '*/*' || type === file.mimeType.toLowerCase() ||
+      (type.endsWith('/*') && file.mimeType.toLowerCase().startsWith(type.slice(0, -1))) ||
+      (type.startsWith('.') && file.name.toLowerCase().endsWith(type))));
+  }
+
+  private async findDeclaredFileInput(debuggerApi: any, candidate: SelectorCandidate, attachments: readonly StagedAttachment[] = []): Promise<{ nodeId?: number; ambiguous?: boolean }> {
     const documentNode: any = await debuggerApi.sendCommand('DOM.getDocument', { depth: 0, pierce: true });
     let ambiguous = false;
     for (const selector of normalizeSelectorList(candidate)) {
@@ -541,7 +607,7 @@ export class CustomRecipeAdapter extends BaseProviderAdapter {
         const attrs = Array.isArray(node?.attributes) ? node.attributes : [];
         const attrMap = new Map<string, string>();
         for (let index = 0; index < attrs.length; index += 2) attrMap.set(String(attrs[index]).toLowerCase(), String(attrs[index + 1] ?? ''));
-        if (String(node?.nodeName || '').toLowerCase() === 'input' && attrMap.get('type')?.toLowerCase() === 'file' && !attrMap.has('disabled')) usable.push(nodeId);
+        if (String(node?.nodeName || '').toLowerCase() === 'input' && attrMap.get('type')?.toLowerCase() === 'file' && !attrMap.has('disabled') && this.fileInputAccepts(attrMap.get('accept'), attachments)) usable.push(nodeId);
       }
       if (usable.length === 1) return { nodeId: usable[0] };
       if (usable.length > 1) ambiguous = true;
@@ -549,12 +615,12 @@ export class CustomRecipeAdapter extends BaseProviderAdapter {
     return { ambiguous };
   }
 
-  private async waitForDeclaredFileInput(debuggerApi: any, candidate: SelectorCandidate, abortSignal?: AbortSignal): Promise<{ nodeId?: number; ambiguous?: boolean }> {
+  private async waitForDeclaredFileInput(debuggerApi: any, candidate: SelectorCandidate, abortSignal?: AbortSignal, attachments: readonly StagedAttachment[] = []): Promise<{ nodeId?: number; ambiguous?: boolean }> {
     const deadline = Date.now() + 5_000;
     let last: { nodeId?: number; ambiguous?: boolean } = {};
     while (Date.now() < deadline) {
       if (abortSignal?.aborted) { const error = new Error('Request cancelled.'); error.name = 'AbortError'; throw error; }
-      last = await this.findDeclaredFileInput(debuggerApi, candidate);
+      last = await this.findDeclaredFileInput(debuggerApi, candidate, attachments);
       if (last.nodeId || last.ambiguous) return last;
       await new Promise(resolve => setTimeout(resolve, 125));
     }

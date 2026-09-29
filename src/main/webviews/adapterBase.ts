@@ -514,6 +514,20 @@ export abstract class BaseProviderAdapter {
   /**
    * Navigates the Webview to the provider's new chat page.
    */
+  protected async loadNewChatPage(target: string): Promise<void> {
+    if (!this.webContents || this.webContents.isDestroyed()) throw new Error('Provider browser view is unavailable.');
+    try {
+      await this.webContents.loadURL(target);
+    } catch (error: any) {
+      // Only new, pre-submission navigation is safe to retry. Never suppress the
+      // failure or accept an old conversation that happens to remain on screen.
+      const transient = error?.code === 'ERR_FAILED' || error?.errno === -2 || /ERR_FAILED \(-2\)/.test(String(error?.message || ''));
+      if (!transient || this.webContents.isDestroyed()) throw error;
+      await new Promise(resolve => setTimeout(resolve, 300));
+      await this.webContents.loadURL(target);
+    }
+  }
+
   public async navigateToNewChat(options?: { forceReload?: boolean; assumeLocked?: boolean }): Promise<void> {
     if (!this.webContents || this.webContents.isDestroyed()) return;
     const releaseLock = options?.assumeLocked ? () => {} : await this.acquireDomLock();
@@ -531,7 +545,7 @@ export abstract class BaseProviderAdapter {
       const currentUrl = (this.webContents.getURL() || '').replace(/\/$/, '');
       const normTarget = target.replace(/\/$/, '');
       if (options?.forceReload || currentUrl !== normTarget) {
-        await this.webContents.loadURL(target);
+        await this.loadNewChatPage(target);
         await new Promise((r) => setTimeout(r, 1500));
       }
     } catch (error) {

@@ -23,6 +23,8 @@ export class DomObserver {
     return `
       (async function() {
         try {
+          const recipe = ${JSON.stringify(recipeConfig || null)};
+          const selectorString = value => Array.isArray(value) ? value.join(', ') : (value || '');
           const bodyText = document.body ? (document.body.innerText || '') : '';
 
           // 1. Rate-Limit / Quota Exhaustion Detection
@@ -183,7 +185,7 @@ export class DomObserver {
           const extractCleanText = (el) => {
             if (!el) return '';
             const markdownEl = el.querySelector(
-              '.response-content-markdown, .streamdown-chat-md, .markdown, .markdown-content, .prose, .prose-chat, [data-testid="message-text"], [data-testid="response-text"]'
+              selectorString(recipe?.response?.textSelector) || '[data-markdown-text-style="assistant-message"], .response-content-markdown, .streamdown-chat-md, .markdown, .markdown-content, .prose, .prose-chat, [data-testid="message-text"], [data-testid="response-text"]'
             );
             const target = markdownEl || el;
 
@@ -191,7 +193,7 @@ export class DomObserver {
               const clone = target.cloneNode(true);
               if (clone && clone.querySelectorAll) {
                 const toRemove = clone.querySelectorAll(
-                  'details, ' +
+                  (selectorString(recipe?.response?.excludeSelectors) ? selectorString(recipe.response.excludeSelectors) + ', ' : '') + 'details, [data-conversation-role], button, ' +
                   '[data-testid*="thought" i], ' +
                   '[data-testid*="reasoning" i], ' +
                   '.thinking-accordion, ' +
@@ -297,10 +299,12 @@ export class DomObserver {
           switch (${JSON.stringify(providerId)}) {
             case 'chatgpt': {
               const assistantMessages = Array.from(document.querySelectorAll(
+                selectorString(recipe?.response?.container) || (
+                '[data-content-search-unit-key]:has(> [data-conversation-role="assistant"]), ' +
                 '[data-message-author-role="assistant"], ' +
-                'div[data-testid^="conversation-turn-"]:not([data-message-author-role="user"]), ' +
+                '[data-testid^="conversation-turn-"]:has([data-message-author-role="assistant"]), ' +
                 'div.agent-turn'
-              ));
+              ))).filter(el => !el.matches('[data-message-author-role="user"]') && !el.querySelector('[data-message-author-role="user"], [data-conversation-role="user"]'));
               if (assistantMessages.length > 0) {
                 const lastMsg = assistantMessages[assistantMessages.length - 1];
 
@@ -394,10 +398,11 @@ export class DomObserver {
                 hasActionButtons = !isGenerating && !hasChatGptImageGenerating && (
                   hasDoneImage || hasDoneVideo || hasDoneAudio ||
                   !!lastMsg.querySelector(
+                    selectorString(recipe?.response?.actionButtons) || (
                     'button[data-testid*="copy" i], ' +
                     'button[aria-label*="Copy" i], ' +
                     'button[aria-label*="Good response" i], ' +
-                    'button[aria-label*="Bad response" i]'
+                    'button[aria-label*="Bad response" i]')
                   )
                 );
               }
@@ -603,6 +608,7 @@ export class DomObserver {
 
             case 'grok': {
               const turns = Array.from(document.querySelectorAll(
+                selectorString(recipe?.response?.container) || (
                 '#last-reply-container [id^="response-"], ' +
                 '[id^="response-"], ' +
                 '[data-testid="assistant-message"], ' +
@@ -610,7 +616,7 @@ export class DomObserver {
                 'div.items-start .prose, ' +
                 'div.items-start, ' +
                 'main div.items-start, ' +
-                '.response-turn'
+                '.response-turn')
               )).filter(el => {
                 if (el.closest('form, nav, aside, [data-sidebar="sidebar"], header, .message-input')) return false;
                 if (el.querySelector && el.querySelector('[data-testid="user-message"], [aria-label="You"]')) return false;
