@@ -24,7 +24,8 @@ describe.skipIf(!CLI_IDS.includes(selected as CliProviderId))('opt-in native CLI
     const key = `edit_${Date.now()}`;
     globalCliRuntime.setConfig({ services: { [id]: { workMode: 'agentic', allowCommands: false, allowProjectEditing: true, timeoutSeconds: 60 } }, workspaces: [{ id: key, path: workspace, name: 'Disposable test', allowMcp: false, grants: { [id]: { allowProjectEditing: true, allowCommands: false } } }] });
     try {
-      await globalCliRuntime.execute(id, 'Create a file named verification.txt in the current project with exactly marigold as its content. Use your file editing tool. Do not run shell commands.', { reqId: key, conversationKey: key, newThread: true, desktop: true, request: { workspaceId: key } });
+      const result = await globalCliRuntime.execute(id, 'Create a file named verification.txt in the current project with exactly marigold as its content. Use your file editing tool. Do not run shell commands.', { reqId: key, conversationKey: key, newThread: true, desktop: true, request: { workspaceId: key } });
+      expect(fs.existsSync(path.join(workspace, 'verification.txt')), result.text).toBe(true);
       expect(fs.readFileSync(path.join(workspace, 'verification.txt'), 'utf8').trim()).toBe('marigold');
     } finally { globalCliRuntime.dispose(); globalCliRuntime.clearSessions(); fs.rmSync(workspace, { recursive: true, force: true }); }
   }, 70000);

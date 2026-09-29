@@ -63,16 +63,24 @@ Execution currently requires **macOS with `/usr/bin/sandbox-exec`**. Windows/Lin
 
 | Adapter | Transport | Live verification in this checkout |
 | --- | --- | --- |
-| Codex | `exec --json`, explicit session resume | Native 0.142.5 on macOS arm64: answer, two-turn continuation, project editing with commands off, and an actual command with editing off. |
+| Codex | `exec --json`, explicit session resume | Native 0.157.0 on macOS arm64: answer, two-turn continuation, project editing with commands off, and an actual command with editing off. |
 | Claude Code | Print mode, stream JSON, safe mode and explicit tool permissions | Protocol fixtures tested; native installation/login unavailable in this environment. |
-| Antigravity | `agy -p`, stream JSON, explicit conversation | Native 1.2.0 authenticated answer verified with the fixed Keychain helper allowance while shell commands remain blocked. |
+| Antigravity | `agy -p`, stream JSON, explicit conversation | Native 1.2.0 reaches the provider with cached Keychain login. Current account quota is exhausted; request-scoped diagnostics now report this promptly instead of a generic timeout. |
 | Grok | ACP stdio, explicit session and permission callbacks | Protocol fixtures tested; native installation/login unavailable in this environment. |
 
-Codex's inner macOS sandbox cannot initialize inside the mandatory Transgentic sandbox. The adapter therefore uses `--sandbox danger-full-access` **inside the already confined child process** and disables shell tools when commands are off. Transgentic's outer sandbox remains the actual permission authority and cannot be disabled through request arguments. Inherited native plugins/rules/configuration are blocked. Do not launch the adapter arguments outside the runtime manager.
+Codex's inner macOS sandbox cannot initialize inside the mandatory Transgentic sandbox. The adapter therefore uses `--sandbox danger-full-access` **inside the already confined child process** and disables shell tools when commands are off. Transgentic's outer sandbox remains the actual permission authority and cannot be disabled through request arguments. Inherited native plugins/rules/configuration are blocked. Current Codex distributions also need their fixed `codex-code-mode-host` companion and `thread-writer-locks` runtime directory. The companion inherits the same filesystem and command restrictions, and its executable remains protected from writes. Do not launch the adapter arguments outside the runtime manager.
 
 Live OS tests cover all four permission combinations, indirect shell writes, unrelated-file reads/writes, and executable protection. Unit/integration tests cover UTF-8 framing, malformed/oversized events, final versus partial answers, nonzero exits after completion, cancellation, Grok callbacks, explicit CLI routing, model/workspace forwarding, media rejection, and no replay after possible mutations. The desktop settings were checked in an isolated Electron instance at its compact window size.
 
 Full four-vendor release qualification, packaged builds, Windows/Linux execution, comprehensive native model discovery, and a detailed per-action activity panel remain outstanding. The built-in entries and adapter code should not be interpreted as evidence that every installed CLI/version/authentication combination works.
+
+## Connection troubleshooting
+
+- **Missing executable:** discovery checks the desktop process PATH, `~/.local/bin`, Homebrew locations, and Grok's native `~/.grok/bin`. Select a native executable explicitly if it is elsewhere.
+- **Claude compatibility:** `--safe-mode` can be hidden from help output. Installation checks validate it directly; native Keychain access is permitted without enabling project commands.
+- **Antigravity quota:** a hard quota failure stops the request with an account-quota message. Transient startup login messages and retryable rate limits do not stop the process. Native logs stay in the request's scratch directory and are deleted afterward; their contents are not returned to callers.
+- **Grok ACP:** Transgentic advertises no host filesystem or terminal callbacks. Grok's native tools remain subject to the outer sandbox and explicit permission callbacks.
+- **Stale status:** Test connection rechecks the executable, and the CLI settings panel follows background connection status updates. Installation detection alone is not an authenticated connection.
 
 ## Development checks
 

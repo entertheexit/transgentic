@@ -1,5 +1,30 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { StringDecoder } from 'node:string_decoder';
+import fs from 'node:fs';
+
+// Return fixed messages, never native log contents: diagnostics may contain
+// credentials, request text, or project data.
+export function cliDiagnosticMessage(text: string): string | undefined {
+  if (/individual quota reached|quota (?:has been )?exhausted|insufficient_quota/i.test(text)) return 'CLI provider quota exhausted. Wait for the account quota to reset or select another model/account in the native CLI.';
+  if (/authentication required|not logged in|not signed in|invalid_grant|login required/i.test(text)) return 'CLI authentication required. Sign in using its native CLI, then recheck.';
+  if (/sandbox_init.*operation not permitted/i.test(text)) return 'CLI permission sandbox could not start. Restart Transgentic outside a nested process sandbox.';
+  if (/failed to initialize thread persistence.*operation not permitted/i.test(text)) return 'CLI could not initialize native thread storage under the permission sandbox. Check CLI compatibility.';
+  return undefined;
+}
+
+function diagnosticTail(file: string): string {
+  let fd: number | undefined;
+  try {
+    fd = fs.openSync(file, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW | fs.constants.O_NONBLOCK);
+    const stat = fs.fstatSync(fd);
+    if (!stat.isFile()) return '';
+    const size = Math.min(stat.size, 8192);
+    const buffer = Buffer.alloc(size);
+    const count = fs.readSync(fd, buffer, 0, size, stat.size - size);
+    return buffer.subarray(0, count).toString('utf8');
+  } catch { return ''; }
+  finally { if (fd !== undefined) fs.closeSync(fd); }
+}
 
 export class JsonLineDecoder {
   private decoder = new StringDecoder('utf8');
@@ -31,14 +56,27 @@ export class CliProcess {
   private failure?: Error;
   private timer: ReturnType<typeof setTimeout>;
   private killTimer?: ReturnType<typeof setTimeout>;
+  private diagnosticTimer?: ReturnType<typeof setInterval>;
   private stderr = '';
   private handlers = new Set<(event: any) => void>();
   private failureHandlers = new Set<(error: Error) => void>();
   onRequest?: (method: string, params: any) => Promise<any>;
-  constructor(command: string, args: string[], options: { cwd: string; env: NodeJS.ProcessEnv; timeoutMs: number; signal?: AbortSignal }) {
+  constructor(command: string, args: string[], options: { cwd: string; env: NodeJS.ProcessEnv; timeoutMs: number; signal?: AbortSignal; diagnosticFile?: string }) {
     this.child = spawn(command, args, { cwd: options.cwd, env: options.env, shell: false, windowsHide: true, detached: process.platform !== 'win32', stdio: ['pipe', 'pipe', 'pipe'] });
     const decoder = new JsonLineDecoder(event => this.receive(event));
     this.timer = setTimeout(() => this.fail(new Error('CLI request timed out.')), options.timeoutMs);
+    if (options.diagnosticFile) {
+      const diagnosticFile = options.diagnosticFile;
+      this.diagnosticTimer = setInterval(() => {
+        const quotaFailure = diagnosticTail(diagnosticFile).split('\n').find(line =>
+          /^[IWEF]\d{4} .*\brun\.go:\d+\] Run: attempt \d+ failed \(RESOURCE_EXHAUSTED \(code 429\): Individual quota reached\b/.test(line));
+        // Startup logs can include transient authentication states before the
+        // cached login finishes, and prompt text can mention quota errors. Only
+        // a native hard-quota retry diagnostic is terminal mid-run.
+        if (quotaFailure) this.fail(new Error(cliDiagnosticMessage(quotaFailure)!));
+      }, 1000);
+      this.diagnosticTimer.unref();
+    }
     const abort = () => { const err = new Error('CLI request cancelled.'); err.name = 'AbortError'; this.fail(err); };
     options.signal?.addEventListener('abort', abort, { once: true });
     if (options.signal?.aborted) abort();
@@ -48,10 +86,11 @@ export class CliProcess {
     this.child.on('error', () => this.fail(new Error('CLI executable could not be started.')));
     this.closed = new Promise(resolve => this.child.on('close', code => {
       clearTimeout(this.timer);
+      clearInterval(this.diagnosticTimer);
       options.signal?.removeEventListener('abort', abort);
       if (!this.stopped) {
         try { decoder.finish(); } catch { this.fail(new Error('CLI output ended with an invalid event.')); }
-        if (code !== 0) this.fail(new Error(/auth|login|sign.in|credential/i.test(this.stderr) ? 'CLI authentication required. Sign in using its native CLI, then recheck.' : `CLI process exited unsuccessfully (${code ?? 'signal'}).`));
+        if (code !== 0) this.fail(new Error(cliDiagnosticMessage(this.stderr) || `CLI process exited unsuccessfully (${code ?? 'signal'}). Check the native CLI installation and logs.`));
         else if (!this.completed) this.fail(new Error('CLI process ended before completion.'), false);
       }
       resolve();
@@ -88,6 +127,7 @@ export class CliProcess {
   }
   stop() {
     if (this.stopped) return; this.stopped = true; clearTimeout(this.timer);
+    clearInterval(this.diagnosticTimer);
     for (const p of this.pending.values()) p.reject(this.failure || new Error('CLI process stopped.')); this.pending.clear();
     const kill = (signal: NodeJS.Signals) => {
       try { if (this.child.pid && process.platform !== 'win32') process.kill(-this.child.pid, signal); else this.child.kill(signal); } catch {}

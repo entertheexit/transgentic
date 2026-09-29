@@ -78,7 +78,7 @@ async function executeGrok(proc: CliProcess, input: AdapterInput): Promise<CliRe
     if (!option) { denied = true; return { outcome: { outcome: 'cancelled' } }; }
     return { outcome: { outcome: 'selected', optionId: option.optionId } };
   };
-  const initialized = await proc.request('initialize', { protocolVersion: 1, clientCapabilities: { fs: { readTextFile: true } }, clientInfo: { name: 'transgentic', version: '1.0.1' } });
+  const initialized = await proc.request('initialize', { protocolVersion: 1, clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false }, clientInfo: { name: 'transgentic', version: '1.0.1' } });
   const auth = initialized.authMethods?.find((m: any) => m.id === 'cached_token');
   if (auth) await proc.request('authenticate', { methodId: auth.id, _meta: { headless: true } });
   const session = await proc.request(input.sessionId ? 'session/load' : 'session/new', { cwd: input.policy.cwd, mcpServers: [], ...(input.sessionId ? { sessionId: input.sessionId } : {}) });

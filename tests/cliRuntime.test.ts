@@ -6,7 +6,7 @@ import { CLI_IDS, builtInCliServices, defaultCliService } from '../src/shared/cl
 import { resolvePolicy, cliEnvironment, macSandboxProfile, validatedMacUserKeychainPaths } from '../src/main/cli/executionPolicy.js';
 import { JsonLineDecoder } from '../src/main/cli/processRunner.js';
 import { adapterArgs, executeAdapter } from '../src/main/cli/adapters.js';
-import { CliRuntimeManager, normalizeCliConfig, parseCliModelText, parseCodexModelList } from '../src/main/cli/cliRuntimeManager.js';
+import { CliRuntimeManager, normalizeCliConfig, parseCliModelText, parseCodexModelList, resolveExecutable, cliHelperExecutables } from '../src/main/cli/cliRuntimeManager.js';
 
 vi.mock('electron', () => ({ app: undefined }));
 
@@ -153,11 +153,58 @@ describe('CLI structured protocols', () => {
 });
 
 describe('CLI connection checks', () => {
+  it.skipIf(process.platform !== 'darwin')('accepts only the fixed Codex companion in the selected installation', () => {
+    const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'tg-cli-helper-')));
+    const executable = path.join(root, 'codex');
+    const helper = path.join(root, 'codex-code-mode-host');
+    try {
+      expect(cliHelperExecutables('cli_codex', executable)).toEqual([]);
+      fs.writeFileSync(helper, '#!/bin/sh\nexit 0\n', { mode: 0o700 });
+      expect(cliHelperExecutables('cli_codex', executable)).toEqual([helper]);
+      expect(cliHelperExecutables('cli_grok', executable)).toEqual([]);
+      fs.unlinkSync(helper); fs.symlinkSync('/bin/sh', helper);
+      expect(cliHelperExecutables('cli_codex', executable)).toEqual([]);
+      expect(cliHelperExecutables('cli_claude_code', executable)).toEqual(['/usr/bin/security']);
+    } finally { fs.rmSync(root, { recursive: true, force: true }); }
+  });
+
+  it('finds Grok in its native install directory without a shell PATH entry', () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'tg-cli-home-'));
+    fs.mkdirSync(path.join(home, '.grok/bin'), { recursive: true });
+    const binary = path.join(home, '.grok/bin/grok');
+    fs.writeFileSync(binary, '#!/bin/sh\nexit 0\n', { mode: 0o700 });
+    const homedir = vi.spyOn(os, 'homedir').mockReturnValue(home);
+    vi.stubEnv('PATH', '/nonexistent');
+    try { expect(resolveExecutable('cli_grok')).toBe(fs.realpathSync(binary)); }
+    finally { homedir.mockRestore(); vi.unstubAllEnvs(); fs.rmSync(home, { recursive: true, force: true }); }
+  });
+
+  it.each([true, false])('checks hidden Claude safe-mode support directly (supported=%s)', async supported => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'tg-cli-probe-'));
+    const binary = path.join(root, 'claude');
+    fs.writeFileSync(binary, `#!/bin/sh\nif [ "$1" = "--help" ]; then echo --output-format; exit 0; fi\nif [ "$1" = "--safe-mode" ] && [ "$2" = "--version" ]; then exit ${supported ? 0 : 1}; fi\nexit 2\n`, { mode: 0o700 });
+    const runtime = new CliRuntimeManager();
+    runtime.setConfig({ services: { cli_claude_code: { ...defaultCliService(), executablePath: binary } }, workspaces: [] });
+    try {
+      const status = await runtime.probe('cli_claude_code');
+      expect(status.state).toBe(supported && process.platform === 'darwin' ? 'available' : 'incompatible');
+    } finally { fs.rmSync(root, { recursive: true, force: true }); }
+  });
+
+  it('reports a missing executable even when called directly through a route', async () => {
+    const runtime = new CliRuntimeManager();
+    runtime.setConfig({ services: { cli_codex: { ...defaultCliService(), executablePath: '/nonexistent/transgentic-cli-test' } }, workspaces: [] });
+    await expect(runtime.execute('cli_codex', 'x', { reqId: 'missing-test', conversationKey: 'missing-test' })).rejects.toThrow('not installed');
+    expect(runtime.getState().statuses.cli_codex?.state).toBe('missing');
+  });
+
   it('tests enabled services with isolated answer-only conversations', async () => {
     const runtime = new CliRuntimeManager();
+    vi.spyOn(runtime, 'probe').mockResolvedValue({ provider: 'cli_codex', state: 'available' });
     const execute = vi.spyOn(runtime, 'execute').mockResolvedValue({ text: 'Transgentic connection ready.' });
     await runtime.testEnabledConnections(['cli_codex', 'cli_grok', 'cli_codex']);
     expect(execute).toHaveBeenCalledTimes(2);
+    expect(runtime.probe).toHaveBeenCalledTimes(2);
     for (const call of execute.mock.calls) {
       expect(call[1]).toBe('Reply with exactly: Transgentic connection ready.');
       expect(call[2]).toMatchObject({ newThread: true, desktop: true });
@@ -168,6 +215,7 @@ describe('CLI connection checks', () => {
 
   it('continues checking other enabled services if one fails', async () => {
     const runtime = new CliRuntimeManager();
+    vi.spyOn(runtime, 'probe').mockResolvedValue({ provider: 'cli_codex', state: 'available' });
     const execute = vi.spyOn(runtime, 'execute')
       .mockRejectedValueOnce(new Error('not signed in'))
       .mockResolvedValueOnce({ text: 'Transgentic connection ready.' });

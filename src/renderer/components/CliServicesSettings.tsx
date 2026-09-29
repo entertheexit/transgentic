@@ -58,6 +58,19 @@ export function CliServicesSettings({ manifest, selectedProvider: id, onToggleSe
   };
   useEffect(load, []);
   useEffect(() => {
+    let active = true;
+    let revision = 0;
+    const unsubscribe = api?.onProviderStatusUpdate?.(() => {
+      const request = ++revision;
+      void loadCliState(api).then(fresh => {
+        if (!active || request !== revision) return;
+        memoryCachedCliState = fresh;
+        setState(fresh);
+      }).catch(() => {});
+    });
+    return () => { active = false; unsubscribe?.(); };
+  }, [api]);
+  useEffect(() => {
     setNotice('');
     setCopiedLogin(false);
     setModelDiscovery(memoryCachedCliModels[id]);

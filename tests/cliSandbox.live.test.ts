@@ -36,4 +36,24 @@ describe.skipIf(!enabled)('real macOS CLI permission boundary', () => {
     expect(run('auth')).toBe(0);
     expect(run('exec')).not.toBe(0);
   });
+  it('allows native thread locks and conversation annotations while protecting settings and plugins', () => {
+    const storage = path.join(root, 'native-state');
+    for (const directory of ['thread-writer-locks', 'annotations', 'plugins']) fs.mkdirSync(path.join(storage, directory), { recursive: true });
+    const profile = macSandboxProfile(executable, { cwd: workspace, allowProjectEditing: false, allowCommands: false }, scratch, [storage]);
+    const write = (target: string) => spawnSync('/usr/bin/sandbox-exec', ['-p', profile, executable, 'write', path.join(storage, target)], { cwd: workspace }).status;
+    expect(write('thread-writer-locks/owned.lock')).toBe(0);
+    expect(write('annotations/owned.pbtxt.tmp')).toBe(0);
+    expect(write('settings.json')).not.toBe(0);
+    expect(write('plugins/unsafe.js')).not.toBe(0);
+  });
+  it('confines a native companion to the same permissions and protects its binary', () => {
+    const helper = path.join(root, 'native-helper');
+    fs.copyFileSync(executable, helper);
+    const profile = macSandboxProfile(executable, { cwd: workspace, allowProjectEditing: true, allowCommands: false }, scratch, [], 58420, [helper]);
+    const run = (operation: string, target: string) => spawnSync('/usr/bin/sandbox-exec', ['-p', profile, helper, operation, target], { cwd: workspace }).status;
+    expect(run('write', path.join(workspace, 'helper-edit.txt'))).toBe(0);
+    expect(run('exec', 'unused')).not.toBe(0);
+    expect(run('read', path.join(root, 'outside.txt'))).not.toBe(0);
+    expect(run('write', helper)).not.toBe(0);
+  });
 });

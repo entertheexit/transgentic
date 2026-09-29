@@ -14,8 +14,21 @@ import { throwIfCancelled } from '../mcp/clientContext.js';
 import { AccountQueueManager } from '../queue/accountQueue.js';
 
 const execFileAsync = promisify(execFile);
-const ANTIGRAVITY_MACOS_AUTH_EXECUTABLES = ['/usr/bin/security'] as const;
-function antigravityMacosAuthReadFiles(): string[] {
+const MACOS_AUTH_EXECUTABLES = ['/usr/bin/security'] as const;
+export function cliHelperExecutables(id: CliProviderId, executable: string): string[] {
+  if (process.platform !== 'darwin') return [];
+  if (id === 'cli_antigravity' || id === 'cli_claude_code') return [...MACOS_AUTH_EXECUTABLES];
+  if (id !== 'cli_codex') return [];
+  // Current Codex distributions delegate built-in tools to this companion.
+  // Only accept the fixed sibling from the selected installation, never PATH.
+  const companion = path.join(path.dirname(executable), 'codex-code-mode-host');
+  try {
+    fs.accessSync(companion, fs.constants.X_OK);
+    if (fs.statSync(companion).isFile() && fs.realpathSync(companion) === companion) return [companion];
+  } catch {}
+  return [];
+}
+function macosAuthReadFiles(): string[] {
   if (process.platform !== 'darwin') return [];
   try {
     const output = execFileSync('/usr/bin/security', ['list-keychains', '-d', 'user'], {
@@ -85,7 +98,7 @@ export function normalizeCliConfig(input?: CliConfig): CliConfig {
 }
 export function resolveExecutable(id: CliProviderId, configured?: string): string | undefined {
   const binary = CLI_DEFINITIONS[id].executable;
-  const candidates = configured ? [configured] : [...(process.env.PATH || '').split(path.delimiter), path.join(os.homedir(), '.local/bin'), '/opt/homebrew/bin', '/usr/local/bin'].filter(Boolean).map(p => path.join(p, binary));
+  const candidates = configured ? [configured] : [...(process.env.PATH || '').split(path.delimiter), path.join(os.homedir(), '.local/bin'), ...(id === 'cli_grok' ? [path.join(os.homedir(), '.grok/bin')] : []), '/opt/homebrew/bin', '/usr/local/bin'].filter(Boolean).map(p => path.join(p, binary));
   for (const candidate of candidates) {
     try {
       if (!path.isAbsolute(candidate)) continue;
@@ -130,15 +143,20 @@ export class CliRuntimeManager {
   }
   async probe(id: CliProviderId): Promise<CliStatus> {
     const executable = resolveExecutable(id, this.config.services[id]?.executablePath);
-    if (!executable) { this.setStatus(id, { state: 'missing', message: 'Select an installed native executable.', checkedAt: Date.now() }); return this.statuses[id]!; }
+    if (!executable) { this.setStatus(id, { state: 'missing', executablePath: undefined, version: undefined, message: 'Select an installed native executable.', checkedAt: Date.now() }); return this.statuses[id]!; }
     try {
       const { stdout, stderr } = await execFileAsync(executable, id === 'cli_codex' ? ['exec', '--help'] : ['--help'], { timeout: 10000, maxBuffer: 256 * 1024, env: cliEnvironment(), windowsHide: true });
       const help = stdout + stderr;
-      const compatible = id === 'cli_codex' ? /ignore-user-config/.test(help) && /ignore-rules/.test(help) && /json/.test(help) : id === 'cli_claude_code' ? /safe-mode/.test(help) && /output-format/.test(help) : id === 'cli_antigravity' ? /output-format/.test(help) && /disable-slash-commands/.test(help) : /agent/.test(help);
+      const compatible = id === 'cli_codex' ? /ignore-user-config/.test(help) && /ignore-rules/.test(help) && /json/.test(help) : id === 'cli_claude_code' ? /output-format/.test(help) : id === 'cli_antigravity' ? /output-format/.test(help) && /disable-slash-commands/.test(help) : /agent/.test(help);
+      // Claude intentionally hides some supported flags from --help. Validate
+      // safe mode with a non-generating invocation instead of rejecting its absence.
+      if (compatible && id === 'cli_claude_code') {
+        await execFileAsync(executable, ['--safe-mode', '--version'], { timeout: 10000, maxBuffer: 256 * 1024, env: cliEnvironment(), windowsHide: true });
+      }
       this.setStatus(id, { state: compatible && sandboxAvailable() ? 'available' : 'incompatible', executablePath: executable,
         version: undefined, checkedAt: Date.now(),
         message: !sandboxAvailable() ? 'Process sandbox unavailable on this platform.' : compatible ? 'Executable detected. Test Connection verifies native sign-in and protocol compatibility.' : 'This CLI version lacks required automation options. Update the native CLI.' });
-    } catch { this.setStatus(id, { state: 'incompatible', executablePath: executable, message: 'Could not inspect this executable within 10 seconds.', checkedAt: Date.now() }); }
+    } catch { this.setStatus(id, { state: 'incompatible', executablePath: executable, message: 'Could not verify the required automation options. Check the selected executable and update the native CLI.', checkedAt: Date.now() }); }
     return this.statuses[id]!;
   }
   async discoverModels(id: CliProviderId, force = false): Promise<CliModelDiscovery> {
@@ -166,15 +184,15 @@ export class CliRuntimeManager {
     fs.mkdirSync(base, { recursive: true, mode: 0o700 });
     const scratch = fs.realpathSync(fs.mkdtempSync(path.join(base, 'models-')));
     const nativeStorage = [path.join(os.homedir(), id === 'cli_codex' ? '.codex' : id === 'cli_grok' ? '.grok' : '.gemini/antigravity-cli')];
-    const trustedAuthExecutables = id === 'cli_antigravity' && process.platform === 'darwin' ? ANTIGRAVITY_MACOS_AUTH_EXECUTABLES : [];
-    const trustedAuthReadFiles = id === 'cli_antigravity' ? antigravityMacosAuthReadFiles() : [];
+    const trustedExecutables = cliHelperExecutables(id, executable);
+    const trustedAuthReadFiles = (id === 'cli_antigravity' || id === 'cli_claude_code') ? macosAuthReadFiles() : [];
     const nativeRuntimeRoots = id === 'cli_antigravity' ? [path.join(os.homedir(), '.gemini', 'config', 'projects')] : [];
     const policy = { cwd: scratch, allowProjectEditing: false, allowCommands: false };
     let proc: CliProcess | undefined;
     try {
       let models: CliModelOption[] = [];
       if (id === 'cli_codex') {
-        const launch = sandboxInvocation(executable, ['app-server', '--stdio'], policy, scratch, nativeStorage, this.gatewayPort, [], [], [], true);
+        const launch = sandboxInvocation(executable, ['app-server', '--stdio'], policy, scratch, nativeStorage, this.gatewayPort, trustedExecutables, [], [], true);
         proc = new CliProcess(launch.command, launch.args, { cwd: scratch, env: { ...cliEnvironment(), TMPDIR: scratch }, timeoutMs: 20_000 });
         await proc.request('initialize', { clientInfo: { name: 'transgentic', title: 'Transgentic', version: '1.0.1' }, capabilities: { experimentalApi: true, requestAttestation: false } });
         proc.write({ method: 'initialized' });
@@ -190,7 +208,7 @@ export class CliRuntimeManager {
         proc.markComplete();
       } else {
         const args = id === 'cli_antigravity' ? ['models'] : ['--no-auto-update', 'models'];
-        const launch = sandboxInvocation(executable, args, policy, scratch, nativeStorage, this.gatewayPort, trustedAuthExecutables, trustedAuthReadFiles, nativeRuntimeRoots, true);
+        const launch = sandboxInvocation(executable, args, policy, scratch, nativeStorage, this.gatewayPort, trustedExecutables, trustedAuthReadFiles, nativeRuntimeRoots, true);
         const result = await execFileAsync(launch.command, launch.args, { cwd: scratch, env: { ...cliEnvironment(), TMPDIR: scratch }, encoding: 'utf8', timeout: 20_000, maxBuffer: 1024 * 1024, windowsHide: true });
         models = parseCliModelText(result.stdout);
       }
@@ -207,6 +225,7 @@ export class CliRuntimeManager {
   dispose() { for (const job of this.active.values()) job.controller.abort(); }
   clearSessions(prefix?: string) { for (const key of this.sessions.keys()) if (!prefix || key.includes(prefix)) this.sessions.delete(key); }
   async testConnection(id: CliProviderId): Promise<string> {
+    await this.probe(id);
     const reqId = `cli_connection_test_${crypto.randomUUID()}`;
     const result = await this.execute(id, 'Reply with exactly: Transgentic connection ready.', {
       reqId,
@@ -231,7 +250,10 @@ export class CliRuntimeManager {
         throwIfCancelled(controller.signal);
         const config = structuredClone(this.config);
         const executable = resolveExecutable(id, config.services[id]?.executablePath);
-        if (!executable) throw new Error('CLI executable is missing. Configure it in Settings → CLI Services.');
+        if (!executable) {
+          await this.probe(id);
+          throw new Error(`${CLI_DEFINITIONS[id].name} is not installed or could not be found. Install it or select its executable in Settings → Providers → CLI.`);
+        }
         if (!this.statuses[id] || this.statuses[id]?.executablePath !== executable) await this.probe(id);
         if (this.statuses[id]?.state === 'incompatible') throw new Error(this.statuses[id]?.message);
         throwIfCancelled(controller.signal);
@@ -261,22 +283,22 @@ export class CliRuntimeManager {
             }
           }
           const input = { prompt, model, sessionId: previous?.id, policy, progress: options.progress, attachments };
-          // Antigravity reads its cached Google login through the macOS Keychain
-          // client. This fixed helper is distinct from provider-requested project
-          // commands, which remain denied by the outer sandbox.
-          const trustedAuthExecutables = id === 'cli_antigravity' && process.platform === 'darwin'
-            ? ANTIGRAVITY_MACOS_AUTH_EXECUTABLES
-            : [];
-          const trustedAuthReadFiles = id === 'cli_antigravity' ? antigravityMacosAuthReadFiles() : [];
+          // Fixed native helpers inherit the outer sandbox; granting them does
+          // not grant provider-requested shells or other project commands.
+          const trustedExecutables = cliHelperExecutables(id, executable);
+          const trustedAuthReadFiles = (id === 'cli_antigravity' || id === 'cli_claude_code') ? macosAuthReadFiles() : [];
           const nativeRuntimeRoots = id === 'cli_antigravity'
             ? [path.join(os.homedir(), '.gemini', 'config', 'projects')]
             : [];
-          const launch = sandboxInvocation(executable, adapterArgs(id, input), policy, scratch, nativeStorage, this.gatewayPort, trustedAuthExecutables, trustedAuthReadFiles, nativeRuntimeRoots);
+          const diagnosticFile = id === 'cli_antigravity' ? path.join(scratch, 'native.log') : undefined;
+          const args = adapterArgs(id, input);
+          if (diagnosticFile) args.push('--log-file', diagnosticFile);
+          const launch = sandboxInvocation(executable, args, policy, scratch, nativeStorage, this.gatewayPort, trustedExecutables, trustedAuthReadFiles, nativeRuntimeRoots);
           await options.beforeStart?.(controller.signal);
           throwIfCancelled(controller.signal);
           this.setStatus(id, { state: 'busy', message: undefined });
           mayHaveSideEffects = policy.allowProjectEditing || policy.allowCommands;
-          proc = new CliProcess(launch.command, launch.args, { cwd: policy.cwd, env: { ...cliEnvironment(), TMPDIR: scratch }, timeoutMs: (config.services[id]?.timeoutSeconds || 300) * 1000, signal: controller.signal });
+          proc = new CliProcess(launch.command, launch.args, { cwd: policy.cwd, env: { ...cliEnvironment(), TMPDIR: scratch }, timeoutMs: (config.services[id]?.timeoutSeconds || 300) * 1000, diagnosticFile, signal: controller.signal });
           const result = await executeAdapter(id, proc, input);
           if (id !== 'cli_grok') await proc.waitForExit();
           throwIfCancelled(controller.signal);
