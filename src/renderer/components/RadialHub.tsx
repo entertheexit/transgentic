@@ -200,6 +200,8 @@ export const RadialHub: React.FC<RadialHubProps> = ({
   const routeMode = normalizeRouteMode(coreStatus.activeMode);
   const route = routeMatrix?.main?.[routeMode];
   const routedProvider = (route && route.defaultService !== undefined ? route.defaultService : modeRoutes?.[routeMode]?.primary) as ProviderId | undefined;
+  const routeLabel = routedProvider ? getProviderDisplayName(routedProvider, servicesManifest, providers) : 'No service';
+  const activeRouteLabel = `${routeMode.charAt(0).toUpperCase() + routeMode.slice(1)} (${routeLabel})`;
   const routedTemporaryCapability = routedProvider ? providers[routedProvider]?.temporaryChat : undefined;
   const temporaryChatSupported = Boolean(routedTemporaryCapability?.supported && routedTemporaryCapability.availability !== 'unavailable');
   const temporaryChat = isTemporaryChatPreferred(config, coreStatus.activeMode);
@@ -512,8 +514,8 @@ export const RadialHub: React.FC<RadialHubProps> = ({
             <div className="text-[11px] text-slate-400 mt-1 flex items-center gap-2">
               {getCoreStatusBadge()}
               <span className="text-slate-600">•</span>
-              <span className="text-slate-400 text-[11px] font-mono font-medium">
-                {coreStatus.activeMode.toUpperCase()} Mode
+              <span className="min-w-0 truncate text-slate-400 text-[11px] font-mono font-medium" title={activeRouteLabel}>
+                {activeRouteLabel}
               </span>
             </div>
           </div>
