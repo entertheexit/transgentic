@@ -57,10 +57,11 @@ Scripts are defined in [package.json](../package.json).
 | `npm run build:linux` | Request Linux packaging |
 | `npm run dist` | Run the default electron-builder packaging configuration |
 | `npm run build:all` | Request macOS, Windows, and Linux targets |
+| `npm run build:all:signed` | Request all targets while signing and notarizing the macOS packages with the local `transgentic-notary` Keychain profile |
 
 Packaging depends on the host toolchain, target requirements, and signing configuration. A script's presence does not establish that its installer has been tested on every platform. Building does not publish or update an existing release.
 
-`build:all` requests all targets from one host, but it is not the release workflow: macOS signing only works on macOS, Linux packaging is best run on Linux, and Windows packaging/signing has its own toolchain. The GitHub workflow therefore uses one native runner per operating system.
+`build:all` requests all targets from one host, but it is not the release workflow: macOS signing only works on macOS, Linux packaging is best run on Linux, and Windows packaging/signing has its own toolchain. `build:all:signed` is a local convenience wrapper that supplies the macOS Keychain profile; it does not sign the Windows or Linux artifacts. The GitHub workflow therefore uses one native runner per operating system.
 
 ## Signed macOS and draft releases
 

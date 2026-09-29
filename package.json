@@ -38,7 +38,8 @@
     "build:win:x64": "npm run build && electron-builder --win --x64 --publish never",
     "build:linux": "npm run build && electron-builder --linux --publish never",
     "build:linux:x64": "npm run build && electron-builder --linux --x64 --publish never",
-    "build:all": "npm run build && electron-builder -mwl --publish never"
+    "build:all": "npm run build && electron-builder -mwl --publish never",
+    "build:all:signed": "cross-env APPLE_KEYCHAIN_PROFILE=transgentic-notary npm run build:all"
   },
   "keywords": [
     "mcp",
