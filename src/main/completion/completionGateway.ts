@@ -36,7 +36,7 @@ function textContent(content: CompletionMessage['content']): string {
   return content.map(part => typeof part?.text === 'string' ? part.text : JSON.stringify(part)).join('\n');
 }
 
-export function serializeCompletionForProvider(messages: CompletionMessage[], tools?: CompletionTool[], incremental = false): string {
+export function serializeCompletionForProvider(messages: CompletionMessage[], tools?: CompletionTool[], incremental = false, toolChoice?: CompletionRequest['tool_choice']): string {
   const transcript = messages.map(message => {
     const calls = message.tool_calls?.length ? `\nTool calls: ${JSON.stringify(message.tool_calls)}` : '';
     const toolId = message.tool_call_id ? ` [tool_call_id=${message.tool_call_id}]` : '';
@@ -48,7 +48,13 @@ export function serializeCompletionForProvider(messages: CompletionMessage[], to
       : `Answer the conversation below. Treat it as the complete conversation; do not use or claim any earlier session, project, or memory.\n\n${transcript}`;
   }
   const toolSpec = JSON.stringify(tools);
-  return `You are the reasoning provider for another agent. The calling agent owns the project and will execute tools. Never execute a tool, command, or file operation yourself.\n\nAvailable tools:\n${toolSpec}\n\n${incremental ? 'New messages for the existing browser conversation' : 'Conversation'}:\n${transcript}\n\nReturn exactly one JSON object and no markdown fence:\n{"type":"assistant","content":"text or null","tool_calls":[{"id":"unique call id","type":"function","function":{"name":"one available tool name","arguments":"valid JSON object encoded as a string"}}]}\nUse an empty tool_calls array for a normal answer. Do not invent tool names.`;
+  const requiredTool = typeof toolChoice === 'object' ? toolChoice.function.name : undefined;
+  const choiceInstruction = requiredTool
+    ? `You must call the available tool named ${JSON.stringify(requiredTool)}.`
+    : toolChoice === 'required'
+      ? 'You must call at least one available tool.'
+      : 'Call an available tool only when the conversation requires one; otherwise return a normal answer.';
+  return `You are the reasoning provider for another agent. The calling agent owns the project and will execute tools. Never execute a tool, command, or file operation yourself.\n\nAvailable tools:\n${toolSpec}\n\n${incremental ? 'New messages for the existing browser conversation' : 'Conversation'}:\n${transcript}\n\n${choiceInstruction}\nReturn exactly one valid JSON object and no markdown fence. Its shape is {"type":"assistant","content":null,"tool_calls":[{"id":"call_1","type":"function","function":{"name":"tool name","arguments":{}}}]}. Put tool arguments directly in the arguments object and satisfy the chosen tool's parameters schema; do not encode that object as a JSON string. Escape any content text as a JSON string. Use an empty tool_calls array only when a normal answer is allowed. Do not invent tool names.`;
 }
 
 function extractJsonObject(raw: string): unknown {
@@ -377,7 +383,7 @@ export class CompletionGateway {
       return this.dispatchWebView(provider, mode, request, signal, requestedModel, attachments, status || { policy: 'normal', actualMode: 'normal', verified: false }, session);
     }
     if (isCliProvider(provider)) {
-      const prompt = serializeCompletionForProvider(messagesWithoutBinaryParts(request.messages), request.tools);
+      const prompt = serializeCompletionForProvider(messagesWithoutBinaryParts(request.messages), request.tools, false, request.tool_choice);
       const id = `completion_${crypto.randomUUID()}`;
       const configuredModel = DynamicRouter.resolveTargetModel(provider, mode, undefined, 'main') || undefined;
       const result = await globalCliRuntime.execute(provider, prompt, {
@@ -444,7 +450,7 @@ export class CompletionGateway {
         const targetModel = requestedModel || DynamicRouter.resolveTargetModel(provider, mode, undefined, 'main') || undefined;
         if (targetModel) await ModelScraperEngine.selectRequestedModel(provider, targetModel, handle.webContents);
         const tools = request.tool_choice === 'none' ? undefined : request.tools;
-        const prompt = serializeCompletionForProvider(messagesWithoutBinaryParts(request.messages), tools, Boolean(binding && !forceNew));
+        const prompt = serializeCompletionForProvider(messagesWithoutBinaryParts(request.messages), tools, Boolean(binding && !forceNew), request.tool_choice);
         const release = await handle.adapter.acquireDomLock();
         let result;
         try { result = await handle.adapter.executePrompt(prompt, mode, undefined, undefined, signal, attachments); }

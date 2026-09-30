@@ -153,4 +153,31 @@ describe('WebView completion conversation ownership', () => {
     await expect(gateway.complete({ model: 'transgentic/provider/grok', messages: [{ role: 'user', content: 'sentinel' }] })).rejects.toThrow('SUBMISSION_UNCERTAIN');
     expect(executePrompt).toHaveBeenCalledOnce();
   });
+
+  it('passes required tool choice to the Webview and accepts object arguments', async () => {
+    executePrompt.mockResolvedValueOnce({ text: JSON.stringify({ type: 'assistant', content: null, tool_calls: [
+      { id: 'call_1', type: 'function', function: { name: 'lookup_fixture', arguments: { name: 'crlf_split' } } },
+    ] }) });
+    const result = await gateway.complete({
+      model: 'transgentic/provider/chatgpt', temporary_chat: true,
+      messages: [{ role: 'user', content: 'Look up the fixture' }],
+      tools: [{ type: 'function', function: { name: 'lookup_fixture', parameters: { type: 'object', properties: { name: { type: 'string' } } } } }],
+      tool_choice: 'required',
+    });
+    expect(executePrompt.mock.calls[0][0]).toContain('You must call at least one available tool.');
+    expect(result.finishReason).toBe('tool_calls');
+    expect(JSON.parse(result.message.tool_calls![0].function.arguments)).toEqual({ name: 'crlf_split' });
+    expect(result.chatExecution).toMatchObject({ actualMode: 'temporary', verified: true });
+  });
+
+  it('does not resubmit a Temporary Chat prompt when the returned tool JSON is malformed', async () => {
+    executePrompt.mockResolvedValueOnce({ text: '{"type":"assistant","tool_calls":[{"function":{"name":"lookup_fixture","arguments":{"name":"crlf_split"}' });
+    await expect(gateway.complete({
+      model: 'transgentic/provider/chatgpt', temporary_chat: true,
+      messages: [{ role: 'user', content: 'Look up the fixture' }],
+      tools: [{ type: 'function', function: { name: 'lookup_fixture' } }],
+      tool_choice: 'required',
+    })).rejects.toThrow('WEBVIEW_SUBMISSION_UNCERTAIN');
+    expect(executePrompt).toHaveBeenCalledOnce();
+  });
 });

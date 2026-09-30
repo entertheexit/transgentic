@@ -29,6 +29,17 @@ describe('OpenAI-compatible completion translation', () => {
     expect(parsed).toEqual({ content: null, tool_calls: [{ id: 'call_1', type: 'function', function: { name: 'read_file', arguments: '{"path":"src/a.ts"}' } }] });
   });
 
+  it('asks Webview providers for a required tool call with object arguments', () => {
+    const prompt = serializeCompletionForProvider([{ role: 'user', content: 'Read the fixture' }], tools, true, 'required');
+    expect(prompt).toContain('You must call at least one available tool.');
+    expect(prompt).toContain('Put tool arguments directly in the arguments object');
+    expect(prompt).not.toContain('valid JSON object encoded as a string');
+    expect(serializeCompletionForProvider([{ role: 'user', content: 'Read the fixture' }], tools, false,
+      { type: 'function', function: { name: 'read_file' } })).toContain('You must call the available tool named "read_file".');
+    const parsed = parseProviderToolEnvelope('{"type":"assistant","content":null,"tool_calls":[{"id":"call_1","type":"function","function":{"name":"read_file","arguments":{"path":"src/a.ts"}}}]}', tools);
+    expect(JSON.parse(parsed.tool_calls![0].function.arguments)).toEqual({ path: 'src/a.ts' });
+  });
+
   it('rejects unknown tools and malformed arguments instead of repairing with another model call', () => {
     expect(() => parseProviderToolEnvelope('{"type":"assistant","content":null,"tool_calls":[{"function":{"name":"run_shell","arguments":"{}"}}]}', tools)).toThrow('unknown tool');
     expect(() => parseProviderToolEnvelope('{"type":"assistant","content":null,"tool_calls":[{"function":{"name":"read_file","arguments":"[]"}}]}', tools)).toThrow('JSON object');
