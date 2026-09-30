@@ -45,7 +45,7 @@ describe('Temporary Chat contracts', () => {
     expect(validateCustomRecipe(invalid).errors).toContain('temporaryChat.activationSteps[0] requires a click action and a valid target.');
   });
 
-  it('retains temporary transcript fields while categorizing by requested policy', () => {
+  it('retains transcript fields and uses actual mode before unresolved or legacy policy', () => {
     const log = {
       id: 'temporary-log', timestamp: Date.now(), mode: 'general', targetProvider: 'chatgpt', status: 'failed',
       temporaryChat: true, maskedSecretsCount: 1, promptText: 'sentinel prompt', promptSnippet: 'sentinel',
@@ -58,6 +58,8 @@ describe('Temporary Chat contracts', () => {
     expect(log.attachments?.[0].name).toBe('secret-filename.pdf');
     expect(logCategory(log)).toBe('temporary');
     expect(logCategory({ ...log, chatExecution: { policy: 'normal', actualMode: 'normal', verified: false } })).toBe('normal');
+    expect(logCategory({ ...log, chatExecution: { policy: 'prefer-temporary', actualMode: 'normal', verified: false, fallbackReason: 'unsupported' } })).toBe('normal');
+    expect(logCategory({ ...log, chatExecution: { policy: 'require-temporary', verified: false } })).toBe('temporary');
   });
 
   it('defaults General, Writing, and Coding on and media modes off without provider preferences', () => {

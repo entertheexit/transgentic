@@ -27,10 +27,7 @@ import {
   DoubleAgentConfig,
 } from '../../shared/types.js';
 import type { AttachmentInput, DesktopAttachmentSelection } from '../../shared/attachments.js';
-
-const requestLogCategory = (log: McpRequestLog): ChatMode =>
-  log.chatExecution?.policy ? log.chatExecution.policy === 'normal' ? 'normal' : 'temporary'
-    : log.temporaryChat ? 'temporary' : 'normal';
+import { requestLogCategory } from '../../shared/logCategory.js';
 
 const countLogCategories = (items: McpRequestLog[]): Record<ChatMode, number> =>
   items.reduce((counts, log) => {

@@ -21,6 +21,12 @@ const TEXT_EXTENSIONS = new Set([
   '.kt', '.kts', '.swift', '.go', '.rs', '.c', '.h', '.cpp', '.hpp', '.cs', '.sh', '.zsh', '.fish', '.sql', '.graphql',
 ]);
 
+const BROWSER_FILE_EXTENSIONS: Record<string, string> = {
+  'image/png': '.png', 'image/jpeg': '.jpg', 'image/gif': '.gif', 'image/webp': '.webp',
+  'application/pdf': '.pdf', 'video/webm': '.webm', 'video/mp4': '.mp4', 'video/quicktime': '.mov',
+  'application/json': '.json', 'application/ld+json': '.json', 'application/xml': '.xml',
+};
+
 function safeName(value: string | undefined, fallback: string): string {
   const base = path.basename((value || fallback).replace(/[\u0000-\u001f\u007f]/g, '')).trim();
   const cleaned = base.replace(/[^\p{L}\p{N}._ -]+/gu, '_').slice(0, 160);
@@ -194,7 +200,7 @@ export class AttachmentManager {
             sourceName ||= fetched.name;
           }
         }
-        const name = safeName(sourceName, `attachment-${index + 1}`);
+        let name = safeName(sourceName, `attachment-${index + 1}`);
         if (bytes.byteLength > ATTACHMENT_LIMITS.maxFileBytes) throw new Error(`Attachment "${name}" exceeds the 50 MB per-file limit.`);
         totalBytes += bytes.byteLength;
         if (totalBytes > ATTACHMENT_LIMITS.maxTotalBytes) throw new Error('Decoded attachments exceed the 100 MB request limit.');
@@ -205,6 +211,9 @@ export class AttachmentManager {
         const kind = attachmentKindForMime(mimeType);
         if (!kind) throw new Error(`Attachment "${name}" has unsupported MIME type ${mimeType}.`);
         ensureModeAllows(kind, options.mode, name);
+        // Native file inputs derive File.type from the staged filename. Inline
+        // image URLs usually have no name; keep their verified MIME type usable.
+        if (!path.extname(name)) name += BROWSER_FILE_EXTENSIONS[mimeType] || (kind === 'document' ? '.txt' : '');
         const sha256 = crypto.createHash('sha256').update(bytes).digest('hex');
         const stagedPath = path.join(root, `${String(index + 1).padStart(2, '0')}-${sha256.slice(0, 12)}-${name}`);
         await fs.promises.writeFile(stagedPath, bytes, { mode: 0o600, flag: 'wx' });

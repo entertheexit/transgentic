@@ -370,6 +370,25 @@ describe('Custom Recipe System Unit Tests', () => {
       expect(instanceA).toBe(instanceB);
     });
 
+    it('replaces retired manifest defaults on recipe update and preserves valid choices', () => {
+      const manifest = { services: {} } as any;
+      const read = vi.spyOn(ServiceManifestManager, 'getManifest').mockReturnValue(manifest);
+      const save = vi.spyOn(ServiceManifestManager, 'saveManifest').mockImplementation(() => {});
+      try {
+        const recipe = validateCustomRecipe(sampleValidRecipe).recipe!;
+        recipeManager.syncRecipeToManifest(recipe, 'custom_test_ai_portal', 'persist:test');
+        const service = manifest.services.custom_test_ai_portal;
+        service.defaultModelId = 'retired-model';
+        service.enabled = false;
+        recipeManager.syncRecipeToManifest(recipe, 'custom_test_ai_portal', 'persist:test');
+        expect(manifest.services.custom_test_ai_portal.defaultModelId).toBe('model-turbo');
+        expect(manifest.services.custom_test_ai_portal.enabled).toBe(false);
+        manifest.services.custom_test_ai_portal.defaultModelId = 'model-code';
+        recipeManager.syncRecipeToManifest(recipe, 'custom_test_ai_portal', 'persist:test');
+        expect(manifest.services.custom_test_ai_portal.defaultModelId).toBe('model-code');
+      } finally { read.mockRestore(); save.mockRestore(); }
+    });
+
     it('should retrieve built-in recipes by id with or without prefix', () => {
       expect(recipeManager.getRecipe('chatgpt')).toBeDefined();
       expect(recipeManager.getRecipe('custom_chatgpt')).toBeDefined();

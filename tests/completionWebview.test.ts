@@ -54,6 +54,14 @@ describe('WebView completion conversation ownership', () => {
     expect(executePrompt).not.toHaveBeenCalled();
   });
 
+  it('reports normal fallback mode when execution fails before submission', async () => {
+    executePrompt.mockRejectedValueOnce(new Error('[MODEL_SELECTION_FAILED] missing model; prompt not submitted'));
+    await expect(gateway.complete({ model: 'transgentic/provider/grok', messages: [{ role: 'user', content: 'sentinel' }] }))
+      .rejects.toMatchObject({ providerUsed: 'grok', chatExecution: { policy: 'prefer-temporary', actualMode: 'normal', verified: false, fallbackReason: expect.any(String) } });
+    expect(globalSessionManager.ensureTemporaryConversation).not.toHaveBeenCalled();
+    expect(executePrompt).toHaveBeenCalledOnce();
+  });
+
   it('opens native Temporary Chat before content entry and stops on activation failure', async () => {
     const result = await gateway.complete({ model: 'transgentic/provider/chatgpt', temporary_chat: true, messages: [{ role: 'user', content: 'sentinel' }] });
     expect(result.chatExecution).toMatchObject({ actualMode: 'temporary', verified: true });
