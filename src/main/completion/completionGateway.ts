@@ -351,6 +351,7 @@ export class CompletionGateway {
     }
     let lastError: Error | undefined;
     for (const provider of eligibleCandidates) {
+      let attemptedStatus: ChatExecutionStatus | undefined;
       try {
         const adapter = globalSessionManager.getAdapter(provider);
         const capable = adapter instanceof CustomRecipeAdapter && adapter.supportsTemporaryChat();
@@ -361,6 +362,7 @@ export class CompletionGateway {
           ? unavailable ? globalSessionManager.getStatus(provider)?.temporaryChat?.reason || 'Native Temporary Chat is unavailable for this account.'
             : `${provider} does not support native Temporary Chat.` : undefined;
         const status: ChatExecutionStatus = { policy, actualMode, verified: actualMode === 'temporary', ...(fallbackReason ? { fallbackReason } : {}) };
+        attemptedStatus = status;
         if (modeChanged && retainedKey) globalSessionManager.endTemporaryConversation(`api:${retainedKey}`);
         const primary = await this.dispatch(provider, mode, request, signal, undefined, attachments, status, { retainedKey, previousBinding: request.new_thread ? undefined : previousBinding, modeChanged, caller });
         primary.chatExecution = status;
@@ -404,13 +406,18 @@ export class CompletionGateway {
         }
       }
       catch (error) {
+        if (error instanceof Error) {
+          Object.assign(error, { providerUsed: provider, chatExecution: attemptedStatus?.actualMode === 'normal'
+            ? attemptedStatus : { policy, verified: false } });
+        }
         if (signal?.aborted) throw error;
         if (policy === 'prefer-temporary' && String((error as Error)?.message || '').includes('[TEMPORARY_CHAT_UNAVAILABLE]')) {
           globalSessionManager.markTemporaryUnavailable(provider, 'Native Temporary Chat is unavailable for this account.');
           const status: ChatExecutionStatus = { policy, actualMode: 'normal', verified: false, fallbackReason: 'Native Temporary Chat is unavailable for this account.' };
           if (retainedKey && previousBinding?.mode === 'temporary') globalSessionManager.endTemporaryConversation(`api:${retainedKey}`);
           const retry = await this.dispatch(provider, mode, request, signal, undefined, attachments, status,
-            { retainedKey, previousBinding: request.new_thread ? undefined : previousBinding, modeChanged: previousBinding?.mode === 'temporary', caller });
+            { retainedKey, previousBinding: request.new_thread ? undefined : previousBinding, modeChanged: previousBinding?.mode === 'temporary', caller })
+            .catch(retryError => { if (retryError instanceof Error) Object.assign(retryError, { providerUsed: provider, chatExecution: status }); throw retryError; });
           retry.chatExecution = status; if (request.conversation_id) retry.conversationId = request.conversation_id;
           if (previousBinding?.mode === 'temporary') retry.contextReset = true;
           return retry;

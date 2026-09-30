@@ -421,7 +421,8 @@ export class RecipeManager {
       supportsModelRouting: true,
       url: entryUrl,
       partition: partitionKey,
-      defaultModelId: existing?.defaultModelId || modelsDef[0]?.id || 'default',
+      defaultModelId: modelsDef.some(model => model.id === existing?.defaultModelId)
+        ? existing!.defaultModelId : modelsDef[0]?.id || 'default',
       accentColor: existing?.accentColor || 'teal',
       iconName: existing?.iconName || 'Globe',
       theme: existing?.theme || {

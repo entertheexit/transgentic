@@ -352,6 +352,8 @@ export class TransgenticMcpServer {
         });
       } catch (error: any) {
         apiLog.status = 'failed'; apiLog.outcome = controller.signal.aborted ? 'cancelled' : 'failed';
+        apiLog.chatExecution = error?.chatExecution || apiLog.chatExecution;
+        apiLog.targetProvider = error?.providerUsed || apiLog.targetProvider;
         const blindedError = globalBlindingEngine.blind(String(error?.message || 'Completion request failed.'), requestContext, { persist: false });
         apiLog.error = blindedError.maskedText; apiLog.maskedSecretsCount += blindedError.replacementsCount;
         apiLog.durationMs = Date.now() - startTime; this.updateLog(apiLog);
@@ -1351,6 +1353,7 @@ export class TransgenticMcpServer {
         } catch (error) {
           throwIfCancelled(reqAbortController?.signal || abortSignal);
           const err = error as Error & { noFallback?: boolean; providerUsed?: string };
+          Object.assign(err, { chatExecution: { policy: chatPolicy, actualMode: 'normal', verified: false, ...(fallbackReason ? { fallbackReason } : {}) } });
           err.providerUsed = providerId; lastCandidateError = err;
           if (forcedProvider || err.noFallback || cliRequest.workspaceId) throw err;
           continue;
@@ -1435,6 +1438,7 @@ export class TransgenticMcpServer {
           throwIfCancelled(reqAbortController?.signal || abortSignal);
           err.providerUsed = providerId;
           console.error(`[Transgentic] Local LLM execution failed:`, err?.message || err);
+          err.chatExecution = { policy: chatPolicy, actualMode: 'normal', verified: false, ...(fallbackReason ? { fallbackReason } : {}) };
           lastCandidateError = err;
           continue;
         }
@@ -1480,6 +1484,7 @@ export class TransgenticMcpServer {
         } catch (error) {
           throwIfCancelled(reqAbortController?.signal || abortSignal);
           const err = error as Error & { providerUsed?: ProviderId };
+          Object.assign(err, { chatExecution: { policy: chatPolicy, actualMode: 'normal', verified: false, ...(fallbackReason ? { fallbackReason } : {}) } });
           err.providerUsed = providerId;
           lastCandidateError = err;
           if (forcedProvider) throw err;
@@ -1809,6 +1814,8 @@ export class TransgenticMcpServer {
         rejectInFlight(candidateErr);
         throwIfCancelled(reqAbortController?.signal || abortSignal);
         candidateErr.providerUsed = providerId;
+        candidateErr.chatExecution ??= { policy: chatPolicy, verified: false,
+          ...(!candidateTemporaryChat ? { actualMode: 'normal', ...(fallbackReason ? { fallbackReason } : {}) } : {}) };
         if (candidateErr.message?.includes('[MODEL_SELECTION_FAILED]')) {
           globalSessionManager.updateProviderState(providerId, 'ready');
           throw candidateErr;
@@ -2476,6 +2483,8 @@ export class TransgenticMcpServer {
       }
       if (log) {
         log.status = 'failed';
+        log.chatExecution = err?.chatExecution || log.chatExecution;
+        log.targetProvider = err?.providerUsed || log.targetProvider;
         log.outcome = cancelled ? 'cancelled' : 'failed';
         let errMessage = err?.message || 'Execution failed';
         if (errMessage.toLowerCase().includes('terminated by user') && !abortSignal?.aborted && !reqAbortController?.signal.aborted) {

@@ -3,11 +3,8 @@ import path from 'path';
 import { app } from 'electron';
 import { McpRequestLog, MODE_SCHEMA_VERSION, type ChatMode } from '../../shared/types.js';
 
-export function logCategory(log: McpRequestLog): ChatMode {
-  return log.chatExecution?.policy
-    ? (log.chatExecution.policy === 'normal' ? 'normal' : 'temporary')
-    : log.temporaryChat ? 'temporary' : 'normal';
-}
+import { requestLogCategory as logCategory } from '../../shared/logCategory.js';
+export { logCategory };
 
 export function migratePersistedLog(log: McpRequestLog): McpRequestLog {
   const legacyMode = log.modeSchemaVersion !== MODE_SCHEMA_VERSION && log.mode === 'audio' ? 'music' : log.mode;

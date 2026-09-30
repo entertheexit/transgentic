@@ -15,6 +15,16 @@ afterEach(() => {
 });
 
 describe('request-scoped attachment manager', () => {
+  it('gives unnamed inline images a browser-recognizable extension without changing their bytes', async () => {
+    const result = await AttachmentManager.stage([{ url: `data:image/png;base64,${png.toString('base64')}` }], { loopback: false, mode: 'general' });
+    try {
+      const file = result.envelope.files[0];
+      expect(file).toMatchObject({ name: 'attachment.png', mimeType: 'image/png', kind: 'image' });
+      expect(path.extname(file.path)).toBe('.png');
+      expect(fs.readFileSync(file.path)).toEqual(png);
+    } finally { await result.cleanup(); }
+  });
+
   it('validates inline data, hashes it, stages privately, and cleans it up', async () => {
     const result = await AttachmentManager.stage([{ data: png.toString('base64'), name: 'reference.png', mimeType: 'image/png' }], { loopback: false, mode: 'image' });
     const file = result.envelope.files[0];

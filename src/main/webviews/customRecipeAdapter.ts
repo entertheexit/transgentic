@@ -577,7 +577,8 @@ export class CustomRecipeAdapter extends BaseProviderAdapter {
       if (ready) return;
       await new Promise(resolve => setTimeout(resolve, 150));
     }
-    throw new Error(`Provider "${this.name}" did not confirm attachment readiness before submission.`);
+    const readyCount = readySelector ? await this.executeScript<number>(`document.querySelectorAll(${JSON.stringify(readySelector)}).length`).catch(() => 0) : undefined;
+    throw new Error(`Provider "${this.name}" did not confirm attachment readiness before submission.${readyCount == null ? '' : ` Expected ${attachments.length} ready attachments, found ${readyCount}.`}`);
   }
 
   private fileInputAccepts(accept: string | undefined, attachments: readonly StagedAttachment[]): boolean {
