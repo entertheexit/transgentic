@@ -315,12 +315,15 @@ export class DomObserver {
           switch (${JSON.stringify(providerId)}) {
             case 'chatgpt': {
               const assistantMessages = Array.from(document.querySelectorAll(
-                selectorString(recipe?.response?.container) || (
+                (selectorString(recipe?.response?.container) || (
                 '[data-content-search-unit-key]:has(> [data-conversation-role="assistant"]), ' +
                 '[data-message-author-role="assistant"], ' +
                 '[data-testid^="conversation-turn-"]:has([data-message-author-role="assistant"]), ' +
                 'div.agent-turn'
-              ))).filter(el => !el.matches('[data-message-author-role="user"]') && !el.querySelector('[data-message-author-role="user"], [data-conversation-role="user"]'));
+              )) + ', main [data-testid="generated-image-gallery"]'
+              )).filter(el => !el.closest('[data-message-author-role="user"], [data-conversation-role="user"]') && !el.querySelector('[data-message-author-role="user"], [data-conversation-role="user"]'))
+                // Keep captions when the gallery still belongs to an assistant text turn.
+                .filter((el, _, candidates) => !el.matches('[data-testid="generated-image-gallery"]') || !candidates.some(parent => parent !== el && parent.contains(el)));
               if (assistantMessages.length > 0) {
                 const lastMsg = assistantMessages[assistantMessages.length - 1];
 
@@ -341,10 +344,11 @@ export class DomObserver {
                   const src = im.src || im.getAttribute('src') || '';
                   if (!src) return false;
                   if (src.includes('avatar') || src.includes('/logo') || src.includes('favicon')) return false;
+                  if (im.closest('[data-message-author-role="user"], [data-conversation-role="user"]') || /user attachment/i.test(im.getAttribute('alt') || '')) return false;
                   return true;
                 });
 
-                if (validImg) {
+                if (validImg?.complete && validImg.naturalWidth > 0) {
                   let b64 = null;
                   try {
                     if (validImg.complete && validImg.naturalWidth > 0) {
@@ -387,11 +391,11 @@ export class DomObserver {
                   }
                 }
 
-                const hasDoneImage = !!validImg && (validImg.complete !== false) && !!(validImg.src || validImg.getAttribute('src'));
+                const hasDoneImage = !!validImg?.complete && validImg.naturalWidth > 0 && !!(validImg.src || validImg.getAttribute('src'));
                 const hasDoneVideo = !!mediaUrl && mediaType === 'video';
                 const hasDoneAudio = !!mediaUrl && mediaType === 'audio';
 
-                if (hasDoneImage || hasDoneVideo || hasDoneAudio) {
+                if (!hasStopBtn && (hasDoneImage || hasDoneVideo || hasDoneAudio)) {
                   isMediaRendering = false;
                   isGenerating = false;
                   isThinking = false;

@@ -3,7 +3,7 @@ import type { CustomRecipe } from '../types/recipe.js';
 
 export const BUILTIN_RECIPES: Record<'chatgpt' | 'claude' | 'gemini' | 'grok', CustomRecipe> = {
   "chatgpt": {
-    "version": "1.2.1",
+    "version": "1.2.2",
     "id": "chatgpt",
     "title": "OpenAI ChatGPT",
     "domainMatch": "chatgpt.com",
@@ -76,7 +76,7 @@ export const BUILTIN_RECIPES: Record<'chatgpt' | 'claude' | 'gemini' | 'grok', C
       "modelDropdownTrigger": "button[aria-label=\"Select ChatGPT model\"], [data-testid=\"model-selector-button\"]"
     },
     "response": {
-      "container": "[data-content-search-unit-key]:has(> [data-conversation-role=\"assistant\"]), [data-message-author-role=\"assistant\"], [data-testid^=\"conversation-turn-\"]:has([data-message-author-role=\"assistant\"]), div.agent-turn",
+      "container": "[data-content-search-unit-key]:has(> [data-conversation-role=\"assistant\"]), [data-message-author-role=\"assistant\"], [data-testid^=\"conversation-turn-\"]:has([data-message-author-role=\"assistant\"]), div.agent-turn, main [data-testid=\"generated-image-gallery\"]",
       "textSelector": "[data-markdown-text-style=\"assistant-message\"], .response-content-markdown, .markdown, .prose",
       "actionButtons": "button[data-testid*=\"copy\" i], button[aria-label*=\"Copy\" i], button[aria-label*=\"Good response\" i], button[aria-label*=\"Bad response\" i]",
       "generatingIndicator": "[class*=\"imagegen-loading\"], [class*=\"placeholder-shimmer\"], .animate-pulse",
@@ -135,7 +135,10 @@ export const BUILTIN_RECIPES: Record<'chatgpt' | 'claude' | 'gemini' | 'grok', C
         }
       }
     },
-    "modeSchemaVersion": 2
+    "modeSchemaVersion": 2,
+    "changelog": [
+      "Detect completed generated-image galleries outside assistant text turns."
+    ]
   },
   "claude": {
     "version": "1.1.2",
