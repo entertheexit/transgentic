@@ -169,10 +169,11 @@ export class AssetManager {
       // Download remote asset to local disk
       buffer = await this.downloadRemoteBuffer(data, cookieHeader);
     } else if (typeof data === 'string' && data.startsWith('data:')) {
-      const matches = data.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
+      // MIME subtypes can contain digits (video/mp4) and dots, plus optional parameters.
+      const matches = data.match(/^data:([A-Za-z0-9.+-]+\/[A-Za-z0-9.+-]+)(?:;[^,;]*)*;base64,([\s\S]+)$/i);
       if (matches && matches[2]) {
         buffer = Buffer.from(matches[2], 'base64');
-        const mime = matches[1];
+        const mime = matches[1].toLowerCase();
         if (mime.includes('jpeg') || mime.includes('jpg')) ext = 'jpg';
         if (mime.includes('webp')) ext = 'webp';
         if (mime.includes('webm')) ext = 'webm';
@@ -180,7 +181,7 @@ export class AssetManager {
         if (mime.includes('wav')) ext = 'wav';
         if (mime.includes('mp3') || mime.includes('mpeg')) ext = 'mp3';
       } else {
-        buffer = Buffer.from(data, 'utf-8');
+        throw new Error('Cannot save media asset: malformed or unsupported base64 data URI.');
       }
     } else if (typeof data === 'string') {
       buffer = Buffer.from(data, 'base64');

@@ -1673,8 +1673,8 @@ http_headers = { "Authorization" = "Bearer ${clientToken || 'YOUR_TOKEN'}" }`;
                               )}
                             </div>
 
-                            {/* 4 Landmarks badges */}
-                            <div className="flex items-center gap-1 mt-1 text-[9px] font-mono">
+                            {/* 5 Landmarks badges */}
+                            <div className="flex flex-wrap items-center gap-1 mt-1 text-[9px] font-mono">
                               {(() => {
                                 const renderLandmarkBadge = (name: string, found: boolean, isHealed: boolean) => {
                                   if (isHealed) {
