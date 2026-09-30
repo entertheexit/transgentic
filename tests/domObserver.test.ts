@@ -1,8 +1,19 @@
 import { describe, it, expect } from 'vitest';
-import { DomObserver } from '../src/main/webviews/domObserver.js';
+import { DomObserver, extractToolProtocolCode } from '../src/main/webviews/domObserver.js';
 import { ProviderId, TaskMode } from '../src/shared/types.js';
 
 describe('DomObserver Multi-Provider & Media Scraping Tests', () => {
+  it('preserves a lone literal transport code block without cleaning its code or disclaimer examples', () => {
+    const text = 'TRANSGENTIC_TOOL_CALLS_V2\n[]\n# Heading\n```ts\nconst x = /\\d+/;\n```\nAI may make mistakes\n';
+    const target = (outsideText: string, count = 1) => ({
+      querySelectorAll: () => Array.from({ length: count }, () => ({ querySelector: () => ({ textContent: text }) })),
+      cloneNode: () => ({ querySelectorAll: () => [{ remove: () => {} }], textContent: outsideText }),
+    }) as any;
+    expect(extractToolProtocolCode(target(''))).toBe(text);
+    expect(extractToolProtocolCode(target('Example only:'))).toBeNull();
+    expect(extractToolProtocolCode(target('', 2))).toBeNull();
+    expect(extractToolProtocolCode(target('', 0))).toBeNull();
+  });
   const providers: ProviderId[] = [
     'gemini',
     'chatgpt',

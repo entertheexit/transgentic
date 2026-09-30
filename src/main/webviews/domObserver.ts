@@ -14,6 +14,19 @@ export interface DomInspectionResult {
   mediaType?: 'image' | 'video' | 'audio';
 }
 
+// A single transport code block preserves JSON escapes and bypasses UI-noise
+// removal. Surrounding prose or additional blocks must remain ordinary output.
+export function extractToolProtocolCode(target: Element): string | null {
+  const blocks = target.querySelectorAll('pre');
+  if (blocks.length !== 1) return null;
+  const code = blocks[0].querySelector('code') || blocks[0];
+  const text = code.textContent || '';
+  if (!/^TRANSGENTIC_TOOL_CALLS_V2\s*(?=\[)/.test(text)) return null;
+  const outside = target.cloneNode(true) as Element;
+  for (const el of outside.querySelectorAll('pre, button')) el.remove();
+  return (outside.textContent || '').trim() ? null : text;
+}
+
 export class DomObserver {
   /**
    * Generates browser-side DOM inspection script tailored for each provider
@@ -24,6 +37,7 @@ export class DomObserver {
       (async function() {
         try {
           const recipe = ${JSON.stringify(recipeConfig || null)};
+          const extractToolProtocolCode = ${extractToolProtocolCode.toString()};
           const selectorString = value => Array.isArray(value) ? value.join(', ') : (value || '');
           const bodyText = document.body ? (document.body.innerText || '') : '';
 
@@ -190,6 +204,8 @@ export class DomObserver {
             const target = markdownEl || el;
 
             try {
+              const toolProtocolText = extractToolProtocolCode(target);
+              if (toolProtocolText !== null) return toolProtocolText;
               const clone = target.cloneNode(true);
               if (clone && clone.querySelectorAll) {
                 const toRemove = clone.querySelectorAll(

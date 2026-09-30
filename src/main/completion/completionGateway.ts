@@ -36,7 +36,14 @@ function textContent(content: CompletionMessage['content']): string {
   return content.map(part => typeof part?.text === 'string' ? part.text : JSON.stringify(part)).join('\n');
 }
 
-export function serializeCompletionForProvider(messages: CompletionMessage[], tools?: CompletionTool[], incremental = false, toolChoice?: CompletionRequest['tool_choice']): string {
+const TOOL_CALL_MARKER = 'TRANSGENTIC_TOOL_CALLS_V1';
+const LITERAL_TOOL_CALL_MARKER = 'TRANSGENTIC_TOOL_CALLS_V2';
+
+function toolArrayInstructions(): string {
+  return `To request tools, return one plain-text code block. Inside it, put ${LITERAL_TOOL_CALL_MARKER} on the first line and a valid JSON ARRAY on the next line: [{"name":"tool name","arguments":{}}]. Use only offered tool names and match their parameters schema. Arguments must be a JSON object, not a JSON-encoded string. Properly JSON-escape every string, including newlines, quotes and backslashes in file contents or code. Keep the entire tool request inside the code block so the provider UI cannot interpret its backslashes or Markdown. Do not include function/type/content/id wrappers; the gateway supplies those. Do not include prose outside the code block. Only batch independent calls; wait for prior tool results before dependent steps or claiming completion.`;
+}
+
+export function serializeCompletionForProvider(messages: CompletionMessage[], tools?: CompletionTool[], incremental = false, toolChoice?: CompletionRequest['tool_choice'], toolArrayFormat = false): string {
   const transcript = messages.map(message => {
     const calls = message.tool_calls?.length ? `\nTool calls: ${JSON.stringify(message.tool_calls)}` : '';
     const toolId = message.tool_call_id ? ` [tool_call_id=${message.tool_call_id}]` : '';
@@ -54,7 +61,29 @@ export function serializeCompletionForProvider(messages: CompletionMessage[], to
     : toolChoice === 'required'
       ? 'You must call at least one available tool.'
       : 'Call an available tool only when the conversation requires one; otherwise return a normal answer.';
-  return `You are the reasoning provider for another agent. The calling agent owns the project and will execute tools. Never execute a tool, command, or file operation yourself.\n\nAvailable tools:\n${toolSpec}\n\n${incremental ? 'New messages for the existing browser conversation' : 'Conversation'}:\n${transcript}\n\n${choiceInstruction}\nReturn exactly one valid JSON object and no markdown fence. Its shape is {"type":"assistant","content":null,"tool_calls":[{"id":"call_1","type":"function","function":{"name":"tool name","arguments":{}}}]}. Put tool arguments directly in the arguments object and satisfy the chosen tool's parameters schema; do not encode that object as a JSON string. Escape any content text as a JSON string. Use an empty tool_calls array only when a normal answer is allowed. Do not invent tool names.`;
+  const normalAnswerInstruction = requiredTool || toolChoice === 'required' ? '' : '\nIf no tool call is needed, answer in ordinary plain text. Do not wrap a normal answer in JSON.';
+  const formatInstruction = toolArrayFormat ? toolArrayInstructions()
+    : `To request a tool, return only the line ${TOOL_CALL_MARKER} followed by a JSON object on the next line. The object must have this shape: {"type":"assistant","content":null,"tool_calls":[{"id":"call_1","type":"function","function":{"name":"tool name","arguments":{}}}]}. Put tool arguments directly in the arguments object and satisfy the chosen tool's parameters schema; do not encode that object as a JSON string. Do not include prose or a markdown fence with a tool request. Do not invent tool names.`;
+  return `You are the reasoning provider for another agent. The calling agent owns the project and will execute tools. Never execute a tool, command, or file operation yourself.\n\nAvailable tools:\n${toolSpec}\n\n${incremental ? 'New messages for the existing browser conversation' : 'Conversation'}:\n${transcript}\n\n${choiceInstruction}${normalAnswerInstruction}\n${formatInstruction}`;
+}
+
+function parseProviderToolArray(raw: string, tools: CompletionTool[]): { content: string | null; tool_calls?: CompletionToolCall[] } {
+  // A mismatched closing fence can remain inside the rendered code node.
+  const calls = JSON.parse(raw.replace(/\r?\n`{3,6}\s*$/, ''));
+  if (!Array.isArray(calls)) throw new Error('Provider returned an invalid tool-call list.');
+  const normalized = calls.map(call => {
+    const args = call?.arguments ?? {};
+    if (!args || Array.isArray(args) || typeof args !== 'object') throw new Error('Tool arguments must be a JSON object.');
+    const schema = tools.find(tool => tool.function.name === call?.name)?.function.parameters as any;
+    for (const key of Array.isArray(schema?.required) ? schema.required : []) {
+      if (typeof key === 'string' && !Object.hasOwn(args, key)) throw new Error(`Missing required argument "${key}".`);
+    }
+    for (const [key, property] of Object.entries(schema?.properties || {})) {
+      if ((property as any)?.type === 'string' && Object.hasOwn(args, key) && typeof args[key] !== 'string') throw new Error(`Argument "${key}" must be a string.`);
+    }
+    return { function: { name: call?.name, arguments: args } };
+  });
+  return parseProviderToolEnvelope(JSON.stringify({ type: 'assistant', content: null, tool_calls: normalized }), tools);
 }
 
 function extractJsonObject(raw: string): unknown {
@@ -80,6 +109,40 @@ export function parseProviderToolEnvelope(raw: string, tools: CompletionTool[]):
   });
   const content = value.content == null ? null : String(value.content);
   return { content, ...(calls.length ? { tool_calls: calls } : {}) };
+}
+
+export function parseProviderToolAwareResponse(raw: string, tools: CompletionTool[], toolChoice?: CompletionRequest['tool_choice'], allowLegacyEnvelope = false): { content: string | null; tool_calls?: CompletionToolCall[] } {
+  const trimmed = raw.trim();
+  if (trimmed.startsWith(LITERAL_TOOL_CALL_MARKER)) {
+    // Rendered adjacent paragraphs can lose the newline after the marker.
+    const marker = trimmed.match(/^TRANSGENTIC_TOOL_CALLS_V2\s*(?=\[)/);
+    if (!marker) throw new Error('Invalid tool-call marker.');
+    const parsed = parseProviderToolArray(trimmed.slice(marker[0].length), tools);
+    if (!parsed.tool_calls?.length) throw new Error('Provider marked a tool request but returned no tool calls.');
+    return parsed;
+  }
+
+  const afterMarker = trimmed.startsWith(TOOL_CALL_MARKER) ? trimmed.slice(TOOL_CALL_MARKER.length) : '';
+  const lineBreakLength = afterMarker.startsWith('\r\n') ? 2 : afterMarker.startsWith('\n') || afterMarker.startsWith('\r') ? 1 : 0;
+  if (lineBreakLength) {
+    const parsed = parseProviderToolEnvelope(afterMarker.slice(lineBreakLength), tools);
+    if (!parsed.tool_calls?.length) throw new Error('Provider marked a tool request but returned no tool calls.');
+    return parsed;
+  }
+
+  // Existing CLI integrations may still emit the older unmarked envelope.
+  // Browser responses require the marker so quoted code and examples stay inert.
+  if (allowLegacyEnvelope) {
+    let legacy: any;
+    try { legacy = JSON.parse(trimmed); } catch {}
+    if (legacy?.type === 'assistant' && Array.isArray(legacy.tool_calls)) {
+      const parsed = parseProviderToolEnvelope(trimmed, tools);
+      if (parsed.tool_calls?.length) return parsed;
+      if (toolChoice !== 'required' && typeof toolChoice !== 'object') return { content: parsed.content ?? raw };
+    }
+  }
+  if (toolChoice === 'required' || typeof toolChoice === 'object') throw new Error('Provider did not return a required tool call.');
+  return { content: raw };
 }
 
 function validateRequest(input: any): CompletionRequest {
@@ -383,15 +446,16 @@ export class CompletionGateway {
       return this.dispatchWebView(provider, mode, request, signal, requestedModel, attachments, status || { policy: 'normal', actualMode: 'normal', verified: false }, session);
     }
     if (isCliProvider(provider)) {
-      const prompt = serializeCompletionForProvider(messagesWithoutBinaryParts(request.messages), request.tools, false, request.tool_choice);
+      const tools = request.tool_choice === 'none' ? undefined : request.tools;
+      const prompt = serializeCompletionForProvider(messagesWithoutBinaryParts(request.messages), tools, false, request.tool_choice);
       const id = `completion_${crypto.randomUUID()}`;
       const configuredModel = DynamicRouter.resolveTargetModel(provider, mode, undefined, 'main') || undefined;
       const result = await globalCliRuntime.execute(provider, prompt, {
         reqId: id, conversationKey: id, newThread: true, model: configuredModel || undefined,
         request: {}, signal, attachments,
       });
-      const message = request.tools?.length
-        ? { role: 'assistant' as const, ...parseProviderToolEnvelope(result.text, request.tools) }
+      const message = tools?.length
+        ? { role: 'assistant' as const, ...parseProviderToolAwareResponse(result.text, tools, request.tool_choice, true) }
         : { role: 'assistant' as const, content: result.text };
       return { message, finishReason: message.tool_calls?.length ? 'tool_calls' : 'stop', provider, model: result.modelUsed || configuredModel || CLI_DEFINITIONS[provider].name, usage: result.usage };
     }
@@ -450,7 +514,7 @@ export class CompletionGateway {
         const targetModel = requestedModel || DynamicRouter.resolveTargetModel(provider, mode, undefined, 'main') || undefined;
         if (targetModel) await ModelScraperEngine.selectRequestedModel(provider, targetModel, handle.webContents);
         const tools = request.tool_choice === 'none' ? undefined : request.tools;
-        const prompt = serializeCompletionForProvider(messagesWithoutBinaryParts(request.messages), tools, Boolean(binding && !forceNew), request.tool_choice);
+        const prompt = serializeCompletionForProvider(messagesWithoutBinaryParts(request.messages), tools, Boolean(binding && !forceNew), request.tool_choice, true);
         const release = await handle.adapter.acquireDomLock();
         let result;
         try { result = await handle.adapter.executePrompt(prompt, mode, undefined, undefined, signal, attachments); }
@@ -470,7 +534,7 @@ export class CompletionGateway {
         let message;
         try {
           message = tools?.length
-            ? { role: 'assistant' as const, ...parseProviderToolEnvelope(responseText, tools) }
+            ? { role: 'assistant' as const, ...parseProviderToolAwareResponse(responseText, tools, request.tool_choice) }
             : { role: 'assistant' as const, content: responseText };
         } catch (error) {
           throw new Error(`[WEBVIEW_SUBMISSION_UNCERTAIN] The provider response could not be interpreted safely: ${(error as Error)?.message || 'invalid tool response'}`);

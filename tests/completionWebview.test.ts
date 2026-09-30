@@ -155,7 +155,7 @@ describe('WebView completion conversation ownership', () => {
   });
 
   it('passes required tool choice to the Webview and accepts object arguments', async () => {
-    executePrompt.mockResolvedValueOnce({ text: JSON.stringify({ type: 'assistant', content: null, tool_calls: [
+    executePrompt.mockResolvedValueOnce({ text: 'TRANSGENTIC_TOOL_CALLS_V1\n' + JSON.stringify({ type: 'assistant', content: null, tool_calls: [
       { id: 'call_1', type: 'function', function: { name: 'lookup_fixture', arguments: { name: 'crlf_split' } } },
     ] }) });
     const result = await gateway.complete({
@@ -170,8 +170,37 @@ describe('WebView completion conversation ownership', () => {
     expect(result.chatExecution).toMatchObject({ actualMode: 'temporary', verified: true });
   });
 
-  it('does not resubmit a Temporary Chat prompt when the returned tool JSON is malformed', async () => {
-    executePrompt.mockResolvedValueOnce({ text: '{"type":"assistant","tool_calls":[{"function":{"name":"lookup_fixture","arguments":{"name":"crlf_split"}' });
+  it('returns a Cline-style prose report as content even when tools are offered', async () => {
+    const report = 'Finding: C:\\app\\src\\index.ts accepts untrusted input.\n\n```ts\nconst example = "a\\b";\n```';
+    executePrompt.mockResolvedValueOnce({ text: report });
+    const result = await gateway.complete({
+      model: 'transgentic/provider/chatgpt',
+      messages: [{ role: 'user', content: 'Investigate and report findings' }],
+      tools: [{ type: 'function', function: { name: 'read_file' } }],
+      tool_choice: 'auto',
+    });
+    expect(executePrompt.mock.calls[0][0]).toContain('answer in ordinary plain text');
+    expect(result.message).toEqual({ role: 'assistant', content: report });
+    expect(result.finishReason).toBe('stop');
+  });
+
+  it('returns a long Cline write tool with exact backslashes through the native API shape', async () => {
+    const content = '# Report\nC:\\repo\\src\\parser.ts\n\\d+\\s+\\w+\n"hello world"\n'.repeat(100);
+    executePrompt.mockResolvedValueOnce({ text: 'TRANSGENTIC_TOOL_CALLS_V2\n' + JSON.stringify([
+      { name: 'write_to_file', arguments: { path: 'docs/reports/test.md', content } },
+    ]) });
+    const result = await gateway.complete({ model: 'transgentic/provider/chatgpt', temporary_chat: true,
+      messages: [{ role: 'user', content: 'Write the report' }],
+      tools: [{ type: 'function', function: { name: 'write_to_file' } }], tool_choice: 'required',
+    });
+    expect(JSON.parse(result.message.tool_calls![0].function.arguments)).toEqual({ path: 'docs/reports/test.md', content });
+    expect(result.finishReason).toBe('tool_calls');
+    expect(executePrompt).toHaveBeenCalledOnce();
+    expect(result.chatExecution).toMatchObject({ actualMode: 'temporary', verified: true });
+  });
+
+  it('does not resubmit a Temporary Chat prompt when tool JSON has invalid escapes', async () => {
+    executePrompt.mockResolvedValueOnce({ text: 'TRANSGENTIC_TOOL_CALLS_V2\n[{"name":"lookup_fixture","arguments":{"name":"C:\\repo\\src"}}]' });
     await expect(gateway.complete({
       model: 'transgentic/provider/chatgpt', temporary_chat: true,
       messages: [{ role: 'user', content: 'Look up the fixture' }],
