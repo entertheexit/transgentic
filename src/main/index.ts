@@ -1423,7 +1423,12 @@ function setupIpcHandlers() {
     return selections;
   });
 
-  ipcMain.handle('execute-prompt', async (event, { prompt, mode, provider, model, cliRequest, files, temporaryChat }: { prompt: string; mode?: TaskMode; provider?: ProviderId; model?: string; cliRequest?: unknown; files?: AttachmentInput[]; temporaryChat?: boolean }) => {
+  ipcMain.handle('media:configuration', (event, mode: import('../shared/media.js').MediaMode) => {
+    if (event.sender !== globalWindowManager.getMainWindow()?.webContents || event.senderFrame !== event.sender.mainFrame) throw new Error('Media settings are available only in the main window.');
+    return globalMcpServer.getDesktopMediaConfiguration(mode);
+  });
+
+  ipcMain.handle('execute-prompt', async (event, { prompt, mode, provider, model, cliRequest, files, temporaryChat, mediaPreferences }: { prompt: string; mode?: TaskMode; provider?: ProviderId; model?: string; cliRequest?: unknown; files?: AttachmentInput[]; temporaryChat?: boolean; mediaPreferences?: import('../shared/media.js').MediaPreferences }) => {
     if (event.sender !== globalWindowManager.getMainWindow()?.webContents || event.senderFrame !== event.sender.mainFrame) throw new Error('Desktop prompts are available only in the main window.');
     const result = await globalMcpServer.orchestratePrompt(
       prompt,
@@ -1439,7 +1444,8 @@ function setupIpcHandlers() {
       { profile: 'plain', sessionId: `desktop_${event.sender.id}`, cliRequest: cliRequest as any, isLoopback: true },
       files,
       undefined,
-      temporaryChat
+      temporaryChat,
+      mediaPreferences
     );
     if (result.isError) throw new Error(result.content?.[0]?.text || 'Request failed');
     return result;

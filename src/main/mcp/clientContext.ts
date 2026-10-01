@@ -2,6 +2,8 @@ export type ResponseProfile = 'agentic' | 'plain';
 
 export interface CallerContext {
   cliRequest?: import('../../shared/cli.js').CliRequestOptions;
+  transport?: 'api';
+  onMediaState?: (state: { provider: string; model?: string; settings?: import('../../shared/media.js').MediaSettings; submitted?: boolean }) => void;
   profile: ResponseProfile;
   sessionId: string;
   reportProgress?: (message: string) => void;

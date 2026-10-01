@@ -72,27 +72,1068 @@
       },
       "image": {
         "enabled": true,
-        "contentSelector": "img[alt*=\"Generated image\" i], img[src*=\"grok\"], img.media-attachment",
+        "contentSelector": "img[src*=\"assets.grok.com\"], img[src*=\"imagine-public\"], img[src^=\"blob:\"]",
         "mediaKind": "image",
         "inputAttachments": {
           "fileInput": "input[type=\"file\"]",
           "acceptedKinds": [
             "image"
           ],
-          "multiple": true
+          "multiple": true,
+          "acceptedMimeTypes": [
+            "image/jpeg",
+            "image/png",
+            "image/gif",
+            "image/webp"
+          ]
+        },
+        "pageUrl": "/imagine",
+        "inputSelector": "form [contenteditable=\"true\"]",
+        "submitSelector": "form button[type=\"submit\"]",
+        "generation": {
+          "activationSteps": [
+            {
+              "action": "click",
+              "target": {
+                "scope": "form [role=\"radiogroup\"]:has(button[aria-label])",
+                "selectors": "button[role=\"radio\"]:has(svg > path[d^=\"M14.0996 2.5\"])"
+              }
+            }
+          ],
+          "activeWhen": {
+            "scope": "form [role=\"radiogroup\"]:has(button[aria-label])",
+            "selectors": "button[role=\"radio\"]:has(svg > path[d^=\"M14.0996 2.5\"])",
+            "requiredAttributes": {
+              "aria-checked": "true"
+            }
+          },
+          "settings": [
+            {
+              "key": "quality",
+              "label": "Image quality",
+              "type": "enum",
+              "default": "speed",
+              "options": [
+                {
+                  "value": "speed",
+                  "label": "Speed",
+                  "steps": [
+                    {
+                      "action": "click",
+                      "target": {
+                        "scope": "form [role=\"radiogroup\"]:not(:has(button[aria-label]))",
+                        "selectors": "button[role=\"radio\"]",
+                        "index": 0,
+                        "expectedCount": 2
+                      }
+                    }
+                  ],
+                  "selectedWhen": {
+                    "scope": "form [role=\"radiogroup\"]:not(:has(button[aria-label]))",
+                    "selectors": "button[role=\"radio\"]",
+                    "index": 0,
+                    "expectedCount": 2,
+                    "requiredAttributes": {
+                      "aria-checked": "true"
+                    }
+                  }
+                },
+                {
+                  "value": "quality_2",
+                  "label": "Quality 2.0",
+                  "steps": [
+                    {
+                      "action": "click",
+                      "target": {
+                        "scope": "form [role=\"radiogroup\"]:not(:has(button[aria-label]))",
+                        "selectors": "button[role=\"radio\"]",
+                        "index": 1,
+                        "expectedCount": 2
+                      }
+                    }
+                  ],
+                  "selectedWhen": {
+                    "scope": "form [role=\"radiogroup\"]:not(:has(button[aria-label]))",
+                    "selectors": "button[role=\"radio\"]",
+                    "index": 1,
+                    "expectedCount": 2,
+                    "requiredAttributes": {
+                      "aria-checked": "true"
+                    }
+                  }
+                }
+              ]
+            },
+            {
+              "key": "aspect_ratio",
+              "label": "Aspect ratio",
+              "type": "enum",
+              "default": "1:1",
+              "options": [
+                {
+                  "value": "2:3",
+                  "label": "2:3",
+                  "steps": [
+                    {
+                      "action": "pointerDown",
+                      "target": {
+                        "selectors": "form button[aria-haspopup=\"menu\"]"
+                      }
+                    },
+                    {
+                      "action": "click",
+                      "target": {
+                        "scope": "[role=\"menu\"]",
+                        "selectors": "[role=\"menuitemradio\"]",
+                        "index": 0,
+                        "expectedCount": 5,
+                        "identities": [
+                          "2:3",
+                          "3:2",
+                          "1:1",
+                          "9:16",
+                          "16:9"
+                        ],
+                        "identityAttribute": "textContent",
+                        "identitySelector": "span.text-center"
+                      }
+                    }
+                  ],
+                  "verificationSteps": [
+                    {
+                      "action": "pointerDown",
+                      "target": {
+                        "selectors": "form button[aria-haspopup=\"menu\"]"
+                      }
+                    }
+                  ],
+                  "selectedWhen": {
+                    "scope": "[role=\"menu\"]",
+                    "selectors": "[role=\"menuitemradio\"]",
+                    "index": 0,
+                    "expectedCount": 5,
+                    "identities": [
+                      "2:3",
+                      "3:2",
+                      "1:1",
+                      "9:16",
+                      "16:9"
+                    ],
+                    "identityAttribute": "textContent",
+                    "identitySelector": "span.text-center",
+                    "requiredAttributes": {
+                      "aria-checked": "true"
+                    }
+                  },
+                  "closeSteps": [
+                    {
+                      "action": "escape"
+                    },
+                    {
+                      "action": "waitAbsent",
+                      "target": {
+                        "selectors": "[role=\"menu\"]"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "value": "3:2",
+                  "label": "3:2",
+                  "steps": [
+                    {
+                      "action": "pointerDown",
+                      "target": {
+                        "selectors": "form button[aria-haspopup=\"menu\"]"
+                      }
+                    },
+                    {
+                      "action": "click",
+                      "target": {
+                        "scope": "[role=\"menu\"]",
+                        "selectors": "[role=\"menuitemradio\"]",
+                        "index": 1,
+                        "expectedCount": 5,
+                        "identities": [
+                          "2:3",
+                          "3:2",
+                          "1:1",
+                          "9:16",
+                          "16:9"
+                        ],
+                        "identityAttribute": "textContent",
+                        "identitySelector": "span.text-center"
+                      }
+                    }
+                  ],
+                  "verificationSteps": [
+                    {
+                      "action": "pointerDown",
+                      "target": {
+                        "selectors": "form button[aria-haspopup=\"menu\"]"
+                      }
+                    }
+                  ],
+                  "selectedWhen": {
+                    "scope": "[role=\"menu\"]",
+                    "selectors": "[role=\"menuitemradio\"]",
+                    "index": 1,
+                    "expectedCount": 5,
+                    "identities": [
+                      "2:3",
+                      "3:2",
+                      "1:1",
+                      "9:16",
+                      "16:9"
+                    ],
+                    "identityAttribute": "textContent",
+                    "identitySelector": "span.text-center",
+                    "requiredAttributes": {
+                      "aria-checked": "true"
+                    }
+                  },
+                  "closeSteps": [
+                    {
+                      "action": "escape"
+                    },
+                    {
+                      "action": "waitAbsent",
+                      "target": {
+                        "selectors": "[role=\"menu\"]"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "value": "1:1",
+                  "label": "1:1",
+                  "steps": [
+                    {
+                      "action": "pointerDown",
+                      "target": {
+                        "selectors": "form button[aria-haspopup=\"menu\"]"
+                      }
+                    },
+                    {
+                      "action": "click",
+                      "target": {
+                        "scope": "[role=\"menu\"]",
+                        "selectors": "[role=\"menuitemradio\"]",
+                        "index": 2,
+                        "expectedCount": 5,
+                        "identities": [
+                          "2:3",
+                          "3:2",
+                          "1:1",
+                          "9:16",
+                          "16:9"
+                        ],
+                        "identityAttribute": "textContent",
+                        "identitySelector": "span.text-center"
+                      }
+                    }
+                  ],
+                  "verificationSteps": [
+                    {
+                      "action": "pointerDown",
+                      "target": {
+                        "selectors": "form button[aria-haspopup=\"menu\"]"
+                      }
+                    }
+                  ],
+                  "selectedWhen": {
+                    "scope": "[role=\"menu\"]",
+                    "selectors": "[role=\"menuitemradio\"]",
+                    "index": 2,
+                    "expectedCount": 5,
+                    "identities": [
+                      "2:3",
+                      "3:2",
+                      "1:1",
+                      "9:16",
+                      "16:9"
+                    ],
+                    "identityAttribute": "textContent",
+                    "identitySelector": "span.text-center",
+                    "requiredAttributes": {
+                      "aria-checked": "true"
+                    }
+                  },
+                  "closeSteps": [
+                    {
+                      "action": "escape"
+                    },
+                    {
+                      "action": "waitAbsent",
+                      "target": {
+                        "selectors": "[role=\"menu\"]"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "value": "9:16",
+                  "label": "9:16",
+                  "steps": [
+                    {
+                      "action": "pointerDown",
+                      "target": {
+                        "selectors": "form button[aria-haspopup=\"menu\"]"
+                      }
+                    },
+                    {
+                      "action": "click",
+                      "target": {
+                        "scope": "[role=\"menu\"]",
+                        "selectors": "[role=\"menuitemradio\"]",
+                        "index": 3,
+                        "expectedCount": 5,
+                        "identities": [
+                          "2:3",
+                          "3:2",
+                          "1:1",
+                          "9:16",
+                          "16:9"
+                        ],
+                        "identityAttribute": "textContent",
+                        "identitySelector": "span.text-center"
+                      }
+                    }
+                  ],
+                  "verificationSteps": [
+                    {
+                      "action": "pointerDown",
+                      "target": {
+                        "selectors": "form button[aria-haspopup=\"menu\"]"
+                      }
+                    }
+                  ],
+                  "selectedWhen": {
+                    "scope": "[role=\"menu\"]",
+                    "selectors": "[role=\"menuitemradio\"]",
+                    "index": 3,
+                    "expectedCount": 5,
+                    "identities": [
+                      "2:3",
+                      "3:2",
+                      "1:1",
+                      "9:16",
+                      "16:9"
+                    ],
+                    "identityAttribute": "textContent",
+                    "identitySelector": "span.text-center",
+                    "requiredAttributes": {
+                      "aria-checked": "true"
+                    }
+                  },
+                  "closeSteps": [
+                    {
+                      "action": "escape"
+                    },
+                    {
+                      "action": "waitAbsent",
+                      "target": {
+                        "selectors": "[role=\"menu\"]"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "value": "16:9",
+                  "label": "16:9",
+                  "steps": [
+                    {
+                      "action": "pointerDown",
+                      "target": {
+                        "selectors": "form button[aria-haspopup=\"menu\"]"
+                      }
+                    },
+                    {
+                      "action": "click",
+                      "target": {
+                        "scope": "[role=\"menu\"]",
+                        "selectors": "[role=\"menuitemradio\"]",
+                        "index": 4,
+                        "expectedCount": 5,
+                        "identities": [
+                          "2:3",
+                          "3:2",
+                          "1:1",
+                          "9:16",
+                          "16:9"
+                        ],
+                        "identityAttribute": "textContent",
+                        "identitySelector": "span.text-center"
+                      }
+                    }
+                  ],
+                  "verificationSteps": [
+                    {
+                      "action": "pointerDown",
+                      "target": {
+                        "selectors": "form button[aria-haspopup=\"menu\"]"
+                      }
+                    }
+                  ],
+                  "selectedWhen": {
+                    "scope": "[role=\"menu\"]",
+                    "selectors": "[role=\"menuitemradio\"]",
+                    "index": 4,
+                    "expectedCount": 5,
+                    "identities": [
+                      "2:3",
+                      "3:2",
+                      "1:1",
+                      "9:16",
+                      "16:9"
+                    ],
+                    "identityAttribute": "textContent",
+                    "identitySelector": "span.text-center",
+                    "requiredAttributes": {
+                      "aria-checked": "true"
+                    }
+                  },
+                  "closeSteps": [
+                    {
+                      "action": "escape"
+                    },
+                    {
+                      "action": "waitAbsent",
+                      "target": {
+                        "selectors": "[role=\"menu\"]"
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
         }
       },
       "video": {
         "enabled": true,
-        "contentSelector": "video source, video[src], video",
+        "contentSelector": "video[src],video",
         "mediaKind": "video",
         "inputAttachments": {
           "fileInput": "input[type=\"file\"]",
           "acceptedKinds": [
-            "image",
-            "video"
+            "image"
           ],
-          "multiple": true
+          "multiple": true,
+          "acceptedMimeTypes": [
+            "image/jpeg",
+            "image/png",
+            "image/gif",
+            "image/webp"
+          ]
+        },
+        "pageUrl": "/imagine",
+        "inputSelector": "form [contenteditable=\"true\"]",
+        "submitSelector": "form button[type=\"submit\"]",
+        "generation": {
+          "activationSteps": [
+            {
+              "action": "click",
+              "target": {
+                "scope": "form [role=\"radiogroup\"]:has(button[aria-label])",
+                "selectors": "button[role=\"radio\"]:has(svg > path[d^=\"M13.7314 4.00586\"])"
+              }
+            }
+          ],
+          "activeWhen": {
+            "scope": "form [role=\"radiogroup\"]:has(button[aria-label])",
+            "selectors": "button[role=\"radio\"]:has(svg > path[d^=\"M13.7314 4.00586\"])",
+            "requiredAttributes": {
+              "aria-checked": "true"
+            }
+          },
+          "settings": [
+            {
+              "key": "resolution",
+              "label": "Resolution",
+              "type": "enum",
+              "default": "480p",
+              "options": [
+                {
+                  "value": "480p",
+                  "label": "480p",
+                  "steps": [
+                    {
+                      "action": "click",
+                      "target": {
+                        "scope": "form [role=\"radiogroup\"]:not(:has(button[aria-label])):has(button:nth-child(2)):not(:has(button:nth-child(3)))",
+                        "selectors": "button[role=\"radio\"]",
+                        "index": 0,
+                        "expectedCount": 2,
+                        "identities": [
+                          "480p",
+                          "720p"
+                        ],
+                        "identityAttribute": "textContent"
+                      }
+                    }
+                  ],
+                  "selectedWhen": {
+                    "scope": "form [role=\"radiogroup\"]:not(:has(button[aria-label])):has(button:nth-child(2)):not(:has(button:nth-child(3)))",
+                    "selectors": "button[role=\"radio\"]",
+                    "index": 0,
+                    "expectedCount": 2,
+                    "identities": [
+                      "480p",
+                      "720p"
+                    ],
+                    "identityAttribute": "textContent",
+                    "requiredAttributes": {
+                      "aria-checked": "true"
+                    }
+                  }
+                },
+                {
+                  "value": "720p",
+                  "label": "720p",
+                  "steps": [
+                    {
+                      "action": "click",
+                      "target": {
+                        "scope": "form [role=\"radiogroup\"]:not(:has(button[aria-label])):has(button:nth-child(2)):not(:has(button:nth-child(3)))",
+                        "selectors": "button[role=\"radio\"]",
+                        "index": 1,
+                        "expectedCount": 2,
+                        "identities": [
+                          "480p",
+                          "720p"
+                        ],
+                        "identityAttribute": "textContent"
+                      }
+                    }
+                  ],
+                  "selectedWhen": {
+                    "scope": "form [role=\"radiogroup\"]:not(:has(button[aria-label])):has(button:nth-child(2)):not(:has(button:nth-child(3)))",
+                    "selectors": "button[role=\"radio\"]",
+                    "index": 1,
+                    "expectedCount": 2,
+                    "identities": [
+                      "480p",
+                      "720p"
+                    ],
+                    "identityAttribute": "textContent",
+                    "requiredAttributes": {
+                      "aria-checked": "true"
+                    }
+                  }
+                }
+              ]
+            },
+            {
+              "key": "duration_seconds",
+              "label": "Duration",
+              "type": "number",
+              "default": 6,
+              "options": [
+                {
+                  "value": 6,
+                  "label": "6 seconds",
+                  "steps": [
+                    {
+                      "action": "click",
+                      "target": {
+                        "scope": "form [role=\"radiogroup\"]:not(:has(button[aria-label])):has(button:nth-child(3))",
+                        "selectors": "button[role=\"radio\"]",
+                        "index": 0,
+                        "expectedCount": 3,
+                        "identities": [
+                          "6s",
+                          "10s",
+                          "15s"
+                        ],
+                        "identityAttribute": "textContent"
+                      }
+                    }
+                  ],
+                  "selectedWhen": {
+                    "scope": "form [role=\"radiogroup\"]:not(:has(button[aria-label])):has(button:nth-child(3))",
+                    "selectors": "button[role=\"radio\"]",
+                    "index": 0,
+                    "expectedCount": 3,
+                    "identities": [
+                      "6s",
+                      "10s",
+                      "15s"
+                    ],
+                    "identityAttribute": "textContent",
+                    "requiredAttributes": {
+                      "aria-checked": "true"
+                    }
+                  }
+                },
+                {
+                  "value": 10,
+                  "label": "10 seconds",
+                  "steps": [
+                    {
+                      "action": "click",
+                      "target": {
+                        "scope": "form [role=\"radiogroup\"]:not(:has(button[aria-label])):has(button:nth-child(3))",
+                        "selectors": "button[role=\"radio\"]",
+                        "index": 1,
+                        "expectedCount": 3,
+                        "identities": [
+                          "6s",
+                          "10s",
+                          "15s"
+                        ],
+                        "identityAttribute": "textContent"
+                      }
+                    }
+                  ],
+                  "selectedWhen": {
+                    "scope": "form [role=\"radiogroup\"]:not(:has(button[aria-label])):has(button:nth-child(3))",
+                    "selectors": "button[role=\"radio\"]",
+                    "index": 1,
+                    "expectedCount": 3,
+                    "identities": [
+                      "6s",
+                      "10s",
+                      "15s"
+                    ],
+                    "identityAttribute": "textContent",
+                    "requiredAttributes": {
+                      "aria-checked": "true"
+                    }
+                  }
+                },
+                {
+                  "value": 15,
+                  "label": "15 seconds",
+                  "steps": [
+                    {
+                      "action": "click",
+                      "target": {
+                        "scope": "form [role=\"radiogroup\"]:not(:has(button[aria-label])):has(button:nth-child(3))",
+                        "selectors": "button[role=\"radio\"]",
+                        "index": 2,
+                        "expectedCount": 3,
+                        "identities": [
+                          "6s",
+                          "10s",
+                          "15s"
+                        ],
+                        "identityAttribute": "textContent"
+                      }
+                    }
+                  ],
+                  "selectedWhen": {
+                    "scope": "form [role=\"radiogroup\"]:not(:has(button[aria-label])):has(button:nth-child(3))",
+                    "selectors": "button[role=\"radio\"]",
+                    "index": 2,
+                    "expectedCount": 3,
+                    "identities": [
+                      "6s",
+                      "10s",
+                      "15s"
+                    ],
+                    "identityAttribute": "textContent",
+                    "requiredAttributes": {
+                      "aria-checked": "true"
+                    }
+                  }
+                }
+              ]
+            },
+            {
+              "key": "aspect_ratio",
+              "label": "Aspect ratio",
+              "type": "enum",
+              "default": "16:9",
+              "options": [
+                {
+                  "value": "2:3",
+                  "label": "2:3",
+                  "steps": [
+                    {
+                      "action": "pointerDown",
+                      "target": {
+                        "selectors": "form button[aria-haspopup=\"menu\"]"
+                      }
+                    },
+                    {
+                      "action": "click",
+                      "target": {
+                        "scope": "[role=\"menu\"]",
+                        "selectors": "[role=\"menuitemradio\"]",
+                        "index": 0,
+                        "expectedCount": 5,
+                        "identities": [
+                          "2:3",
+                          "3:2",
+                          "1:1",
+                          "9:16",
+                          "16:9"
+                        ],
+                        "identityAttribute": "textContent",
+                        "identitySelector": "span.text-center"
+                      }
+                    }
+                  ],
+                  "verificationSteps": [
+                    {
+                      "action": "pointerDown",
+                      "target": {
+                        "selectors": "form button[aria-haspopup=\"menu\"]"
+                      }
+                    }
+                  ],
+                  "selectedWhen": {
+                    "scope": "[role=\"menu\"]",
+                    "selectors": "[role=\"menuitemradio\"]",
+                    "index": 0,
+                    "expectedCount": 5,
+                    "identities": [
+                      "2:3",
+                      "3:2",
+                      "1:1",
+                      "9:16",
+                      "16:9"
+                    ],
+                    "identityAttribute": "textContent",
+                    "identitySelector": "span.text-center",
+                    "requiredAttributes": {
+                      "aria-checked": "true"
+                    }
+                  },
+                  "closeSteps": [
+                    {
+                      "action": "escape"
+                    },
+                    {
+                      "action": "waitAbsent",
+                      "target": {
+                        "selectors": "[role=\"menu\"]"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "value": "3:2",
+                  "label": "3:2",
+                  "steps": [
+                    {
+                      "action": "pointerDown",
+                      "target": {
+                        "selectors": "form button[aria-haspopup=\"menu\"]"
+                      }
+                    },
+                    {
+                      "action": "click",
+                      "target": {
+                        "scope": "[role=\"menu\"]",
+                        "selectors": "[role=\"menuitemradio\"]",
+                        "index": 1,
+                        "expectedCount": 5,
+                        "identities": [
+                          "2:3",
+                          "3:2",
+                          "1:1",
+                          "9:16",
+                          "16:9"
+                        ],
+                        "identityAttribute": "textContent",
+                        "identitySelector": "span.text-center"
+                      }
+                    }
+                  ],
+                  "verificationSteps": [
+                    {
+                      "action": "pointerDown",
+                      "target": {
+                        "selectors": "form button[aria-haspopup=\"menu\"]"
+                      }
+                    }
+                  ],
+                  "selectedWhen": {
+                    "scope": "[role=\"menu\"]",
+                    "selectors": "[role=\"menuitemradio\"]",
+                    "index": 1,
+                    "expectedCount": 5,
+                    "identities": [
+                      "2:3",
+                      "3:2",
+                      "1:1",
+                      "9:16",
+                      "16:9"
+                    ],
+                    "identityAttribute": "textContent",
+                    "identitySelector": "span.text-center",
+                    "requiredAttributes": {
+                      "aria-checked": "true"
+                    }
+                  },
+                  "closeSteps": [
+                    {
+                      "action": "escape"
+                    },
+                    {
+                      "action": "waitAbsent",
+                      "target": {
+                        "selectors": "[role=\"menu\"]"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "value": "1:1",
+                  "label": "1:1",
+                  "steps": [
+                    {
+                      "action": "pointerDown",
+                      "target": {
+                        "selectors": "form button[aria-haspopup=\"menu\"]"
+                      }
+                    },
+                    {
+                      "action": "click",
+                      "target": {
+                        "scope": "[role=\"menu\"]",
+                        "selectors": "[role=\"menuitemradio\"]",
+                        "index": 2,
+                        "expectedCount": 5,
+                        "identities": [
+                          "2:3",
+                          "3:2",
+                          "1:1",
+                          "9:16",
+                          "16:9"
+                        ],
+                        "identityAttribute": "textContent",
+                        "identitySelector": "span.text-center"
+                      }
+                    }
+                  ],
+                  "verificationSteps": [
+                    {
+                      "action": "pointerDown",
+                      "target": {
+                        "selectors": "form button[aria-haspopup=\"menu\"]"
+                      }
+                    }
+                  ],
+                  "selectedWhen": {
+                    "scope": "[role=\"menu\"]",
+                    "selectors": "[role=\"menuitemradio\"]",
+                    "index": 2,
+                    "expectedCount": 5,
+                    "identities": [
+                      "2:3",
+                      "3:2",
+                      "1:1",
+                      "9:16",
+                      "16:9"
+                    ],
+                    "identityAttribute": "textContent",
+                    "identitySelector": "span.text-center",
+                    "requiredAttributes": {
+                      "aria-checked": "true"
+                    }
+                  },
+                  "closeSteps": [
+                    {
+                      "action": "escape"
+                    },
+                    {
+                      "action": "waitAbsent",
+                      "target": {
+                        "selectors": "[role=\"menu\"]"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "value": "9:16",
+                  "label": "9:16",
+                  "steps": [
+                    {
+                      "action": "pointerDown",
+                      "target": {
+                        "selectors": "form button[aria-haspopup=\"menu\"]"
+                      }
+                    },
+                    {
+                      "action": "click",
+                      "target": {
+                        "scope": "[role=\"menu\"]",
+                        "selectors": "[role=\"menuitemradio\"]",
+                        "index": 3,
+                        "expectedCount": 5,
+                        "identities": [
+                          "2:3",
+                          "3:2",
+                          "1:1",
+                          "9:16",
+                          "16:9"
+                        ],
+                        "identityAttribute": "textContent",
+                        "identitySelector": "span.text-center"
+                      }
+                    }
+                  ],
+                  "verificationSteps": [
+                    {
+                      "action": "pointerDown",
+                      "target": {
+                        "selectors": "form button[aria-haspopup=\"menu\"]"
+                      }
+                    }
+                  ],
+                  "selectedWhen": {
+                    "scope": "[role=\"menu\"]",
+                    "selectors": "[role=\"menuitemradio\"]",
+                    "index": 3,
+                    "expectedCount": 5,
+                    "identities": [
+                      "2:3",
+                      "3:2",
+                      "1:1",
+                      "9:16",
+                      "16:9"
+                    ],
+                    "identityAttribute": "textContent",
+                    "identitySelector": "span.text-center",
+                    "requiredAttributes": {
+                      "aria-checked": "true"
+                    }
+                  },
+                  "closeSteps": [
+                    {
+                      "action": "escape"
+                    },
+                    {
+                      "action": "waitAbsent",
+                      "target": {
+                        "selectors": "[role=\"menu\"]"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "value": "16:9",
+                  "label": "16:9",
+                  "steps": [
+                    {
+                      "action": "pointerDown",
+                      "target": {
+                        "selectors": "form button[aria-haspopup=\"menu\"]"
+                      }
+                    },
+                    {
+                      "action": "click",
+                      "target": {
+                        "scope": "[role=\"menu\"]",
+                        "selectors": "[role=\"menuitemradio\"]",
+                        "index": 4,
+                        "expectedCount": 5,
+                        "identities": [
+                          "2:3",
+                          "3:2",
+                          "1:1",
+                          "9:16",
+                          "16:9"
+                        ],
+                        "identityAttribute": "textContent",
+                        "identitySelector": "span.text-center"
+                      }
+                    }
+                  ],
+                  "verificationSteps": [
+                    {
+                      "action": "pointerDown",
+                      "target": {
+                        "selectors": "form button[aria-haspopup=\"menu\"]"
+                      }
+                    }
+                  ],
+                  "selectedWhen": {
+                    "scope": "[role=\"menu\"]",
+                    "selectors": "[role=\"menuitemradio\"]",
+                    "index": 4,
+                    "expectedCount": 5,
+                    "identities": [
+                      "2:3",
+                      "3:2",
+                      "1:1",
+                      "9:16",
+                      "16:9"
+                    ],
+                    "identityAttribute": "textContent",
+                    "identitySelector": "span.text-center",
+                    "requiredAttributes": {
+                      "aria-checked": "true"
+                    }
+                  },
+                  "closeSteps": [
+                    {
+                      "action": "escape"
+                    },
+                    {
+                      "action": "waitAbsent",
+                      "target": {
+                        "selectors": "[role=\"menu\"]"
+                      }
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "key": "sound",
+              "label": "Sound",
+              "type": "boolean",
+              "default": true,
+              "options": [
+                {
+                  "value": true,
+                  "label": "Enabled",
+                  "steps": [
+                    {
+                      "action": "click",
+                      "target": {
+                        "selectors": "form button[aria-pressed]",
+                        "requiredAttributes": {
+                          "aria-pressed": "false"
+                        }
+                      }
+                    }
+                  ],
+                  "selectedWhen": {
+                    "selectors": "form button[aria-pressed]",
+                    "requiredAttributes": {
+                      "aria-pressed": "true"
+                    }
+                  }
+                },
+                {
+                  "value": false,
+                  "label": "Disabled",
+                  "steps": [
+                    {
+                      "action": "click",
+                      "target": {
+                        "selectors": "form button[aria-pressed]",
+                        "requiredAttributes": {
+                          "aria-pressed": "true"
+                        }
+                      }
+                    }
+                  ],
+                  "selectedWhen": {
+                    "selectors": "form button[aria-pressed]",
+                    "requiredAttributes": {
+                      "aria-pressed": "false"
+                    }
+                  }
+                }
+              ]
+            }
+          ]
         }
       }
     }

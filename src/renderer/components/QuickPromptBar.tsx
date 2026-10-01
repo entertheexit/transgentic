@@ -1,3 +1,4 @@
+import { MediaSettingsModal, desktopMediaSnapshot } from './MediaSettingsModal.js';
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { Send, Sparkles, Loader2, RotateCcw, Bot, Paperclip, FileText, Film, X, MessageSquareText, CircleX } from 'lucide-react';
 import { soundFx } from '../audio/soundFx.js';
@@ -7,7 +8,7 @@ import type { TaskMode } from '../../shared/types.js';
 const QUICK_PROMPT_DRAFT_KEY = 'transgentic_quick_prompt_draft';
 
 interface QuickPromptBarProps {
-  onSendPrompt: (prompt: string, files: AttachmentInput[], temporaryChat?: boolean) => Promise<any>;
+  onSendPrompt: (prompt: string, files: AttachmentInput[], temporaryChat?: boolean, mediaPreferences?: import('../../shared/media.js').MediaPreferences) => Promise<any>;
   onSelectFiles?: (mode?: TaskMode) => Promise<DesktopAttachmentSelection[]>;
   isProcessing: boolean;
   hasActiveSession?: boolean;
@@ -18,6 +19,7 @@ interface QuickPromptBarProps {
   onError: (message: string, prompt?: string) => void;
   isServiceDeselected?: boolean;
   activeMode?: TaskMode;
+  routeIdentity?: string;
   temporaryChat?: boolean;
 }
 
@@ -33,6 +35,7 @@ export const QuickPromptBar: React.FC<QuickPromptBarProps> = ({
   onError,
   isServiceDeselected = false,
   activeMode,
+  routeIdentity = '',
   temporaryChat = false,
 }) => {
   const [input, setInput] = useState(() => {
@@ -43,6 +46,8 @@ export const QuickPromptBar: React.FC<QuickPromptBarProps> = ({
     }
   });
   const [isClearing, setIsClearing] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const sending = useRef(false);
   const [attachments, setAttachments] = useState<DesktopAttachmentSelection[]>([]);
   const attachmentsRef = useRef<HTMLDivElement | null>(null);
   const wheelCleanupRef = useRef<(() => void) | null>(null);
@@ -181,13 +186,15 @@ export const QuickPromptBar: React.FC<QuickPromptBarProps> = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!input.trim() || isProcessing || isServiceDeselected) return;
+    if (!input.trim() || isProcessing || isServiceDeselected || sending.current) return;
+    sending.current = true;
 
     const prompt = input.trim();
     const files: AttachmentInput[] = attachments.map(({ path, name }) => ({ path, name }));
     soundFx.playClick();
     try {
-      await onSendPrompt(prompt, files);
+      const settings = await desktopMediaSnapshot(activeMode || 'general');
+      await onSendPrompt(prompt, files, undefined, settings);
       setInput('');
       setAttachments([]);
       try {
@@ -195,18 +202,19 @@ export const QuickPromptBar: React.FC<QuickPromptBarProps> = ({
       } catch {}
     } catch (error: any) {
       onError(error?.message || 'Quick Prompt could not send this request.', prompt);
-    }
+    } finally { sending.current = false; }
   };
 
   const inputRightPadding = 72 + (hasAnswer ? 34 : 0) + (hasActiveSession ? 78 : 0);
 
   return (
     <form onSubmit={handleSubmit} className="w-full mt-2">
+      {settingsOpen && <MediaSettingsModal mode={activeMode || 'general'} routeIdentity={routeIdentity} onClose={() => setSettingsOpen(false)} />}
       <div className="relative flex items-center mx-4">
         
-        <div className={`absolute left-3 pointer-events-none ${isServiceDeselected ? 'text-amber-400' : 'text-cyan-400'}`}>
-          {isServiceDeselected ? <Bot className="w-3.5 h-3.5" /> : <Sparkles className="w-3.5 h-3.5" />}
-        </div>
+        <button type="button" aria-label="Quick Prompt settings" aria-haspopup="dialog" onClick={() => setSettingsOpen(true)} className={`absolute left-1 flex h-7 w-7 items-center justify-center rounded-lg focus-visible:outline focus-visible:outline-cyan-400 ${isServiceDeselected ? 'text-amber-400' : 'text-cyan-400'}`}>
+          <Sparkles className="w-3.5 h-3.5" />
+        </button>
 
         <input
           type="text"

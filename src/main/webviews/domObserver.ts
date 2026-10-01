@@ -32,11 +32,12 @@ export class DomObserver {
    * Generates browser-side DOM inspection script tailored for each provider
    * to accurately detect streaming status, thinking states, media rendering, and completion.
    */
-  public static getInspectionScript(providerId: ProviderId, mode: TaskMode, recipeConfig?: CustomRecipe): string {
+  public static getInspectionScript(providerId: ProviderId, mode: TaskMode, recipeConfig?: CustomRecipe, excludedMediaUrls: string[] = []): string {
     return `
       (async function() {
         try {
           const recipe = ${JSON.stringify(recipeConfig || null)};
+          const excludedMediaUrls = new Set(${JSON.stringify(excludedMediaUrls)});
           const extractToolProtocolCode = ${extractToolProtocolCode.toString()};
           const selectorString = value => Array.isArray(value) ? value.join(', ') : (value || '');
           const bodyText = document.body ? (document.body.innerText || '') : '';
@@ -627,6 +628,27 @@ export class DomObserver {
             }
 
             case 'grok': {
+              // Imagine is a canvas surface, independent of the chat turn selectors.
+              // Its existing gallery and reference uploads must never become this request's result.
+              const modeConfig = recipe?.response?.modes?.[${JSON.stringify(mode)}];
+              if (modeConfig?.pageUrl === '/imagine' && ['image', 'video'].includes(${JSON.stringify(mode)})) {
+                // Generated previews may be portalled outside the main canvas.
+                // Keep recipe URL selectors and the pre-submit asset exclusion
+                // list, rather than assuming every result belongs to <main>.
+                const elements = Array.from(document.querySelectorAll(selectorString(modeConfig.contentSelector)));
+                const asset = elements.find(el => {
+                  if (el.closest('form, nav, aside, a[href*="/template/"]')) return false;
+                  const src = el.currentSrc || el.src || el.getAttribute('src');
+                  return src && !excludedMediaUrls.has(src) && (el.tagName === 'IMG' ? el.complete && el.naturalWidth > 0 : el.readyState >= 2);
+                });
+                if (asset) {
+                  mediaUrl = asset.currentSrc || asset.src || asset.getAttribute('src');
+                  mediaType = ${JSON.stringify(mode)};
+                  hasActionButtons = true;
+                  isMediaRendering = false; isGenerating = false; isThinking = false;
+                }
+                break;
+              }
               const turns = Array.from(document.querySelectorAll(
                 selectorString(recipe?.response?.container) || (
                 '#last-reply-container [id^="response-"], ' +
@@ -901,6 +923,7 @@ export class DomObserver {
             }
           }
 
+          if (mediaUrl && excludedMediaUrls.has(mediaUrl)) { mediaUrl = undefined; mediaType = undefined; }
           // Global Blob-to-DataURI Converter:
           // Browser-internal "blob:" URLs cannot be downloaded or saved by Node.js outside the browser.
           // Convert any blob media URL directly into a Base64 data URI within the page origin.
@@ -919,6 +942,8 @@ export class DomObserver {
               }
             } catch (blobErr) {}
           }
+
+          if (mediaUrl && excludedMediaUrls.has(mediaUrl)) { mediaUrl = undefined; mediaType = undefined; }
 
           return {
             isGenerating,

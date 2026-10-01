@@ -4,6 +4,7 @@
  * and built-in provider definitions.
  */
 
+import { validateGeneration, type RecipeGeneration } from '../media.js';
 export type RecipeAuthStrategy = 'cookie_sync';
 
 /**
@@ -53,6 +54,7 @@ export interface RecipeSelectors {
 }
 
 export interface RecipeModeResponse {
+  generation?: RecipeGeneration;
   /** Whether this mode is supported / enabled */
   enabled: boolean;
   /** Dedicated route or subpage URL for this mode (e.g. "/imagine", "/video") */
@@ -601,6 +603,10 @@ export function validateCustomRecipe(raw: any): { valid: boolean; errors: string
         errors.push('response.modes.text.enabled boolean is required.');
       }
       for (const [modeName, modeValue] of Object.entries(raw.response.modes)) {
+        if ((modeValue as any)?.generation !== undefined) {
+          try { validateGeneration((modeValue as any).generation); }
+          catch (error: any) { errors.push(`response.modes.${modeName}: ${error.message}`); }
+        }
         const attachmentInput = (modeValue as any)?.inputAttachments;
         if (!attachmentInput) continue;
         if (!normalizeSelectorCandidate(attachmentInput.fileInput)) {
@@ -676,6 +682,7 @@ export function validateCustomRecipe(raw: any): { valid: boolean; errors: string
         ...(raw.response.modes.image
           ? {
               image: {
+                ...(raw.response.modes.image.generation ? { generation: validateGeneration(raw.response.modes.image.generation) } : {}),
                 enabled: Boolean(raw.response.modes.image.enabled),
                 pageUrl: raw.response.modes.image.pageUrl?.trim() || undefined,
                 inputSelector: normalizeSelectorCandidate(raw.response.modes.image.inputSelector),
@@ -690,6 +697,7 @@ export function validateCustomRecipe(raw: any): { valid: boolean; errors: string
         ...(raw.response.modes.video
           ? {
               video: {
+                ...(raw.response.modes.video.generation ? { generation: validateGeneration(raw.response.modes.video.generation) } : {}),
                 enabled: Boolean(raw.response.modes.video.enabled),
                 pageUrl: raw.response.modes.video.pageUrl?.trim() || undefined,
                 inputSelector: normalizeSelectorCandidate(raw.response.modes.video.inputSelector),
@@ -704,6 +712,7 @@ export function validateCustomRecipe(raw: any): { valid: boolean; errors: string
         ...(raw.response.modes.music
           ? {
               music: {
+                ...(raw.response.modes.music.generation ? { generation: validateGeneration(raw.response.modes.music.generation) } : {}),
                 enabled: Boolean(raw.response.modes.music.enabled),
                 pageUrl: raw.response.modes.music.pageUrl?.trim() || undefined,
                 inputSelector: normalizeSelectorCandidate(raw.response.modes.music.inputSelector),

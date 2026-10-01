@@ -4,6 +4,9 @@ import { ProviderId, TaskMode } from '../../shared/types.js';
 import { CustomRecipe, normalizeSelectorList, toCombinedCssSelector, RecipeModes, RecipeAttachmentRevealStep, RecipeElementLocator, RecipeClickStep, SelectorCandidate } from '../../shared/types/recipe.js';
 import { ProjectMetadata } from '../storage/projectManager.js';
 import type { StagedAttachment } from '../../shared/attachments.js';
+import { resolveMediaSettings, type MediaSettings, type MediaMode } from '../../shared/media.js';
+import { applyMediaControls, findMediaControl } from './mediaControls.js';
+import { DomObserver, type DomInspectionResult } from './domObserver.js';
 
 /**
  * CustomRecipeAdapter
@@ -41,6 +44,24 @@ export class CustomRecipeAdapter extends BaseProviderAdapter {
 
   get name(): string {
     return this.recipe.title || 'Webview Provider';
+  }
+
+  public createPinnedExecutionAdapter(contents: NonNullable<ReturnType<BaseProviderAdapter['getWebContents']>>, partition: string): CustomRecipeAdapter {
+    const execution = new CustomRecipeAdapter(this.recipe);
+    execution.setCustomPartition(partition);
+    execution.setWebContents(contents);
+    return execution;
+  }
+
+  public async prepareMediaPage(mode: TaskMode): Promise<void> {
+    const page = this.recipe.response?.modes?.[mode as keyof RecipeModes]?.pageUrl;
+    if (!page || !this.webContents || this.webContents.isDestroyed()) return;
+    const target = new URL(page, this.url);
+    const current = new URL(this.webContents.getURL() || 'about:blank');
+    if (current.origin !== target.origin || current.pathname !== target.pathname) {
+      await this.webContents.loadURL(target.toString());
+      await new Promise(resolve => setTimeout(resolve, 1500));
+    }
   }
 
   get url(): string {
@@ -368,7 +389,10 @@ export class CustomRecipeAdapter extends BaseProviderAdapter {
     project?: ProjectMetadata,
     onChunk?: (chunk: string) => void,
     abortSignal?: AbortSignal,
-    attachments: readonly StagedAttachment[] = []
+    attachments: readonly StagedAttachment[] = [],
+    mediaSettings: MediaSettings = {},
+    mediaModel?: string,
+    onSubmitted?: () => void
   ): Promise<ProviderAdapterResult> {
     // 1. Ensure WebContents is active
     if (!this.webContents || this.webContents.isDestroyed()) {
@@ -439,8 +463,14 @@ export class CustomRecipeAdapter extends BaseProviderAdapter {
     }
 
     const upload = modeConfig?.inputAttachments;
+    const resolvedSettings = ['image', 'video', 'music'].includes(mode)
+      ? resolveMediaSettings(this.recipe, mode as MediaMode, { settings: mediaSettings }, mediaModel) : {};
+    const verifyMedia = modeConfig?.generation
+      ? await applyMediaControls(modeConfig.generation, resolvedSettings, code => this.executeScript(code), abortSignal, () => { this.webContents?.sendInputEvent({ type: 'keyDown', keyCode: 'ESC' }); this.webContents?.sendInputEvent({ type: 'keyUp', keyCode: 'ESC' }); })
+      : undefined;
     let attached = false;
     let submitted = false;
+    let excludedMediaUrls: string[] | undefined;
     try {
       if (this.temporaryChatRequired && !await this.verifyTemporaryChat()) {
         throw new Error('[TEMPORARY_CHAT_VERIFICATION_FAILED] Temporary Chat verification was lost before attachments or prompt entry.');
@@ -462,6 +492,7 @@ export class CustomRecipeAdapter extends BaseProviderAdapter {
       }
 
       // Dispatch only after every attachment is present and ready.
+      await verifyMedia?.();
       const rawInput = modeConfig?.inputSelector || this.recipe.selectors.inputPrompt;
       const inputSelector = toCombinedCssSelector(rawInput);
       const inputResult = await this.dispatchRealisticInput(inputSelector, prompt);
@@ -472,9 +503,21 @@ export class CustomRecipeAdapter extends BaseProviderAdapter {
         throw new Error('[TEMPORARY_CHAT_VERIFICATION_FAILED] Temporary Chat verification was lost before submission.');
       }
 
+      await verifyMedia?.();
+      if (verifyMedia) {
+        const prior = await this.executeScript<DomInspectionResult>(DomObserver.getInspectionScript(this.providerId, mode, this.recipe));
+        const existing = await this.executeScript<string[]>(`Array.from(document.querySelectorAll('img,video,audio,source')).flatMap(el => [el.src, el.currentSrc, el.getAttribute('src')]).filter(Boolean)`);
+        excludedMediaUrls = [...existing, ...(prior.mediaUrl ? [prior.mediaUrl] : [])];
+      }
       const rawSubmit = modeConfig?.submitSelector || this.recipe.selectors.submitButton;
       const submitSelector = toCombinedCssSelector(rawSubmit);
-      const submitResult = await this.dispatchRealisticSubmit(submitSelector, inputSelector);
+      if (verifyMedia && !await this.executeScript<boolean>(`!!(${findMediaControl.toString()})(${JSON.stringify({ selectors: rawSubmit })})`)) {
+        throw new Error('[MEDIA_SETTINGS_FAILED] The declared media submit control is unavailable.');
+      }
+      onSubmitted?.(); // Persist uncertainty before the irreversible UI action.
+      const submitResult = verifyMedia
+        ? await this.executeScript<{ success: boolean; error?: string }>(`(() => { const button = (${findMediaControl.toString()})(${JSON.stringify({ selectors: rawSubmit })}); if (!button) throw new Error('Media submit control disappeared.'); button.click(); return { success: true }; })()`)
+        : await this.dispatchRealisticSubmit(submitSelector, inputSelector);
       if (!submitResult?.success) throw new Error(`Failed to submit prompt to "${this.name}": ${submitResult?.error || 'No actionable submit control'}`);
       submitted = true;
     } catch (error) {
@@ -491,7 +534,7 @@ export class CustomRecipeAdapter extends BaseProviderAdapter {
 
     // 5. Polling with dynamic timeout budget
     try {
-      const result = await this.pollGeneration({ mode, metadata: project, onChunk, abortSignal });
+      const result = await this.pollGeneration({ mode, metadata: project, onChunk, abortSignal, excludedMediaUrls });
       if (this.temporaryChatRequired && !await this.verifyTemporaryChat()) {
         throw new Error('[TEMPORARY_CHAT_SUBMISSION_UNCERTAIN] The provider response completed after Temporary Chat verification was lost. It was not retried elsewhere.');
       }

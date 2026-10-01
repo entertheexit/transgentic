@@ -11,6 +11,8 @@ import { globalSessionManager } from '../src/main/webviews/sessionManager.js';
 import { globalRateLimiter } from '../src/main/mcp/rateLimiter.js';
 import { DuplicateActionGuard } from '../src/main/security/duplicateActionGuard.js';
 import { globalAssetManager } from '../src/main/storage/assetManager.js';
+import { CustomRecipeAdapter } from '../src/main/webviews/customRecipeAdapter.js';
+import { BUILTIN_RECIPES } from '../src/shared/types/recipe.js';
 import type { ProviderId, TaskMode, TransgenticConfig } from '../src/shared/types.js';
 import type { CallerContext } from '../src/main/mcp/clientContext.js';
 
@@ -156,7 +158,7 @@ describe('Actual provider answers with server-side reminders', () => {
     expect(adapter.executePrompt).toHaveBeenCalledTimes(2);
   });
 
-  it.each(['general', 'coding', 'image', 'video', 'music'] as TaskMode[])(
+  it.each(['general', 'coding'] as TaskMode[])(
     'keeps Web AI answers and reminders across scenarios in %s mode', async (mode) => {
       for (const [balanced, double] of [[true, false], [false, false], [true, true], [false, true]]) {
         configure(balanced, false, double);
@@ -224,22 +226,39 @@ describe('Actual provider answers with server-side reminders', () => {
     expect(result.content[1].text).toContain('BALANCED HARNESS: LOCAL LLM');
   });
 
-  it('keeps media paths and rollover notices in both dual-dispatch answers', async () => {
+  it.each(['image', 'video', 'music'] as TaskMode[])('rejects unverified %s adapters without dual submissions', async mode => {
     configure(false, false, true);
-    vi.mocked(DynamicRouter.getCandidateChain).mockImplementation((_m, _p, _f, pipeline) =>
-      [pipeline === 'co' ? 'gemini' : 'claude']);
-    adapter.executePrompt.mockResolvedValue({ text: '', media: { data: 'mock', type: 'image' } });
-    vi.spyOn(globalAssetManager, 'saveMediaAsset').mockResolvedValue({ filePath: '/tmp/test-asset.png' } as any);
-    await run('Draw a flower.', 'image');
-    vi.spyOn(globalThreadManager, 'shouldRollover').mockReturnValue(true);
-    const result = await run('Draw another flower.', 'image', undefined, false);
-    const sections = result.content[0].text.split('### [Co-Reviewer');
-    expect(sections).toHaveLength(2);
-    for (const section of sections) {
-      expect(section).toContain('Local media asset saved to: /tmp/test-asset.png');
-      expect(section).toContain('[TRANSGENTIC AUTO-NEW-CHAT NOTICE]');
-    }
-    expect(result.content[1].text).toContain('DOUBLE-AGENT DIRECTIVE');
+    vi.mocked(DynamicRouter.getCandidateChain).mockReturnValue(['gemini', 'grok']);
+    const result = await run('Generate one artifact.', mode);
+    expect(result.isError).toBe(true);
+    expect(result.structuredContent.status).toBe('failed');
+    expect(result.content[0].text).toContain('MEDIA_SETTINGS_UNSUPPORTED');
+    expect(adapter.executePrompt).not.toHaveBeenCalled();
+  });
+
+  it.each(['text', 'empty', 'uncertain'])('never retries a submitted media request after a %s result', async kind => {
+    configure(false, false, true);
+    vi.mocked(DynamicRouter.getCandidateChain).mockReturnValue(['gemini', 'grok']);
+    const mediaAdapter = new CustomRecipeAdapter(BUILTIN_RECIPES.gemini);
+    vi.mocked(globalSessionManager.getAdapter).mockReturnValue(mediaAdapter);
+    vi.spyOn(mediaAdapter, 'createPinnedExecutionAdapter').mockReturnValue(mediaAdapter);
+    vi.spyOn(mediaAdapter, 'prepareMediaPage').mockResolvedValue();
+    vi.spyOn(mediaAdapter, 'navigateToNewChat').mockResolvedValue();
+    vi.spyOn(mediaAdapter, 'checkRateLimit').mockResolvedValue({ isRateLimited: false });
+    vi.spyOn(mediaAdapter, 'acquireDomLock').mockResolvedValue(() => {});
+    vi.spyOn(mediaAdapter, 'getConversationUrl').mockResolvedValue('https://gemini.google.com/app/test');
+    const execute = vi.spyOn(mediaAdapter, 'executePrompt').mockImplementation(async (...args) => {
+      args[8]?.();
+      if (kind === 'uncertain') throw new Error('Lost provider response after submission');
+      return { text: kind === 'empty' ? '' : 'Here is a plan for creating your image.' };
+    });
+    const result = await run('Create a square landscape illustration.', 'image');
+    expect(result.isError).toBe(true);
+    expect(result.structuredContent.status).toBe('failed');
+    expect(result.content[0].text).toContain(kind === 'uncertain' ? 'WEBVIEW_SUBMISSION_UNCERTAIN' : 'MEDIA_NOT_GENERATED');
+    expect(execute).toHaveBeenCalledOnce();
+    expect(globalSessionManager.getAdapter).not.toHaveBeenCalledWith('grok');
+    expect(completion).not.toHaveBeenCalled();
   });
 
   it('keeps a surviving dual answer when the other provider fails', async () => {
@@ -312,7 +331,7 @@ describe('Actual provider answers with server-side reminders', () => {
 describe('Caller profiles and truthful outcomes across providers', () => {
   it.each(['localllm', 'chatgpt', 'claude', 'gemini', 'grok', 'custom-service'] as ProviderId[])(
     'keeps neutral input/output for plain MCP and Quick Prompt on %s', async (provider) => {
-      const modes: TaskMode[] = provider === 'localllm' ? ['general', 'coding'] : ['general', 'coding', 'image', 'video', 'music'];
+      const modes: TaskMode[] = ['general', 'coding'];
       for (const mode of modes) for (const quick of [true, false]) for (const balanced of [true, false]) {
         configure(balanced, true);
         const result = await run('A neutral user request.', mode, provider, true, quick,
@@ -321,7 +340,7 @@ describe('Caller profiles and truthful outcomes across providers', () => {
         expect(sent).toBe('A neutral user request.');
         expect(result.content).toEqual([{ type: 'text', text: answer }]);
         expect(result.structuredContent).toMatchObject({
-          status: ['image', 'video', 'music'].includes(mode) ? 'partial' : 'completed', responseProfile: 'plain', guidance: '',
+          status: 'completed', responseProfile: 'plain', guidance: '',
         });
       }
     });

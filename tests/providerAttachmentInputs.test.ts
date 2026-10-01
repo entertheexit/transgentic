@@ -8,6 +8,17 @@ const pdf = { name: 'notes.pdf', mimeType: 'application/pdf' };
 describe('Provider attachment input selection', () => {
   const adapter = new CustomRecipeAdapter(BUILTIN_RECIPES.gemini) as any;
 
+  it('pins media execution to its submitted view when the drawer registers another view', () => {
+    const originalView = { isDestroyed: () => false } as any;
+    const drawerView = { isDestroyed: () => false } as any;
+    adapter.setWebContents(originalView);
+    const execution = adapter.createPinnedExecutionAdapter(originalView, 'persist:media-account');
+    adapter.setWebContents(drawerView);
+    expect(execution.getWebContents()).toBe(originalView);
+    expect(adapter.getWebContents()).toBe(drawerView);
+    expect(execution.getActivePartition()).toBe('persist:media-account');
+  });
+
   it.each([
     ['image/*', [image], true],
     ['.jpg,.png', [image], true],

@@ -4,6 +4,8 @@ Configure Transgentic web adapters with JSON recipes for selectors, authenticati
 
 [Documentation index](../README.md#documentation-index)
 
+For declarative media activation, guarded option indexes, setting verification and generation defaults, see [Media settings and generation API](MEDIA_API.md#recipe-controls).
+
 Recipes configure web adapters using JSON selectors, response extraction rules, authentication checks, and model controls. A recipe is not a provider approval or a guarantee of compatibility.
 
 Use only services and content you are authorized to use. Any automated workflow must comply with the provider's applicable terms and permissions; access to an account does not itself establish permission to automate it. Recipe consent notices do not grant that permission.
@@ -59,7 +61,7 @@ The field reference below covers commonly used fields, not a complete validation
 * **`text`**: `{ enabled: true, contentSelector?: "...", mediaKind: "text" }` — Prose and code extraction.
 * **`image`**: `{ enabled: true, contentSelector: "img.generated-image, img[src*='storage']", downloadSelector?: "...", mediaKind: "image" }` — Image generation.
 * **`video`**: `{ enabled: true, contentSelector: "video source, video[src]", downloadSelector?: "...", mediaKind: "video" }` — Video generation.
-* **`music`**: `{ enabled: true, contentSelector: "audio source, audio[src]", downloadSelector?: "...", mediaKind: "audio" }` — Music generation. The media kind remains `audio` because it describes the file format.
+* **`music`**: `{ enabled: true, contentSelector: "audio source, audio[src]", downloadSelector?: "...", mediaKind: "audio" }` — Music generation. The product mode stays Music even when the provider packages its audio track in an MP4 video container.
 
 Any mode may opt into uploads with `inputAttachments`. It declares `fileInput`, optional `revealSteps`, legacy `trigger`, `ready`, and `cleanup` selectors, `acceptedKinds` (`image`, `document`, `video`), optional `acceptedMimeTypes`, and `multiple`. Each reveal step is an upload-scoped `{ "action": "click", "target": { "selectors"?, "role"?, "name"? } }`; `name` is an exact accessible-name value or localized fallback list. Recipes without this block remain text-only.
 

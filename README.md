@@ -173,12 +173,21 @@ Choose the gateway surface according to which application owns the task:
 | Transgentic is the client's primary model provider | OpenAI-compatible `/v1` API | The client owns conversation history and executes its project tools locally. |
 | An agent calls Transgentic as one tool among others | `/mcp` or `/sse` | The agent owns the surrounding task; Transgentic executes the selected route or service. |
 
-Completion and MCP endpoints require the same Transgentic access token.
+Completion, media jobs and MCP endpoints require the same Transgentic access token.
 
 | Operation | Endpoint |
 | :--- | :--- |
 | List models | `GET http://127.0.0.1:58420/v1/models` |
 | Chat completion | `POST http://127.0.0.1:58420/v1/chat/completions` |
+| Media capabilities | `GET http://127.0.0.1:58420/v1/media/capabilities` |
+| Create media job | `POST http://127.0.0.1:58420/v1/media/jobs` |
+| Media job status | `GET http://127.0.0.1:58420/v1/media/jobs/:id` |
+| Cancel media job | `POST http://127.0.0.1:58420/v1/media/jobs/:id/cancel` |
+| Download media artifact | `GET http://127.0.0.1:58420/v1/media/jobs/:id/artifacts/:artifactId` |
+
+For image, video or music generation from an ordinary application, use the authenticated media job API. Discover supported controls, submit a prompt with semantic `settings` and optional reference `files`, then poll the returned job ID and download registered artifacts. Jobs preserve idempotency and report uncertain submissions without replaying them. See [Media settings and generation API](docs/MEDIA_API.md) for runnable examples, defaults, cancellation and recovery. `/v1/chat/completions` keeps its text and tool-call contract.
+
+Quick Prompt's sparkle button opens settings for the selected mode. Choices are saved per provider/mode on this device, with compatible fallback inheritance and explicit overrides. API and MCP requests use their explicit settings or recipe defaults independently of desktop choices.
 
 Keep `/mcp` and `/sse` for clients that use Transgentic as an agentic tool.
 
@@ -268,7 +277,11 @@ For transport details, selection examples, and plain-client configuration, see [
 
 - **Request-scoped multimodal inputs:**
 
-  MCP Streamable HTTP, legacy SSE, configured API services, supported native CLIs, upload-enabled webview recipes, and the desktop Quick Prompt accept explicit image/document attachments; Video mode also accepts supported video files. Quick Prompt shows removable square previews in a horizontally scrollable row beneath its composer and sends them only with that request. Image/video editing uses `edit_image` and `edit_video`, while the original generation tools stay text-only.
+  MCP Streamable HTTP, legacy SSE, configured API services, supported native CLIs, upload-enabled webview recipes, and the desktop Quick Prompt accept explicit image/document attachments; Video mode also accepts supported video files. Quick Prompt shows removable square previews in a horizontally scrollable row beneath its composer and sends them only with that request. Image/video generation accepts reference images where supported; editing uses `edit_image` and `edit_video` with required source media. Capability discovery reports each provider’s accepted inputs.
+
+- **Recipe-driven media settings:**
+
+  Use semantic aspect ratios, quality, duration and music preferences across Quick Prompt, MCP and the media job API. Recipes activate and verify the provider's native tool and controls before submission. A media request succeeds only after saving a usable artifact; text-only replies report failure. Music packaged as MP4 stays in Music and requires an audio track. Account plans and quotas still apply.
 
 - **MCP client profiles:**
 
@@ -360,6 +373,7 @@ Model responses include `content` and structured fields such as `status`, `answe
 | :--- | :--- |
 | [Connections and provider setup](docs/CONNECTING.md) | Authentication, HTTP/SSE endpoints, stdio bridge, companion extension, connection checks |
 | [OpenAI-compatible completion gateway](docs/COMPLETION_GATEWAY.md) | Cline setup, route models, tool ownership, Provider Mode, LAN access |
+| [Media settings and generation API](docs/MEDIA_API.md) | Recipe defaults, Quick Prompt settings, MCP generation, authenticated jobs and downloads |
 | [Built-in CLI services](docs/CLI_SERVICES.md) | Native CLI setup, Provider and Agentic modes, workspaces, permissions, compatibility |
 | [MCP tools and application integration](docs/MCP_TOOLS.md) | Tool arguments, task modes, multi-turn examples, command-line requests |
 | [MCP responses and caller profiles](docs/MCP_RESPONSES.md) | Agentic/plain responses, conversation isolation, outcomes, cancellation, progress |

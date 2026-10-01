@@ -573,6 +573,15 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   -H "Content-Type: application/json" \\
   -d '{"model":"transgentic/general","messages":[{"role":"user","content":"Hello"}]}'`;
 
+  const mediaJobExample = JSON.stringify({
+    mode: 'music',
+    provider: 'gemini',
+    prompt: 'Create an original gentle piano instrumental, no vocals.',
+    settings: { length: 'standard', vocals: 'custom', genre: 'custom' },
+    new_thread: true,
+    temporary_chat: false,
+  }, null, 2);
+
   const currentProvConfig = registry[selectedProvider] || {
     serviceEnabled: true,
     activeSelectionMode: 'hybrid',
@@ -1854,7 +1863,7 @@ http_headers = { "Authorization" = "Bearer ${clientToken || 'YOUR_TOKEN'}" }`;
                   Gateway Port & Network
                 </span>
                 <p className="text-[10px] text-slate-400">
-                  One authenticated port for MCP and OpenAI-compatible completion.
+                  One authenticated port for MCP, completions and media jobs.
                 </p>
               </div>
             </div>
@@ -2225,11 +2234,53 @@ http_headers = { "Authorization" = "Bearer ${clientToken || 'YOUR_TOKEN'}" }`;
                   </div>
                 </div>
 
+                {/* Media generation uses durable jobs, separately from chat completions. */}
+                <div className="space-y-2">
+                  <span className="flex items-center gap-1 text-xs font-bold uppercase text-slate-200 font-mono">
+                    <Sparkles className="h-3.5 w-3.5 text-purple-400" />
+                    <span>2. Image, Video & Music API</span>
+                  </span>
+                  <p className="text-[10px] leading-relaxed text-slate-400">
+                    Generate media from any application using the same /v1 base URL and Bearer access token. Discover supported settings first, submit one job, then poll its ID. Chat completions keep their existing contract.
+                  </p>
+                  <div className="space-y-1.5 text-[11px] font-mono">
+                    {[
+                      { method: 'GET', path: '/media/capabilities', description: 'Provider/model availability, supported values, defaults and reference-file limits.', copy: true },
+                      { method: 'POST', path: '/media/jobs', description: 'Validate and enqueue image, video or music; returns HTTP 202 with a job ID.', copy: true },
+                      { method: 'GET', path: '/media/jobs/:id', description: 'Progress, effective settings, artifacts or error.' },
+                      { method: 'POST', path: '/media/jobs/:id/cancel', description: 'Cancel queued work or stop waiting. Submitted provider generation may continue.' },
+                      { method: 'GET', path: '/media/jobs/:id/artifacts/:artifactId', description: 'Authenticated download of a registered artifact belonging to your job.' },
+                    ].map(endpoint => (
+                      <div key={endpoint.path} className="flex items-center justify-between gap-2 rounded-xl border border-white/5 bg-black/40 p-2.5">
+                        <div className="min-w-0">
+                          <span className="break-all font-bold text-purple-300">{endpoint.method} /v1{endpoint.path}</span>
+                          <p className="mt-0.5 font-sans text-[10px] text-slate-400">{endpoint.description}</p>
+                        </div>
+                        {endpoint.copy && <button aria-label={`Copy ${endpoint.method} ${endpoint.path} URL`} onClick={() => copyToClipboard(`${completionBaseUrl}${endpoint.path}`, endpoint.path)} className="shrink-0 rounded bg-white/10 px-2 py-1 text-[10px] text-slate-200 hover:bg-white/20">{copiedId === endpoint.path ? 'Copied!' : 'Copy URL'}</button>}
+                      </div>
+                    ))}
+                  </div>
+                  <p className="text-[10px] leading-relaxed text-slate-400">
+                    Send mode, prompt, optional provider/model, settings, provider_settings and files. Reference images are supported for image/video where capabilities allow them. Settings resolve from recipe defaults, then common choices, then provider overrides; incompatible fallbacks are skipped. API/MCP calls do not use saved desktop choices.
+                  </p>
+                  <div className="relative rounded-xl border border-white/10 bg-black/60 p-3 font-mono text-[9.5px] text-cyan-300">
+                    <span className="mb-2 block text-slate-400">Example JSON body for POST /v1/media/jobs</span>
+                    <pre className="overflow-x-auto pr-16 selection:bg-cyan-500 selection:text-black">{mediaJobExample}</pre>
+                    <button aria-label="Copy media job JSON example" onClick={() => copyToClipboard(mediaJobExample, 'media-job-example')} className="absolute right-2.5 top-2.5 rounded border border-white/10 bg-white/10 px-2 py-1 text-[9px] text-slate-200 hover:bg-white/20">{copiedId === 'media-job-example' ? 'Copied!' : 'Copy'}</button>
+                  </div>
+                  <p className="text-[10px] leading-relaxed text-slate-400">
+                    Use an Idempotency-Key header to recover the same job without another generation. States: queued, running, submitted, completed, failed, cancelled, uncertain. Only completed jobs have usable saved media; text-only replies fail with media_not_generated. Uncertain submissions are never replayed automatically, including after restart. Downloads require authentication. Music can be an MP4 with a playable audio track.
+                  </p>
+                  <p className="text-[10px] leading-relaxed text-slate-400">
+                    Defaults: Gemini Music Standard / Custom / Custom, Gemini Image 1:1, Gemini Video 16:9; Grok Image Speed / 1:1, Grok Video 480p / 6 seconds / 16:9 / sound on; ChatGPT Image native automatic settings. Account subscriptions and quotas still apply. Unsupported explicit values fail rather than silently changing.
+                  </p>
+                </div>
+
                 {/* 2. SSE Endpoints */}
                 <div className="space-y-2">
                   <span className="text-xs font-bold text-slate-200 uppercase font-mono flex items-center gap-1">
                     <Server className="w-3.5 h-3.5 text-cyan-400" />
-                    <span>2. SSE Transport Endpoints</span>
+                    <span>3. SSE Transport Endpoints</span>
                   </span>
 
                   <div className="space-y-1.5 text-[11px] font-mono">
@@ -2284,7 +2335,7 @@ http_headers = { "Authorization" = "Bearer ${clientToken || 'YOUR_TOKEN'}" }`;
                 <div className="space-y-2">
                   <span className="text-xs font-bold text-slate-200 uppercase font-mono flex items-center gap-1">
                     <Code2 className="w-3.5 h-3.5 text-emerald-400" />
-                    <span>3. Exposed MCP Tools</span>
+                    <span>4. Exposed MCP Tools</span>
                   </span>
 
                   <div className="space-y-2 text-[11px]">
@@ -2318,7 +2369,7 @@ http_headers = { "Authorization" = "Bearer ${clientToken || 'YOUR_TOKEN'}" }`;
                         </span>
                       </div>
                       <p className="text-slate-400 text-[10px]">
-                        Generates media and downloads files 100% locally to disk, returning only short local file paths.
+                        Generates and saves validated media locally. Accepts settings and provider_settings; image/video tools accept supported reference files. edit_image and edit_video require source media. Discover options with get_media_capabilities. Returned host paths may not be accessible from another machine.
                       </p>
                     </div>
                   </div>
@@ -2328,7 +2379,7 @@ http_headers = { "Authorization" = "Bearer ${clientToken || 'YOUR_TOKEN'}" }`;
                 <div className="space-y-2.5">
                   <span className="text-xs font-bold text-slate-200 uppercase font-mono flex items-center gap-1.5">
                     <History className="w-3.5 h-3.5 text-purple-400" />
-                    <span>4. Thread Mapping & Multi-Turn Session Persistence</span>
+                    <span>5. Thread Mapping & Multi-Turn Session Persistence</span>
                   </span>
 
                   <div className="space-y-2 text-[11px]">
@@ -2399,7 +2450,7 @@ http_headers = { "Authorization" = "Bearer ${clientToken || 'YOUR_TOKEN'}" }`;
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-bold text-slate-200 uppercase font-mono flex items-center gap-1.5">
                       <SlidersHorizontal className="w-3.5 h-3.5 text-cyan-400" />
-                      <span>5. Dedicated Task Mode Endpoints (Pre-Locked Modes)</span>
+                      <span>6. Dedicated Task Mode Endpoints (Pre-Locked Modes)</span>
                     </span>
                     <span className="text-[9px] font-mono text-cyan-400 bg-cyan-500/10 px-2 py-0.5 rounded border border-cyan-500/20">
                       Auto-Locked Task Modes
@@ -2467,7 +2518,7 @@ http_headers = { "Authorization" = "Bearer ${clientToken || 'YOUR_TOKEN'}" }`;
                       </div>
                       <div className="flex items-center justify-between text-[10px] text-slate-400 font-sans">
                         <span><strong className="text-slate-200 font-normal">Music Generation</strong> <span className="font-mono text-slate-300 text-[9.5px]">(lyria-3-pro)</span></span>
-                        <span className="text-[9px] font-mono text-emerald-400 bg-emerald-500/10 px-1.5 py-0.2 rounded border border-emerald-500/20">Local Disk MP3</span>
+                        <span className="text-[9px] font-mono text-emerald-400 bg-emerald-500/10 px-1.5 py-0.2 rounded border border-emerald-500/20">Local Audio / MP4</span>
                       </div>
                       <p className="text-[9px] text-slate-500">Narration, speech, voiceover, TTS, podcasts, and sound effects are reserved for a future Audio provider.</p>
                     </div>
@@ -2551,7 +2602,7 @@ http_headers = { "Authorization" = "Bearer ${clientToken || 'YOUR_TOKEN'}" }`;
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-bold text-slate-200 uppercase font-mono flex items-center gap-1.5">
                       <FileCode className="w-3.5 h-3.5 text-teal-400" />
-                      <span>6. Custom Webview Recipe Specification</span>
+                      <span>7. Custom Webview Recipe Specification</span>
                     </span>
                     <span className="text-[9px] font-mono text-teal-400 bg-teal-500/10 px-2 py-0.5 rounded border border-teal-500/20">
                       Declarative JSON Engine
@@ -2559,7 +2610,7 @@ http_headers = { "Authorization" = "Bearer ${clientToken || 'YOUR_TOKEN'}" }`;
                   </div>
 
                   <p className="text-[10px] text-slate-400 leading-relaxed font-sans">
-                    Transgentic allows you to connect any web AI portal as a full MCP provider using declarative JSON recipes. Recipes define interactive selectors, session cookies, and response extraction rules without writing code:
+                    Transgentic allows you to connect any web AI portal as a full MCP provider using declarative JSON recipes. Recipes define interactive selectors, session cookies, and response extraction rules without writing code. Media generation also requires declarative tool activation, supported settings and positive verification; an extraction selector alone does not enable verified generation:
                   </p>
 
                   <div className="space-y-2 text-[11px]">

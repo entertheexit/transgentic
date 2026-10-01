@@ -1,3 +1,8 @@
+import { MediaJobStore } from '../media/jobs.js';
+import { createMediaRouter } from '../media/router.js';
+import { mediaCapability, normalizeMediaPreferences, resolveMediaSettings, type MediaPreferences, type MediaSettings, type MediaMode } from '../../shared/media.js';
+import { CustomRecipeAdapter } from '../webviews/customRecipeAdapter.js';
+import { validateMediaArtifact } from '../media/artifacts.js';
 import { isCliProvider, CLI_IDS, CLI_DEFINITIONS, cliSupportsMode, type CliRequestOptions } from '../../shared/cli.js';
 import { globalCliRuntime } from '../cli/cliRuntimeManager.js';
 import express, { Request, Response } from 'express';
@@ -110,6 +115,7 @@ export class TransgenticMcpServer {
   private activeProvider?: ProviderId;
   private currentTaskDescription?: string;
   private config: TransgenticConfig | null = null;
+  private mediaJobs?: MediaJobStore;
   private completionGateway = new CompletionGateway(() => this.config, () => this.port);
   private activeAbortControllers: Map<string, AbortController> = new Map();
   private clientProfiles = new Map<string, { profile: ResponseProfile; lastUsed: number }>();
@@ -124,7 +130,7 @@ export class TransgenticMcpServer {
       cors({
         origin: '*',
         methods: ['GET', 'POST', 'OPTIONS', 'DELETE', 'PUT'],
-        allowedHeaders: ['Content-Type', 'Authorization', 'mcp-session-id', 'Mcp-Session-Id', 'Accept', 'Last-Event-ID'],
+        allowedHeaders: ['Content-Type', 'Authorization', 'mcp-session-id', 'Mcp-Session-Id', 'Accept', 'Last-Event-ID', 'Idempotency-Key'],
         exposedHeaders: ['mcp-session-id', 'Mcp-Session-Id', 'Content-Type'],
       })
     );
@@ -138,6 +144,29 @@ export class TransgenticMcpServer {
       next();
     });
     this.setupRoutes();
+  }
+
+  public getMediaCapabilities(mode?: MediaMode, model?: string) {
+    return globalSessionManager.getAdapters().flatMap(adapter => {
+      if (!(adapter instanceof CustomRecipeAdapter)) return [];
+      return (mode ? [mode] : ['image', 'video', 'music'] as MediaMode[]).flatMap(m => {
+        const models = model ? [model] : [...new Set([DynamicRouter.resolveTargetModel(adapter.providerId, m, undefined, 'main') || ModelRegistryManager.getEffectiveModel(adapter.providerId) || undefined, ...(adapter.recipe.response.modes[m]?.generation?.models || [])])];
+        return models.flatMap(id => { const c = mediaCapability(adapter.recipe, m, id, globalSessionManager.getAllStatuses()[adapter.providerId]?.isAuthenticated === true); return c ? [{ ...c, provider: adapter.providerId }] : []; });
+      });
+    });
+  }
+
+  public getDesktopMediaConfiguration(mode: MediaMode) {
+    if (!['image', 'video', 'music'].includes(mode)) return [];
+    const rule = DynamicRouter.getRule(mode);
+    const ids = [rule.defaultService ?? rule.primary, ...(rule.fallbackChain || rule.fallbacks || [])].filter(Boolean);
+    return [...new Set(ids)].flatMap(id => {
+      const adapter = globalSessionManager.getAdapter(id);
+      if (!(adapter instanceof CustomRecipeAdapter)) return [];
+      const model = DynamicRouter.resolveTargetModel(id, mode, undefined, 'main') || ModelRegistryManager.getEffectiveModel(id) || undefined;
+      const capability = mediaCapability(adapter.recipe, mode, model, globalSessionManager.getAllStatuses()[id]?.isAuthenticated === true);
+      return capability ? [{ ...capability, provider: id }] : [{ provider: id, title: adapter.name, mode, model, available: false, settings: [] }];
+    });
   }
 
   public updateConfig(cfg: TransgenticConfig): void {
@@ -277,6 +306,32 @@ export class TransgenticMcpServer {
       }
       next();
     });
+
+    this.app.use('/v1/media', createMediaRouter({
+      store: () => this.mediaJobs ||= new MediaJobStore(path.join(electronApp.getPath('userData'), 'media_jobs.json'), () => globalAssetManager.getLibraryDirectory()),
+      capabilities: () => this.getMediaCapabilities(),
+      validate: (request, files) => {
+        const providers = request.provider ? [request.provider] : DynamicRouter.getCandidateChain(request.mode, undefined, false);
+        let supported = false, lastError: any;
+        for (const id of providers) {
+          const adapter = globalSessionManager.getAdapter(id);
+          try {
+            if (!(adapter instanceof CustomRecipeAdapter)) throw new Error('Provider has no media recipe.');
+            if (request.model && !ModelRegistryManager.isModelUsable(id, request.model)) throw new Error('The requested model is not available for this provider.');
+            const model = request.model || DynamicRouter.resolveTargetModel(id, request.mode, undefined, 'main') || undefined;
+            resolveMediaSettings(adapter.recipe, request.mode, request, model, id);
+            if (files?.length) {
+              const upload = adapter.recipe.response.modes[request.mode]?.inputAttachments;
+              if (!upload || (!upload.multiple && files.length > 1) || files.some(file => !upload.acceptedKinds.includes(file.kind) || upload.acceptedMimeTypes?.length && !upload.acceptedMimeTypes.some(mime => mime === file.mimeType || mime.endsWith('/*') && file.mimeType.startsWith(mime.slice(0, -1))))) throw new Error('The provider does not accept these reference attachments.');
+            }
+            supported = true;
+          } catch (error) { lastError = error; }
+        }
+        if (!supported) throw lastError || new Error('No configured provider supports this media request.');
+      },
+      execute: (request, signal, progress, session) => this.orchestratePrompt(request.prompt, request.mode, request.provider, request.project_name, request.model, signal, request.thread_id, request.new_thread, false, true,
+        { profile: 'plain', sessionId: session, isLoopback: true, transport: 'api', onMediaState: progress, reportProgress: message => progress({ progress: message }) }, request.files, undefined, request.temporary_chat, request),
+    }));
 
     // OpenAI-compatible provider surface. This path deliberately bypasses the
     // MCP prompt/history pipeline: the caller owns its conversation and tools.
@@ -1026,15 +1081,17 @@ export class TransgenticMcpServer {
           type: 'object',
           properties: {
             prompt: { type: 'string', description: 'Image generation prompt.' },
+            files: filesProperty,
             provider: {
               type: 'string',
-              enum: ['grok', 'chatgpt', 'gemini'],
               description: 'Optional provider override. If omitted, uses intelligent image routing (Grok -> ChatGPT -> Gemini).',
             },
             model: {
               type: 'string',
               description: 'Optional target model ID (e.g. dall-e-3).',
             },
+            settings: { type: 'object', description: 'Semantic settings from get_media_capabilities.', additionalProperties: { type: ['string', 'number', 'boolean'] } },
+            provider_settings: { type: 'object', additionalProperties: { type: 'object', additionalProperties: { type: ['string', 'number', 'boolean'] } } },
             ...sessionProperties,
           },
           required: ['prompt'],
@@ -1048,15 +1105,17 @@ export class TransgenticMcpServer {
           type: 'object',
           properties: {
             prompt: { type: 'string', description: 'Video generation prompt.' },
+            files: filesProperty,
             provider: {
               type: 'string',
-              enum: ['grok', 'gemini'],
               description: 'Optional provider override.',
             },
             model: {
               type: 'string',
               description: 'Optional target model ID.',
             },
+            settings: { type: 'object', description: 'Semantic settings from get_media_capabilities.', additionalProperties: { type: ['string', 'number', 'boolean'] } },
+            provider_settings: { type: 'object', additionalProperties: { type: 'object', additionalProperties: { type: ['string', 'number', 'boolean'] } } },
             ...sessionProperties,
           },
           required: ['prompt'],
@@ -1072,6 +1131,8 @@ export class TransgenticMcpServer {
             files: filesProperty,
             provider: { type: 'string', description: 'Optional provider or configured service ID.' },
             model: { type: 'string' },
+            settings: { type: 'object', description: 'Semantic settings from get_media_capabilities.', additionalProperties: { type: ['string', 'number', 'boolean'] } },
+            provider_settings: { type: 'object', additionalProperties: { type: 'object', additionalProperties: { type: ['string', 'number', 'boolean'] } } },
             ...sessionProperties,
           },
           required: ['prompt', 'files'],
@@ -1087,6 +1148,8 @@ export class TransgenticMcpServer {
             files: filesProperty,
             provider: { type: 'string', description: 'Optional provider or configured service ID.' },
             model: { type: 'string' },
+            settings: { type: 'object', description: 'Semantic settings from get_media_capabilities.', additionalProperties: { type: ['string', 'number', 'boolean'] } },
+            provider_settings: { type: 'object', additionalProperties: { type: 'object', additionalProperties: { type: ['string', 'number', 'boolean'] } } },
             ...sessionProperties,
           },
           required: ['prompt', 'files'],
@@ -1102,18 +1165,20 @@ export class TransgenticMcpServer {
             prompt: { type: 'string', description: 'Music generation prompt.' },
             provider: {
               type: 'string',
-              enum: ['gemini'],
               description: 'Optional provider override.',
             },
             model: {
               type: 'string',
               description: 'Optional target model ID.',
             },
+            settings: { type: 'object', description: 'Semantic settings from get_media_capabilities.', additionalProperties: { type: ['string', 'number', 'boolean'] } },
+            provider_settings: { type: 'object', additionalProperties: { type: 'object', additionalProperties: { type: ['string', 'number', 'boolean'] } } },
             ...sessionProperties,
           },
           required: ['prompt'],
         },
       },
+      { name: 'get_media_capabilities', description: 'Discover current media recipe settings, defaults, attachment limits and availability.', inputSchema: { type: 'object', properties: {} } },
       {
         name: 'get_status',
         description:
@@ -1134,6 +1199,7 @@ export class TransgenticMcpServer {
     defaultMode?: AcceptedTaskMode,
     caller?: CallerContext
   ): Promise<any> {
+    if (name === 'get_media_capabilities') return { content: [{ type: 'text', text: JSON.stringify(this.getMediaCapabilities()) }], structuredContent: { capabilities: this.getMediaCapabilities() } };
     if (name === 'get_status') {
       return {
         content: [
@@ -1182,12 +1248,12 @@ export class TransgenticMcpServer {
     }
 
     if (name === 'generate_image') {
-      if (args.files !== undefined) throw new Error('generate_image is text-only. Use edit_image to provide source images.');
+
       mode = 'image';
       isStrictExplicitMode = true;
     }
     if (name === 'generate_video') {
-      if (args.files !== undefined) throw new Error('generate_video is text-only. Use edit_video to provide source media.');
+
       mode = 'video';
       isStrictExplicitMode = true;
     }
@@ -1206,7 +1272,7 @@ export class TransgenticMcpServer {
     if (name === 'edit_video') { mode = 'video'; isStrictExplicitMode = true; attachmentRequirement = 'image-or-video'; }
     if (attachmentRequirement && (!Array.isArray(args.files) || args.files.length === 0)) throw new Error(`${name} requires at least one attachment.`);
 
-    return await this.orchestratePrompt(prompt, mode, provider, projectName, requestedModel, abortSignal, threadId, newThread, undefined, isStrictExplicitMode, caller, args.files, attachmentRequirement, temporaryChat);
+    return await this.orchestratePrompt(prompt, mode, provider, projectName, requestedModel, abortSignal, threadId, newThread, undefined, isStrictExplicitMode, caller, args.files, attachmentRequirement, temporaryChat, normalizeMediaPreferences({ settings: args.settings, provider_settings: args.provider_settings }));
   }
 
   private async executePipelineCandidateChain(params: {
@@ -1236,10 +1302,12 @@ export class TransgenticMcpServer {
     requestEnvelope?: NormalizedRequestEnvelope;
     temporaryChat: boolean;
     chatPolicy: ChatPolicy;
+    onMediaState?: CallerContext['onMediaState'];
   }): Promise<{
     text: string;
     finalResponseWithLocalPath: string;
     mediaPath?: string;
+    effectiveSettings?: MediaSettings;
     provider: ProviderId;
     modelUsed?: string;
     account: any;
@@ -1305,6 +1373,12 @@ export class TransgenticMcpServer {
         continue;
       }
       reportProgress?.(`Routing to ${getProviderDisplayName(providerId)}`);
+
+      if (['image', 'video', 'music'].includes(effectiveMode) && !(globalSessionManager.getAdapter(providerId) instanceof CustomRecipeAdapter)) {
+        lastCandidateError = new Error('[MEDIA_SETTINGS_UNSUPPORTED] This provider has no verified media recipe.');
+        if (forcedProvider) throw lastCandidateError;
+        continue;
+      }
 
       if (isCliProvider(providerId)) {
         const cliService = globalCliRuntime.getServiceConfig(providerId);
@@ -1536,10 +1610,20 @@ export class TransgenticMcpServer {
         ModelRegistryManager.getEffectiveModel(providerId, requestedModel) ||
         undefined;
 
+      let effectiveSettings: MediaSettings = {};
+      if (['image', 'video', 'music'].includes(effectiveMode)) {
+        try {
+          if (!(adapter instanceof CustomRecipeAdapter)) throw new Error('[MEDIA_SETTINGS_UNSUPPORTED] Provider has no media recipe.');
+          if (requestedModel && targetModel !== requestedModel) throw new Error('[MEDIA_SETTINGS_UNSUPPORTED] The explicit media model is unavailable for this provider.');
+          effectiveSettings = resolveMediaSettings(adapter.recipe, effectiveMode as MediaMode, params.requestEnvelope?.mediaPreferences, targetModel, providerId);
+        } catch (error) { lastCandidateError = error; if (forcedProvider) throw error; continue; }
+        params.onMediaState?.({ provider: providerId, model: targetModel, settings: effectiveSettings });
+      }
+
       // Different conversations/accounts and independently cancellable requests must
       // never share a provider result. Preserve byte-exact prompts in the key.
       const dedupScope = JSON.stringify([effectiveThreadId, activeAccount.id, isAgenticClient,
-        isBalanced, Boolean(newThread), candidateTemporaryChat, attachmentIdentity, abortSignal ? reqId : 'shared']);
+        isBalanced, Boolean(newThread), candidateTemporaryChat, attachmentIdentity, Object.entries(effectiveSettings).sort(([a], [b]) => a.localeCompare(b)), abortSignal ? reqId : 'shared']);
 
       const inFlight = DuplicateActionGuard.getInFlight(
         providerId,
@@ -1563,7 +1647,7 @@ export class TransgenticMcpServer {
         } catch (err) {
           throwIfCancelled(reqAbortController?.signal || abortSignal);
           lastCandidateError = err;
-          if (forcedProvider) throw err;
+          if (forcedProvider || (['image', 'video', 'music'].includes(effectiveMode) && /SUBMISSION_UNCERTAIN|MEDIA_NOT_GENERATED/.test((err as Error).message || ''))) throw err;
           continue;
         }
       }
@@ -1588,6 +1672,12 @@ export class TransgenticMcpServer {
       );
 
       let isNewChat = false;
+      let mediaSubmissionAttempted = false;
+      const mediaSubmitted = () => {
+        if (!['image', 'video', 'music'].includes(effectiveMode)) return;
+        mediaSubmissionAttempted = true;
+        params.onMediaState?.({ provider: providerId, model: targetModel, settings: effectiveSettings, submitted: true });
+      };
       try {
         reportProgress?.(`Queued for ${getProviderDisplayName(providerId)}`);
         executionResult = await AccountQueueManager.runTask(activeAccount.id, reqId, async () => {
@@ -1646,6 +1736,11 @@ export class TransgenticMcpServer {
               isNewChat = true;
             }
             contents = await globalSessionManager.ensureWebContents(providerId, activeAccount.partitionKey);
+            if (['image', 'video', 'music'].includes(effectiveMode) && adapter instanceof CustomRecipeAdapter) {
+              // Drawer registration can replace the shared adapter's view mid-request.
+              // Keep media polling and cancellation attached to the submitted view.
+              executionAdapter = adapter.createPinnedExecutionAdapter(contents, activeAccount.partitionKey);
+            }
 
             if (newThread || isTooLong || isNewChat || (isolateConversation && !existingSession)) {
               isNewChat = true;
@@ -1673,8 +1768,17 @@ export class TransgenticMcpServer {
           }
           globalRateLimiter.recordRequest(providerId);
 
+          if (['image', 'video', 'music'].includes(effectiveMode) && executionAdapter instanceof CustomRecipeAdapter) {
+            await executionAdapter.prepareMediaPage(effectiveMode);
+          }
           if (targetModel) {
-            await ModelScraperEngine.selectRequestedModel(providerId, targetModel, contents);
+            if (requestedModel && requestedModel !== 'default' && ['image', 'video', 'music'].includes(effectiveMode)) {
+              if (!await ModelScraperEngine.switchModel(providerId, targetModel, contents)) {
+                throw new Error(`[MODEL_SELECTION_FAILED] The explicit media model ${targetModel} could not be verified. The prompt was not submitted.`);
+              }
+            } else {
+              await ModelScraperEngine.selectRequestedModel(providerId, targetModel, contents);
+            }
           }
 
           let promptToSend = maskedText;
@@ -1711,9 +1815,9 @@ export class TransgenticMcpServer {
             throwIfCancelled(reqAbortController?.signal || abortSignal);
             reportProgress?.(`Generating response with ${getProviderDisplayName(providerId)}`);
             try {
-              adapterResult = await executionAdapter.executePrompt(promptToSend, effectiveMode, projectMeta, undefined, reqAbortController?.signal || abortSignal, attachments);
+              adapterResult = await executionAdapter.executePrompt(promptToSend, effectiveMode, projectMeta, undefined, reqAbortController?.signal || abortSignal, attachments, effectiveSettings, targetModel, mediaSubmitted);
             } catch (promptErr: any) {
-              if (!candidateTemporaryChat && promptErr?.message && /conversation (?:is getting|too) long|context[ _]length/i.test(promptErr.message)) {
+              if (!mediaSubmissionAttempted && !candidateTemporaryChat && promptErr?.message && /conversation (?:is getting|too) long|context[ _]length/i.test(promptErr.message)) {
                 await executionAdapter.navigateToNewChat({ forceReload: true, assumeLocked: true });
                 globalThreadManager.removeSession(scopedThreadId, providerId);
                 wasRolledOver = true;
@@ -1726,7 +1830,7 @@ export class TransgenticMcpServer {
                 if (this.config?.recall && !candidateTemporaryChat) {
                   rolloverPrompt = applyRecallPipeline(rolloverPrompt, this.config.recall, effectiveMode);
                 }
-                adapterResult = await executionAdapter.executePrompt(rolloverPrompt, effectiveMode, projectMeta, undefined, reqAbortController?.signal || abortSignal, attachments);
+                adapterResult = await executionAdapter.executePrompt(rolloverPrompt, effectiveMode, projectMeta, undefined, reqAbortController?.signal || abortSignal, attachments, effectiveSettings, targetModel, mediaSubmitted);
               } else {
                 throw promptErr;
               }
@@ -1736,13 +1840,9 @@ export class TransgenticMcpServer {
           }
           throwIfCancelled(reqAbortController?.signal || abortSignal);
 
-          if (!adapterResult?.text?.trim() && !adapterResult?.media) {
+          if (!['image', 'video', 'music'].includes(effectiveMode) && !adapterResult?.text?.trim() && !adapterResult?.media) {
             throw new Error(`${providerId} returned an empty response.`);
           }
-
-          globalRateLimiter.markSuccess(providerId);
-          AccountRegistryManager.markReady(providerId, activeAccount.id);
-          globalSessionManager.updateProviderState(providerId, 'ready');
 
           globalThreadManager.recordTurn(scopedThreadId, providerId, maskedText, adapterResult.text || '');
           globalThreadManager.markPresetPromptsSent(scopedThreadId, providerId);
@@ -1796,11 +1896,20 @@ export class TransgenticMcpServer {
             }
           }
 
+          if (['image', 'video', 'music'].includes(effectiveMode)) {
+            if (!savedMediaRelPath) throw new Error('[MEDIA_NOT_GENERATED] media_not_generated: The provider replied without a usable media artifact.');
+            try { await validateMediaArtifact(savedMediaRelPath, effectiveMode as MediaMode); } catch (error: any) { throw new Error(`[MEDIA_NOT_GENERATED] media_not_generated: ${error.message}`); }
+          }
+          globalRateLimiter.markSuccess(providerId);
+          AccountRegistryManager.markReady(providerId, activeAccount.id);
+          globalSessionManager.updateProviderState(providerId, 'ready');
+
           return {
             text: cleanAdapterText,
             mediaPath: savedMediaRelPath,
             provider: providerId,
             modelUsed: targetModel || undefined,
+            effectiveSettings,
           };
         });
 
@@ -1811,6 +1920,9 @@ export class TransgenticMcpServer {
         wasNewChat = isNewChat;
         break;
       } catch (candidateErr: any) {
+        if (mediaSubmissionAttempted && !/SUBMISSION_UNCERTAIN|MEDIA_NOT_GENERATED/.test(candidateErr.message || '') && candidateErr.name !== 'AbortError') {
+          candidateErr = new Error(`[WEBVIEW_SUBMISSION_UNCERTAIN] Media submission was attempted; no fallback was submitted. ${candidateErr.message || candidateErr}`);
+        }
         rejectInFlight(candidateErr);
         throwIfCancelled(reqAbortController?.signal || abortSignal);
         candidateErr.providerUsed = providerId;
@@ -1830,7 +1942,7 @@ export class TransgenticMcpServer {
           AccountRegistryManager.markRateLimited(providerId, activeAccount.id, 3600);
           globalRateLimiter.markRateLimited(providerId);
           globalSessionManager.updateProviderState(providerId, 'rate_limited');
-        } else if (candidateErr.message?.includes('[TEMPORARY_CHAT_')) {
+        } else if (candidateErr.message?.includes('[TEMPORARY_CHAT_') || /MEDIA_NOT_GENERATED|MEDIA_SETTINGS_/.test(candidateErr.message || '')) {
           AccountRegistryManager.markReady(providerId, activeAccount.id);
           globalSessionManager.updateProviderState(providerId, 'ready');
         } else {
@@ -1838,6 +1950,7 @@ export class TransgenticMcpServer {
           globalSessionManager.updateProviderState(providerId, 'disconnected');
         }
 
+        if (['image', 'video', 'music'].includes(effectiveMode) && /SUBMISSION_UNCERTAIN|MEDIA_NOT_GENERATED/.test(candidateErr.message || '')) throw candidateErr;
         lastCandidateError = candidateErr;
         console.warn(`[Transgentic] Provider ${providerId} (${activeAccount.alias}) failed: ${candidateErr.message}.`);
 
@@ -1929,6 +2042,7 @@ export class TransgenticMcpServer {
       mediaPath: activeMediaPath,
       provider: successfulProvider,
       modelUsed: executionResult.modelUsed,
+      effectiveSettings: executionResult.effectiveSettings,
       account: successfulAccount,
       wasNewChat,
       wasRolledOver,
@@ -1955,7 +2069,8 @@ export class TransgenticMcpServer {
     caller?: CallerContext,
     rawFiles?: unknown,
     attachmentRequirement?: 'image-only' | 'image-or-video',
-    temporaryChat?: boolean
+    temporaryChat?: boolean,
+    mediaPreferences?: MediaPreferences
   ): Promise<any> {
     const startTime = Date.now();
     this.requestCounter++;
@@ -1980,6 +2095,8 @@ export class TransgenticMcpServer {
       // 2. Intelligent Intent Classification
       const { mode: effectiveMode, intent: taskIntent, isAutoDetected } = DynamicRouter.classifyMode(rawPrompt, mode, isStrictExplicitMode);
       effectiveResponseMode = effectiveMode;
+      const preferences = normalizeMediaPreferences(mediaPreferences);
+      if (!['image', 'video', 'music'].includes(effectiveMode) && (preferences.settings || preferences.provider_settings)) throw new Error('Media settings require a media mode.');
       throwIfCancelled(abortSignal);
 
       if (effectiveMode === 'audio') {
@@ -2016,7 +2133,7 @@ export class TransgenticMcpServer {
       const isBalanced = isQuickPrompt ? (effectiveMode === 'coding' && balancedModeConfig) : balancedModeConfig;
       const doubleAgentCfg = this.config?.doubleAgent ?? { enabled: false, includeLocalLlm: false };
       const scenario = determineDispatchScenario(isBalanced, doubleAgentCfg, effectiveMode);
-      const shouldRunScenario2 = !forcedProvider && scenario === 'scenario_2_dual_dispatch';
+      const shouldRunScenario2 = !['image', 'video', 'music'].includes(effectiveMode) && !forcedProvider && scenario === 'scenario_2_dual_dispatch';
 
       let candidateProviders: ProviderId[] = forcedProvider
         ? [forcedProvider]
@@ -2047,6 +2164,7 @@ export class TransgenticMcpServer {
       attachments = staged.envelope.files;
       attachmentCleanup = staged.cleanup;
       requestEnvelope = {
+        mediaPreferences: preferences,
         promptText: rawPrompt,
         mode: effectiveMode,
         attachments: staged.envelope,
@@ -2162,7 +2280,7 @@ export class TransgenticMcpServer {
         bypassedCloudDispatch: bypassedWebviewDispatch,
         temporaryChat: resolvedTemporaryChat,
         chatExecution: { policy: resolvedChatPolicy, verified: false },
-        transport: isQuickPrompt ? 'desktop' : 'mcp',
+        transport: isQuickPrompt ? 'desktop' : caller?.transport || 'mcp',
         ...attachmentLogSummary(attachments),
       };
       this.addLog(log);
@@ -2237,6 +2355,7 @@ export class TransgenticMcpServer {
             bypassedWebviewDispatch,
             forcedProvider,
             requestEnvelope,
+          onMediaState: caller?.onMediaState,
             temporaryChat: resolvedTemporaryChat,
             chatPolicy: resolvedChatPolicy,
           }),
@@ -2265,6 +2384,7 @@ export class TransgenticMcpServer {
             bypassedWebviewDispatch,
             forcedProvider,
             requestEnvelope,
+          onMediaState: caller?.onMediaState,
             temporaryChat: resolvedTemporaryChat,
             chatPolicy: resolvedChatPolicy,
           }),
@@ -2328,6 +2448,7 @@ export class TransgenticMcpServer {
           bypassedWebviewDispatch,
           forcedProvider,
           requestEnvelope,
+          onMediaState: caller?.onMediaState,
           temporaryChat: resolvedTemporaryChat,
           chatPolicy: resolvedChatPolicy,
         });
@@ -2450,6 +2571,7 @@ export class TransgenticMcpServer {
         metadata: {
           providerUsed: executionResult.provider,
           modelUsed: executionResult.modelUsed,
+          ...(executionResult.effectiveSettings ? { effectiveSettings: executionResult.effectiveSettings } : {}),
           mode: effectiveMode,
           ...(taskIntent ? { intent: taskIntent } : {}),
           accountUsed: successfulAccount.alias,
@@ -2477,7 +2599,7 @@ export class TransgenticMcpServer {
           isQuickPrompt: Boolean(isQuickPrompt),
           temporaryChat: resolvedTemporaryChat,
           chatExecution: { policy: resolvedChatPolicy, verified: false },
-          transport: isQuickPrompt ? 'desktop' : 'mcp',
+          transport: isQuickPrompt ? 'desktop' : caller?.transport || 'mcp',
         };
         this.addLog(log);
       }

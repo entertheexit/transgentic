@@ -74,7 +74,7 @@ interface RadialHubProps {
   onSettingsClick?: () => void;
   onLocalLLMClick?: () => void;
   localLLMEnabled?: boolean;
-  onSendPrompt?: (prompt: string, files?: AttachmentInput[], temporaryChat?: boolean) => Promise<any>;
+  onSendPrompt?: (prompt: string, files?: AttachmentInput[], temporaryChat?: boolean, mediaPreferences?: import('../../shared/media.js').MediaPreferences) => Promise<any>;
   onSelectFiles?: (mode?: TaskMode) => Promise<DesktopAttachmentSelection[]>;
   hasActiveSession?: boolean;
   onClearSession?: () => Promise<void>;
@@ -298,9 +298,9 @@ export const RadialHub: React.FC<RadialHubProps> = ({
   const isBalancedMode = config?.balancedMode ?? config?.coding?.balancedMode ?? true;
   const isAgentGuard = isAgentHaltGuardEnabled(config, coreStatus.activeMode);
 
-  const handleSend = async (prompt: string, files: AttachmentInput[]) => {
+  const handleSend = async (prompt: string, files: AttachmentInput[], temporaryChat?: boolean, mediaPreferences?: import('../../shared/media.js').MediaPreferences) => {
     if (onSendPrompt) {
-      const res = await onSendPrompt(prompt, files);
+      const res = await onSendPrompt(prompt, files, temporaryChat, mediaPreferences);
       const answerText = typeof res === 'string'
         ? res
         : res?.text || res?.content?.[0]?.text || res?.content?.find((c: any) => c.type === 'text')?.text;
@@ -627,6 +627,7 @@ export const RadialHub: React.FC<RadialHubProps> = ({
           onError={handleQuickPromptError}
           isServiceDeselected={!isModeServiceSelected}
           activeMode={coreStatus.activeMode}
+          routeIdentity={JSON.stringify([routeMatrix?.main?.[routeMode], modeRoutes?.[routeMode]])}
           temporaryChat={temporaryChat}
         />
       </div>

@@ -34,6 +34,7 @@ export interface RequestAttachmentEnvelope {
 }
 
 export interface NormalizedRequestEnvelope {
+  mediaPreferences?: import('./media.js').MediaPreferences;
   promptText: string;
   mode: 'general' | 'writing' | 'coding' | 'image' | 'video' | 'music' | 'audio';
   attachments: RequestAttachmentEnvelope;
