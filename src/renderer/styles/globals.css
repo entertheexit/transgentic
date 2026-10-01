@@ -3,9 +3,14 @@
 @tailwind utilities;
 
 :root {
-  --hub-glass: rgba(0, 0, 0, 0.80);
+  --hub-glass: rgba(0, 0, 0, 0.98);
   --hub-border: rgba(255, 255, 255, 0.12);
   --hub-shadow: 0 24px 48px -12px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+
+/* Keep the existing translucent appearance only where native blur is available. */
+:root[data-native-vibrancy="true"] {
+  --hub-glass: rgba(0, 0, 0, 0.80);
 }
 
 html, body, #root {

@@ -4,6 +4,20 @@
  * rather than simple direct .value DOM overwrites.
  */
 export class InputDispatcher {
+  /** Use the same rendered composer for native focus, text insertion, and Enter. */
+  public static getInputTargetScript(selector: string): string {
+    return `(function() {
+      return Array.from(document.querySelectorAll(${JSON.stringify(selector)})).find(el => {
+        if (el.disabled || el.readOnly || el.getAttribute('aria-disabled') === 'true') return false;
+        if (el.closest('[hidden], [inert], [aria-hidden="true"]')) return false;
+        const style = getComputedStyle(el);
+        if (style.display === 'none' || style.visibility === 'hidden' || style.visibility === 'collapse') return false;
+        const rect = el.getBoundingClientRect();
+        return rect.width > 0 && rect.height > 0;
+      }) || null;
+    })()`;
+  }
+
   /**
    * Generates JavaScript code to inject text into an input or contenteditable element
    * simulating realistic browser events with robust polling for element readiness.
@@ -13,17 +27,17 @@ export class InputDispatcher {
     return `
       (async function() {
         try {
-          const pollElement = async (sel, maxWait = 4000) => {
+          const pollElement = async (maxWait = 4000) => {
             const start = Date.now();
             while (Date.now() - start < maxWait) {
-              const element = document.querySelector(sel);
+              const element = ${this.getInputTargetScript(selector)};
               if (element) return element;
               await new Promise((r) => setTimeout(r, 100));
             }
             return null;
           };
 
-          const el = await pollElement(${JSON.stringify(selector)});
+          const el = await pollElement();
           if (!el) return { success: false, error: 'Element not found: ' + ${JSON.stringify(selector)} };
 
           el.focus();
@@ -148,7 +162,7 @@ export class InputDispatcher {
 
           while (Date.now() - startWait < 400) {
             // Check direct send button candidates (ChatGPT, Gemini, Grok, Claude)
-            const direct = document.querySelector(
+            const direct = Array.from(document.querySelectorAll(
               'button[data-testid="send-button"], ' +
               'button:has(img[alt="Send"]), ' +
               'button[aria-label*="ส่ง" i], ' +
@@ -156,7 +170,7 @@ export class InputDispatcher {
               'button[data-testid*="send" i], ' +
               'button.composer-submit-button-color, ' +
               'button.send-button'
-            );
+            )).find(isButtonActive);
             if (isButtonActive(direct)) {
               targetBtn = direct;
               break;
@@ -199,7 +213,7 @@ export class InputDispatcher {
 
           // 2. Fallback: Dispatch keyboard Enter on input element ONLY if button was NOT clicked
           if (${JSON.stringify(inputSelector || '')}) {
-            const inputEl = document.querySelector(${JSON.stringify(inputSelector || '')});
+            const inputEl = ${this.getInputTargetScript(inputSelector || '')};
             if (inputEl) {
               inputEl.focus?.();
 
