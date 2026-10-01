@@ -1,6 +1,11 @@
 // @ts-ignore
 const { contextBridge, ipcRenderer } = require('electron');
 
+// Native vibrancy is macOS-only; other platforms use the readable CSS fallback.
+window.addEventListener('DOMContentLoaded', () => {
+  document.documentElement.dataset.nativeVibrancy = String(process.platform === 'darwin');
+}, { once: true });
+
 const api = {
   checkForUpdate: () => ipcRenderer.invoke('app:check-for-update'),
   getCoreStatus: () => ipcRenderer.invoke('get-core-status'),

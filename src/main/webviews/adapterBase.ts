@@ -163,10 +163,10 @@ export abstract class BaseProviderAdapter {
     try {
       const effectiveSelector = await this.getEffectiveSelector('inputPrompt', selector);
       // 1. Focus element and clear selection
-      await this.executeScript(`
+      const focused = await this.executeScript<boolean>(`
         (function() {
           try {
-            const el = document.querySelector(${JSON.stringify(effectiveSelector)});
+            const el = ${InputDispatcher.getInputTargetScript(effectiveSelector)};
             if (el) {
               el.focus();
               if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') {
@@ -178,13 +178,15 @@ export abstract class BaseProviderAdapter {
                 sel?.removeAllRanges();
                 sel?.addRange(range);
               }
+              return document.activeElement === el;
             }
           } catch (e) {}
+          return false;
         })()
       `);
-
-      // 2. Try native webContents insertText if available
-      if (this.webContents && typeof this.webContents.insertText === 'function') {
+      // Do not insert into whichever element happened to have focus when
+      // the matching composer is hidden or has not mounted yet.
+      if (focused && this.webContents && typeof this.webContents.insertText === 'function') {
         await this.webContents.insertText(text);
       }
     } catch {}
@@ -213,7 +215,13 @@ export abstract class BaseProviderAdapter {
     // Native Return is strictly an emergency fallback ONLY if DOM dispatch completely failed.
     if (!res || !res.success) {
       try {
-        if (this.webContents && typeof this.webContents.sendInputEvent === 'function') {
+        const focused = effectiveInput && await this.executeScript<boolean>(`(function() {
+          const el = ${InputDispatcher.getInputTargetScript(effectiveInput)};
+          if (!el) return false;
+          el.focus();
+          return document.activeElement === el;
+        })()`);
+        if (focused && this.webContents && typeof this.webContents.sendInputEvent === 'function') {
           this.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Return' });
           this.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'Return' });
           return { success: true, error: undefined };

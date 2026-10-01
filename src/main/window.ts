@@ -35,7 +35,7 @@ export class WindowManager {
       frame: false,
       transparent: true,
       backgroundColor: '#00000000',
-      vibrancy: 'popover',
+      vibrancy: process.platform === 'darwin' ? 'popover' : undefined,
       visualEffectState: 'active',
       hasShadow: true,
       resizable: true,
