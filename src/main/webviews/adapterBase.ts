@@ -58,6 +58,7 @@ export interface PollGenerationOptions {
   abortSignal?: AbortSignal;
   onChunk?: (chunk: string) => void;
   metadata?: ProjectMetadata;
+  excludedMediaUrls?: string[];
 }
 
 export abstract class BaseProviderAdapter {
@@ -289,7 +290,7 @@ export abstract class BaseProviderAdapter {
     let lastText = '';
     let lastMediaUrl = '';
     let stableTicks = 0;
-    const inspectScript = DomObserver.getInspectionScript(this.providerId, mode, (this as any).recipe);
+    const inspectScript = DomObserver.getInspectionScript(this.providerId, mode, (this as any).recipe, options.excludedMediaUrls);
 
     while (Date.now() - startTime < maxBudgetMs) {
       // 1. Check for request cancellation / client disconnect
@@ -574,6 +575,9 @@ export abstract class BaseProviderAdapter {
     metadata?: ProjectMetadata,
     onChunk?: (chunk: string) => void,
     abortSignal?: AbortSignal,
-    attachments?: readonly StagedAttachment[]
+    attachments?: readonly StagedAttachment[],
+    mediaSettings?: import('../../shared/media.js').MediaSettings,
+    mediaModel?: string,
+    onSubmitted?: () => void
   ): Promise<ProviderAdapterResult>;
 }

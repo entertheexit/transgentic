@@ -120,6 +120,30 @@ export const BUILTIN_RECIPES: Record<'chatgpt' | 'claude' | 'gemini' | 'grok', C
             "multiple": true,
             "ready": "[data-composer-attachments] [role=\"button\"]:has(button[aria-label^=\"Remove \"]):not(:has([role=\"progressbar\"]))",
             "cleanup": "[data-composer-attachments] button[aria-label^=\"Remove \"]"
+          },
+          "generation": {
+            "activationSteps": [
+              {
+                "action": "click",
+                "target": {
+                  "selectors": "button[data-composer-navigation-target=\"add-context\"]"
+                }
+              },
+              {
+                "action": "click",
+                "target": {
+                  "selectors": "button[data-list-navigation-item]:has(svg path[d^=\"M7 21.005c-2.211\"])"
+                }
+              }
+            ],
+            "activeWhen": {
+              "selectors": "button:not([data-list-navigation-item]):has(svg path[d^=\"M7 21.005c-2.211\"])"
+            },
+            "settings": [],
+            "nativeDefaults": {
+              "quality": "automatic",
+              "aspect_ratio": "automatic"
+            }
           }
         },
         "video": {
@@ -355,16 +379,541 @@ export const BUILTIN_RECIPES: Record<'chatgpt' | 'claude' | 'gemini' | 'grok', C
               {
                 "action": "click",
                 "target": {
-                  "role": "button",
-                  "name": [
-                    "Upload & tools",
-                    "Add files"
-                  ]
+                  "selectors": "button[jslog^=\"300142;\"]"
                 }
               }
             ],
             "ready": "uploader-file-preview:has(button[aria-label=\"close attachment\"]):not(:has([role=\"progressbar\"]))",
             "cleanup": "uploader-file-preview button[aria-label=\"close attachment\"]"
+          },
+          "generation": {
+            "activationSteps": [
+              {
+                "action": "click",
+                "target": {
+                  "selectors": "button[jslog^=\"300142;\"]"
+                }
+              },
+              {
+                "action": "click",
+                "target": {
+                  "selectors": "[role=\"menuitemcheckbox\"][jslog^=\"271906;\"]"
+                }
+              }
+            ],
+            "activeWhen": {
+              "selectors": "input-companion-chip button[jslog^=\"349760;\"]"
+            },
+            "settings": [
+              {
+                "key": "aspect_ratio",
+                "label": "Aspect ratio",
+                "type": "enum",
+                "default": "1:1",
+                "options": [
+                  {
+                    "value": "1:1",
+                    "label": "1:1",
+                    "steps": [
+                      {
+                        "action": "click",
+                        "target": {
+                          "selectors": "input-companion-chip button[jslog^=\"349760;\"]"
+                        }
+                      },
+                      {
+                        "action": "click",
+                        "target": {
+                          "scope": ".cdk-overlay-pane:has(input-companion-item[role=\"menuitemradio\"])",
+                          "selectors": "input-companion-item[role=\"menuitemradio\"]",
+                          "index": 0,
+                          "expectedCount": 5,
+                          "identities": [
+                            "crop_square",
+                            "crop_9_16",
+                            "crop_portrait",
+                            "crop_landscape",
+                            "crop_16_9"
+                          ],
+                          "identityAttribute": "fonticon",
+                          "identitySelector": "mat-icon[fonticon]",
+                          "compact": {
+                            "scope": "mat-bottom-sheet-container:has(input-companion-item[role=\"menuitemradio\"])",
+                            "selectors": "input-companion-item[role=\"menuitemradio\"]",
+                            "index": 0,
+                            "expectedCount": 5,
+                            "identities": [
+                              "crop_square",
+                              "crop_9_16",
+                              "crop_portrait",
+                              "crop_landscape",
+                              "crop_16_9"
+                            ],
+                            "identityAttribute": "fonticon",
+                            "identitySelector": "mat-icon[fonticon]"
+                          }
+                        }
+                      }
+                    ],
+                    "verificationSteps": [
+                      {
+                        "action": "click",
+                        "target": {
+                          "selectors": "input-companion-chip button[jslog^=\"349760;\"]"
+                        }
+                      }
+                    ],
+                    "selectedWhen": {
+                      "scope": ".cdk-overlay-pane:has(input-companion-item[role=\"menuitemradio\"])",
+                      "selectors": "input-companion-item[role=\"menuitemradio\"]",
+                      "index": 0,
+                      "expectedCount": 5,
+                      "identities": [
+                        "crop_square",
+                        "crop_9_16",
+                        "crop_portrait",
+                        "crop_landscape",
+                        "crop_16_9"
+                      ],
+                      "identityAttribute": "fonticon",
+                      "identitySelector": "mat-icon[fonticon]",
+                      "compact": {
+                        "scope": "mat-bottom-sheet-container:has(input-companion-item[role=\"menuitemradio\"])",
+                        "selectors": "input-companion-item[role=\"menuitemradio\"]",
+                        "index": 0,
+                        "expectedCount": 5,
+                        "identities": [
+                          "crop_square",
+                          "crop_9_16",
+                          "crop_portrait",
+                          "crop_landscape",
+                          "crop_16_9"
+                        ],
+                        "identityAttribute": "fonticon",
+                        "identitySelector": "mat-icon[fonticon]"
+                      },
+                      "requiredAttributes": {
+                        "aria-checked": "true"
+                      }
+                    },
+                    "closeSteps": [
+                      {
+                        "action": "escape"
+                      },
+                      {
+                        "action": "waitAbsent",
+                        "target": {
+                          "selectors": ".cdk-overlay-pane:has(input-companion-item[role=\"menuitemradio\"])",
+                          "compact": {
+                            "selectors": "mat-bottom-sheet-container:has(input-companion-item[role=\"menuitemradio\"])"
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "value": "9:16",
+                    "label": "9:16",
+                    "steps": [
+                      {
+                        "action": "click",
+                        "target": {
+                          "selectors": "input-companion-chip button[jslog^=\"349760;\"]"
+                        }
+                      },
+                      {
+                        "action": "click",
+                        "target": {
+                          "scope": ".cdk-overlay-pane:has(input-companion-item[role=\"menuitemradio\"])",
+                          "selectors": "input-companion-item[role=\"menuitemradio\"]",
+                          "index": 1,
+                          "expectedCount": 5,
+                          "identities": [
+                            "crop_square",
+                            "crop_9_16",
+                            "crop_portrait",
+                            "crop_landscape",
+                            "crop_16_9"
+                          ],
+                          "identityAttribute": "fonticon",
+                          "identitySelector": "mat-icon[fonticon]",
+                          "compact": {
+                            "scope": "mat-bottom-sheet-container:has(input-companion-item[role=\"menuitemradio\"])",
+                            "selectors": "input-companion-item[role=\"menuitemradio\"]",
+                            "index": 1,
+                            "expectedCount": 5,
+                            "identities": [
+                              "crop_square",
+                              "crop_9_16",
+                              "crop_portrait",
+                              "crop_landscape",
+                              "crop_16_9"
+                            ],
+                            "identityAttribute": "fonticon",
+                            "identitySelector": "mat-icon[fonticon]"
+                          }
+                        }
+                      }
+                    ],
+                    "verificationSteps": [
+                      {
+                        "action": "click",
+                        "target": {
+                          "selectors": "input-companion-chip button[jslog^=\"349760;\"]"
+                        }
+                      }
+                    ],
+                    "selectedWhen": {
+                      "scope": ".cdk-overlay-pane:has(input-companion-item[role=\"menuitemradio\"])",
+                      "selectors": "input-companion-item[role=\"menuitemradio\"]",
+                      "index": 1,
+                      "expectedCount": 5,
+                      "identities": [
+                        "crop_square",
+                        "crop_9_16",
+                        "crop_portrait",
+                        "crop_landscape",
+                        "crop_16_9"
+                      ],
+                      "identityAttribute": "fonticon",
+                      "identitySelector": "mat-icon[fonticon]",
+                      "compact": {
+                        "scope": "mat-bottom-sheet-container:has(input-companion-item[role=\"menuitemradio\"])",
+                        "selectors": "input-companion-item[role=\"menuitemradio\"]",
+                        "index": 1,
+                        "expectedCount": 5,
+                        "identities": [
+                          "crop_square",
+                          "crop_9_16",
+                          "crop_portrait",
+                          "crop_landscape",
+                          "crop_16_9"
+                        ],
+                        "identityAttribute": "fonticon",
+                        "identitySelector": "mat-icon[fonticon]"
+                      },
+                      "requiredAttributes": {
+                        "aria-checked": "true"
+                      }
+                    },
+                    "closeSteps": [
+                      {
+                        "action": "escape"
+                      },
+                      {
+                        "action": "waitAbsent",
+                        "target": {
+                          "selectors": ".cdk-overlay-pane:has(input-companion-item[role=\"menuitemradio\"])",
+                          "compact": {
+                            "selectors": "mat-bottom-sheet-container:has(input-companion-item[role=\"menuitemradio\"])"
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "value": "3:4",
+                    "label": "3:4",
+                    "steps": [
+                      {
+                        "action": "click",
+                        "target": {
+                          "selectors": "input-companion-chip button[jslog^=\"349760;\"]"
+                        }
+                      },
+                      {
+                        "action": "click",
+                        "target": {
+                          "scope": ".cdk-overlay-pane:has(input-companion-item[role=\"menuitemradio\"])",
+                          "selectors": "input-companion-item[role=\"menuitemradio\"]",
+                          "index": 2,
+                          "expectedCount": 5,
+                          "identities": [
+                            "crop_square",
+                            "crop_9_16",
+                            "crop_portrait",
+                            "crop_landscape",
+                            "crop_16_9"
+                          ],
+                          "identityAttribute": "fonticon",
+                          "identitySelector": "mat-icon[fonticon]",
+                          "compact": {
+                            "scope": "mat-bottom-sheet-container:has(input-companion-item[role=\"menuitemradio\"])",
+                            "selectors": "input-companion-item[role=\"menuitemradio\"]",
+                            "index": 2,
+                            "expectedCount": 5,
+                            "identities": [
+                              "crop_square",
+                              "crop_9_16",
+                              "crop_portrait",
+                              "crop_landscape",
+                              "crop_16_9"
+                            ],
+                            "identityAttribute": "fonticon",
+                            "identitySelector": "mat-icon[fonticon]"
+                          }
+                        }
+                      }
+                    ],
+                    "verificationSteps": [
+                      {
+                        "action": "click",
+                        "target": {
+                          "selectors": "input-companion-chip button[jslog^=\"349760;\"]"
+                        }
+                      }
+                    ],
+                    "selectedWhen": {
+                      "scope": ".cdk-overlay-pane:has(input-companion-item[role=\"menuitemradio\"])",
+                      "selectors": "input-companion-item[role=\"menuitemradio\"]",
+                      "index": 2,
+                      "expectedCount": 5,
+                      "identities": [
+                        "crop_square",
+                        "crop_9_16",
+                        "crop_portrait",
+                        "crop_landscape",
+                        "crop_16_9"
+                      ],
+                      "identityAttribute": "fonticon",
+                      "identitySelector": "mat-icon[fonticon]",
+                      "compact": {
+                        "scope": "mat-bottom-sheet-container:has(input-companion-item[role=\"menuitemradio\"])",
+                        "selectors": "input-companion-item[role=\"menuitemradio\"]",
+                        "index": 2,
+                        "expectedCount": 5,
+                        "identities": [
+                          "crop_square",
+                          "crop_9_16",
+                          "crop_portrait",
+                          "crop_landscape",
+                          "crop_16_9"
+                        ],
+                        "identityAttribute": "fonticon",
+                        "identitySelector": "mat-icon[fonticon]"
+                      },
+                      "requiredAttributes": {
+                        "aria-checked": "true"
+                      }
+                    },
+                    "closeSteps": [
+                      {
+                        "action": "escape"
+                      },
+                      {
+                        "action": "waitAbsent",
+                        "target": {
+                          "selectors": ".cdk-overlay-pane:has(input-companion-item[role=\"menuitemradio\"])",
+                          "compact": {
+                            "selectors": "mat-bottom-sheet-container:has(input-companion-item[role=\"menuitemradio\"])"
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "value": "4:3",
+                    "label": "4:3",
+                    "steps": [
+                      {
+                        "action": "click",
+                        "target": {
+                          "selectors": "input-companion-chip button[jslog^=\"349760;\"]"
+                        }
+                      },
+                      {
+                        "action": "click",
+                        "target": {
+                          "scope": ".cdk-overlay-pane:has(input-companion-item[role=\"menuitemradio\"])",
+                          "selectors": "input-companion-item[role=\"menuitemradio\"]",
+                          "index": 3,
+                          "expectedCount": 5,
+                          "identities": [
+                            "crop_square",
+                            "crop_9_16",
+                            "crop_portrait",
+                            "crop_landscape",
+                            "crop_16_9"
+                          ],
+                          "identityAttribute": "fonticon",
+                          "identitySelector": "mat-icon[fonticon]",
+                          "compact": {
+                            "scope": "mat-bottom-sheet-container:has(input-companion-item[role=\"menuitemradio\"])",
+                            "selectors": "input-companion-item[role=\"menuitemradio\"]",
+                            "index": 3,
+                            "expectedCount": 5,
+                            "identities": [
+                              "crop_square",
+                              "crop_9_16",
+                              "crop_portrait",
+                              "crop_landscape",
+                              "crop_16_9"
+                            ],
+                            "identityAttribute": "fonticon",
+                            "identitySelector": "mat-icon[fonticon]"
+                          }
+                        }
+                      }
+                    ],
+                    "verificationSteps": [
+                      {
+                        "action": "click",
+                        "target": {
+                          "selectors": "input-companion-chip button[jslog^=\"349760;\"]"
+                        }
+                      }
+                    ],
+                    "selectedWhen": {
+                      "scope": ".cdk-overlay-pane:has(input-companion-item[role=\"menuitemradio\"])",
+                      "selectors": "input-companion-item[role=\"menuitemradio\"]",
+                      "index": 3,
+                      "expectedCount": 5,
+                      "identities": [
+                        "crop_square",
+                        "crop_9_16",
+                        "crop_portrait",
+                        "crop_landscape",
+                        "crop_16_9"
+                      ],
+                      "identityAttribute": "fonticon",
+                      "identitySelector": "mat-icon[fonticon]",
+                      "compact": {
+                        "scope": "mat-bottom-sheet-container:has(input-companion-item[role=\"menuitemradio\"])",
+                        "selectors": "input-companion-item[role=\"menuitemradio\"]",
+                        "index": 3,
+                        "expectedCount": 5,
+                        "identities": [
+                          "crop_square",
+                          "crop_9_16",
+                          "crop_portrait",
+                          "crop_landscape",
+                          "crop_16_9"
+                        ],
+                        "identityAttribute": "fonticon",
+                        "identitySelector": "mat-icon[fonticon]"
+                      },
+                      "requiredAttributes": {
+                        "aria-checked": "true"
+                      }
+                    },
+                    "closeSteps": [
+                      {
+                        "action": "escape"
+                      },
+                      {
+                        "action": "waitAbsent",
+                        "target": {
+                          "selectors": ".cdk-overlay-pane:has(input-companion-item[role=\"menuitemradio\"])",
+                          "compact": {
+                            "selectors": "mat-bottom-sheet-container:has(input-companion-item[role=\"menuitemradio\"])"
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "value": "16:9",
+                    "label": "16:9",
+                    "steps": [
+                      {
+                        "action": "click",
+                        "target": {
+                          "selectors": "input-companion-chip button[jslog^=\"349760;\"]"
+                        }
+                      },
+                      {
+                        "action": "click",
+                        "target": {
+                          "scope": ".cdk-overlay-pane:has(input-companion-item[role=\"menuitemradio\"])",
+                          "selectors": "input-companion-item[role=\"menuitemradio\"]",
+                          "index": 4,
+                          "expectedCount": 5,
+                          "identities": [
+                            "crop_square",
+                            "crop_9_16",
+                            "crop_portrait",
+                            "crop_landscape",
+                            "crop_16_9"
+                          ],
+                          "identityAttribute": "fonticon",
+                          "identitySelector": "mat-icon[fonticon]",
+                          "compact": {
+                            "scope": "mat-bottom-sheet-container:has(input-companion-item[role=\"menuitemradio\"])",
+                            "selectors": "input-companion-item[role=\"menuitemradio\"]",
+                            "index": 4,
+                            "expectedCount": 5,
+                            "identities": [
+                              "crop_square",
+                              "crop_9_16",
+                              "crop_portrait",
+                              "crop_landscape",
+                              "crop_16_9"
+                            ],
+                            "identityAttribute": "fonticon",
+                            "identitySelector": "mat-icon[fonticon]"
+                          }
+                        }
+                      }
+                    ],
+                    "verificationSteps": [
+                      {
+                        "action": "click",
+                        "target": {
+                          "selectors": "input-companion-chip button[jslog^=\"349760;\"]"
+                        }
+                      }
+                    ],
+                    "selectedWhen": {
+                      "scope": ".cdk-overlay-pane:has(input-companion-item[role=\"menuitemradio\"])",
+                      "selectors": "input-companion-item[role=\"menuitemradio\"]",
+                      "index": 4,
+                      "expectedCount": 5,
+                      "identities": [
+                        "crop_square",
+                        "crop_9_16",
+                        "crop_portrait",
+                        "crop_landscape",
+                        "crop_16_9"
+                      ],
+                      "identityAttribute": "fonticon",
+                      "identitySelector": "mat-icon[fonticon]",
+                      "compact": {
+                        "scope": "mat-bottom-sheet-container:has(input-companion-item[role=\"menuitemradio\"])",
+                        "selectors": "input-companion-item[role=\"menuitemradio\"]",
+                        "index": 4,
+                        "expectedCount": 5,
+                        "identities": [
+                          "crop_square",
+                          "crop_9_16",
+                          "crop_portrait",
+                          "crop_landscape",
+                          "crop_16_9"
+                        ],
+                        "identityAttribute": "fonticon",
+                        "identitySelector": "mat-icon[fonticon]"
+                      },
+                      "requiredAttributes": {
+                        "aria-checked": "true"
+                      }
+                    },
+                    "closeSteps": [
+                      {
+                        "action": "escape"
+                      },
+                      {
+                        "action": "waitAbsent",
+                        "target": {
+                          "selectors": ".cdk-overlay-pane:has(input-companion-item[role=\"menuitemradio\"])",
+                          "compact": {
+                            "selectors": "mat-bottom-sheet-container:has(input-companion-item[role=\"menuitemradio\"])"
+                          }
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
           }
         },
         "video": {
@@ -386,23 +935,3461 @@ export const BUILTIN_RECIPES: Record<'chatgpt' | 'claude' | 'gemini' | 'grok', C
               {
                 "action": "click",
                 "target": {
-                  "role": "button",
-                  "name": [
-                    "Upload & tools",
-                    "Add files"
-                  ]
+                  "selectors": "button[jslog^=\"300142;\"]"
                 }
               }
             ],
             "ready": "uploader-file-preview:has(button[aria-label=\"close attachment\"]):not(:has([role=\"progressbar\"]))",
             "cleanup": "uploader-file-preview button[aria-label=\"close attachment\"]"
+          },
+          "generation": {
+            "activationSteps": [
+              {
+                "action": "click",
+                "target": {
+                  "selectors": "button[jslog^=\"300142;\"]"
+                }
+              },
+              {
+                "action": "click",
+                "target": {
+                  "selectors": "[role=\"menuitemcheckbox\"][jslog^=\"255043;\"]"
+                }
+              }
+            ],
+            "activeWhen": {
+              "selectors": "input-companion-chip button[jslog^=\"316870;\"]"
+            },
+            "settings": [
+              {
+                "key": "aspect_ratio",
+                "label": "Aspect ratio",
+                "type": "enum",
+                "default": "16:9",
+                "options": [
+                  {
+                    "value": "16:9",
+                    "label": "Landscape (16:9)",
+                    "steps": [
+                      {
+                        "action": "click",
+                        "target": {
+                          "selectors": "input-companion-chip button[jslog^=\"316870;\"]"
+                        }
+                      },
+                      {
+                        "action": "click",
+                        "target": {
+                          "scope": ".cdk-overlay-pane:has(input-companion-item[role=\"menuitemradio\"])",
+                          "selectors": "input-companion-item[role=\"menuitemradio\"]",
+                          "index": 0,
+                          "expectedCount": 2,
+                          "identities": [
+                            "crop_16_9",
+                            "crop_9_16"
+                          ],
+                          "identityAttribute": "fonticon",
+                          "identitySelector": "mat-icon[fonticon]",
+                          "compact": {
+                            "scope": "mat-bottom-sheet-container:has(input-companion-item[role=\"menuitemradio\"])",
+                            "selectors": "input-companion-item[role=\"menuitemradio\"]",
+                            "index": 0,
+                            "expectedCount": 2,
+                            "identities": [
+                              "crop_16_9",
+                              "crop_9_16"
+                            ],
+                            "identityAttribute": "fonticon",
+                            "identitySelector": "mat-icon[fonticon]"
+                          }
+                        }
+                      }
+                    ],
+                    "verificationSteps": [
+                      {
+                        "action": "click",
+                        "target": {
+                          "selectors": "input-companion-chip button[jslog^=\"316870;\"]"
+                        }
+                      }
+                    ],
+                    "selectedWhen": {
+                      "scope": ".cdk-overlay-pane:has(input-companion-item[role=\"menuitemradio\"])",
+                      "selectors": "input-companion-item[role=\"menuitemradio\"]",
+                      "index": 0,
+                      "expectedCount": 2,
+                      "identities": [
+                        "crop_16_9",
+                        "crop_9_16"
+                      ],
+                      "identityAttribute": "fonticon",
+                      "identitySelector": "mat-icon[fonticon]",
+                      "compact": {
+                        "scope": "mat-bottom-sheet-container:has(input-companion-item[role=\"menuitemradio\"])",
+                        "selectors": "input-companion-item[role=\"menuitemradio\"]",
+                        "index": 0,
+                        "expectedCount": 2,
+                        "identities": [
+                          "crop_16_9",
+                          "crop_9_16"
+                        ],
+                        "identityAttribute": "fonticon",
+                        "identitySelector": "mat-icon[fonticon]"
+                      },
+                      "requiredAttributes": {
+                        "aria-checked": "true"
+                      }
+                    },
+                    "closeSteps": [
+                      {
+                        "action": "escape"
+                      },
+                      {
+                        "action": "waitAbsent",
+                        "target": {
+                          "selectors": ".cdk-overlay-pane:has(input-companion-item[role=\"menuitemradio\"])",
+                          "compact": {
+                            "selectors": "mat-bottom-sheet-container:has(input-companion-item[role=\"menuitemradio\"])"
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "value": "9:16",
+                    "label": "Portrait (9:16)",
+                    "steps": [
+                      {
+                        "action": "click",
+                        "target": {
+                          "selectors": "input-companion-chip button[jslog^=\"316870;\"]"
+                        }
+                      },
+                      {
+                        "action": "click",
+                        "target": {
+                          "scope": ".cdk-overlay-pane:has(input-companion-item[role=\"menuitemradio\"])",
+                          "selectors": "input-companion-item[role=\"menuitemradio\"]",
+                          "index": 1,
+                          "expectedCount": 2,
+                          "identities": [
+                            "crop_16_9",
+                            "crop_9_16"
+                          ],
+                          "identityAttribute": "fonticon",
+                          "identitySelector": "mat-icon[fonticon]",
+                          "compact": {
+                            "scope": "mat-bottom-sheet-container:has(input-companion-item[role=\"menuitemradio\"])",
+                            "selectors": "input-companion-item[role=\"menuitemradio\"]",
+                            "index": 1,
+                            "expectedCount": 2,
+                            "identities": [
+                              "crop_16_9",
+                              "crop_9_16"
+                            ],
+                            "identityAttribute": "fonticon",
+                            "identitySelector": "mat-icon[fonticon]"
+                          }
+                        }
+                      }
+                    ],
+                    "verificationSteps": [
+                      {
+                        "action": "click",
+                        "target": {
+                          "selectors": "input-companion-chip button[jslog^=\"316870;\"]"
+                        }
+                      }
+                    ],
+                    "selectedWhen": {
+                      "scope": ".cdk-overlay-pane:has(input-companion-item[role=\"menuitemradio\"])",
+                      "selectors": "input-companion-item[role=\"menuitemradio\"]",
+                      "index": 1,
+                      "expectedCount": 2,
+                      "identities": [
+                        "crop_16_9",
+                        "crop_9_16"
+                      ],
+                      "identityAttribute": "fonticon",
+                      "identitySelector": "mat-icon[fonticon]",
+                      "compact": {
+                        "scope": "mat-bottom-sheet-container:has(input-companion-item[role=\"menuitemradio\"])",
+                        "selectors": "input-companion-item[role=\"menuitemradio\"]",
+                        "index": 1,
+                        "expectedCount": 2,
+                        "identities": [
+                          "crop_16_9",
+                          "crop_9_16"
+                        ],
+                        "identityAttribute": "fonticon",
+                        "identitySelector": "mat-icon[fonticon]"
+                      },
+                      "requiredAttributes": {
+                        "aria-checked": "true"
+                      }
+                    },
+                    "closeSteps": [
+                      {
+                        "action": "escape"
+                      },
+                      {
+                        "action": "waitAbsent",
+                        "target": {
+                          "selectors": ".cdk-overlay-pane:has(input-companion-item[role=\"menuitemradio\"])",
+                          "compact": {
+                            "selectors": "mat-bottom-sheet-container:has(input-companion-item[role=\"menuitemradio\"])"
+                          }
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            ],
+            "nativeDefaults": {
+              "duration_seconds": "provider_native",
+              "quality": "provider_native"
+            }
           }
         },
         "music": {
           "enabled": true,
           "contentSelector": "generated-music video, generated-music audio, video-player video, audio",
           "downloadSelector": "button[aria-label*=\"Download track\" i]",
-          "mediaKind": "audio"
+          "mediaKind": "audio",
+          "generation": {
+            "activationSteps": [
+              {
+                "action": "click",
+                "target": {
+                  "selectors": "button[jslog^=\"300142;\"]"
+                }
+              },
+              {
+                "action": "click",
+                "target": {
+                  "selectors": "[role=\"menuitemcheckbox\"][jslog^=\"297655;\"]"
+                }
+              }
+            ],
+            "activeWhen": {
+              "selectors": "input-companion-chip button[jslog^=\"337419;\"]"
+            },
+            "settings": [
+              {
+                "key": "length",
+                "label": "Length",
+                "type": "enum",
+                "default": "standard",
+                "options": [
+                  {
+                    "value": "short",
+                    "label": "Short",
+                    "steps": [
+                      {
+                        "action": "click",
+                        "target": {
+                          "selectors": "input-companion-chip button[jslog^=\"337419;\"]"
+                        }
+                      },
+                      {
+                        "action": "click",
+                        "target": {
+                          "scope": ".cdk-overlay-pane:has(input-companion-item[role=\"menuitemradio\"])",
+                          "selectors": "input-companion-item[role=\"menuitemradio\"]",
+                          "index": 0,
+                          "expectedCount": 2,
+                          "compact": {
+                            "scope": "mat-bottom-sheet-container:has(input-companion-item[role=\"menuitemradio\"])",
+                            "selectors": "input-companion-item[role=\"menuitemradio\"]",
+                            "index": 0,
+                            "expectedCount": 2,
+                            "identityAttribute": "fonticon",
+                            "identitySelector": "mat-icon[fonticon]",
+                            "identities": [
+                              "schedule",
+                              "schedule"
+                            ]
+                          },
+                          "identityAttribute": "fonticon",
+                          "identitySelector": "mat-icon[fonticon]",
+                          "identities": [
+                            "schedule",
+                            "schedule"
+                          ]
+                        }
+                      }
+                    ],
+                    "verificationSteps": [
+                      {
+                        "action": "click",
+                        "target": {
+                          "selectors": "input-companion-chip button[jslog^=\"337419;\"]"
+                        }
+                      }
+                    ],
+                    "selectedWhen": {
+                      "scope": ".cdk-overlay-pane:has(input-companion-item[role=\"menuitemradio\"])",
+                      "selectors": "input-companion-item[role=\"menuitemradio\"]",
+                      "index": 0,
+                      "expectedCount": 2,
+                      "compact": {
+                        "scope": "mat-bottom-sheet-container:has(input-companion-item[role=\"menuitemradio\"])",
+                        "selectors": "input-companion-item[role=\"menuitemradio\"]",
+                        "index": 0,
+                        "expectedCount": 2,
+                        "identityAttribute": "fonticon",
+                        "identitySelector": "mat-icon[fonticon]",
+                        "identities": [
+                          "schedule",
+                          "schedule"
+                        ]
+                      },
+                      "requiredAttributes": {
+                        "aria-checked": "true"
+                      },
+                      "identityAttribute": "fonticon",
+                      "identitySelector": "mat-icon[fonticon]",
+                      "identities": [
+                        "schedule",
+                        "schedule"
+                      ]
+                    },
+                    "closeSteps": [
+                      {
+                        "action": "escape"
+                      },
+                      {
+                        "action": "waitAbsent",
+                        "target": {
+                          "selectors": ".cdk-overlay-pane:has(input-companion-item[role=\"menuitemradio\"])",
+                          "compact": {
+                            "selectors": "mat-bottom-sheet-container:has(input-companion-item[role=\"menuitemradio\"])"
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "value": "standard",
+                    "label": "Standard",
+                    "steps": [
+                      {
+                        "action": "click",
+                        "target": {
+                          "selectors": "input-companion-chip button[jslog^=\"337419;\"]"
+                        }
+                      },
+                      {
+                        "action": "click",
+                        "target": {
+                          "scope": ".cdk-overlay-pane:has(input-companion-item[role=\"menuitemradio\"])",
+                          "selectors": "input-companion-item[role=\"menuitemradio\"]",
+                          "index": 1,
+                          "expectedCount": 2,
+                          "compact": {
+                            "scope": "mat-bottom-sheet-container:has(input-companion-item[role=\"menuitemradio\"])",
+                            "selectors": "input-companion-item[role=\"menuitemradio\"]",
+                            "index": 1,
+                            "expectedCount": 2,
+                            "identityAttribute": "fonticon",
+                            "identitySelector": "mat-icon[fonticon]",
+                            "identities": [
+                              "schedule",
+                              "schedule"
+                            ]
+                          },
+                          "identityAttribute": "fonticon",
+                          "identitySelector": "mat-icon[fonticon]",
+                          "identities": [
+                            "schedule",
+                            "schedule"
+                          ]
+                        }
+                      }
+                    ],
+                    "verificationSteps": [
+                      {
+                        "action": "click",
+                        "target": {
+                          "selectors": "input-companion-chip button[jslog^=\"337419;\"]"
+                        }
+                      }
+                    ],
+                    "selectedWhen": {
+                      "scope": ".cdk-overlay-pane:has(input-companion-item[role=\"menuitemradio\"])",
+                      "selectors": "input-companion-item[role=\"menuitemradio\"]",
+                      "index": 1,
+                      "expectedCount": 2,
+                      "compact": {
+                        "scope": "mat-bottom-sheet-container:has(input-companion-item[role=\"menuitemradio\"])",
+                        "selectors": "input-companion-item[role=\"menuitemradio\"]",
+                        "index": 1,
+                        "expectedCount": 2,
+                        "identityAttribute": "fonticon",
+                        "identitySelector": "mat-icon[fonticon]",
+                        "identities": [
+                          "schedule",
+                          "schedule"
+                        ]
+                      },
+                      "requiredAttributes": {
+                        "aria-checked": "true"
+                      },
+                      "identityAttribute": "fonticon",
+                      "identitySelector": "mat-icon[fonticon]",
+                      "identities": [
+                        "schedule",
+                        "schedule"
+                      ]
+                    },
+                    "closeSteps": [
+                      {
+                        "action": "escape"
+                      },
+                      {
+                        "action": "waitAbsent",
+                        "target": {
+                          "selectors": ".cdk-overlay-pane:has(input-companion-item[role=\"menuitemradio\"])",
+                          "compact": {
+                            "selectors": "mat-bottom-sheet-container:has(input-companion-item[role=\"menuitemradio\"])"
+                          }
+                        }
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "key": "vocals",
+                "label": "Vocals",
+                "type": "enum",
+                "default": "custom",
+                "options": [
+                  {
+                    "value": "custom",
+                    "label": "Custom",
+                    "steps": [
+                      {
+                        "action": "click",
+                        "target": {
+                          "selectors": "input-companion-chip button[jslog^=\"339102;\"]"
+                        }
+                      },
+                      {
+                        "action": "click",
+                        "target": {
+                          "scope": ".cdk-overlay-pane:has(input-companion-item[role=\"menuitemradio\"])",
+                          "selectors": "input-companion-item[role=\"menuitemradio\"]",
+                          "index": 0,
+                          "expectedCount": 3,
+                          "identities": [
+                            "chat_spark_2",
+                            "record_voice_over",
+                            "voice_over_off"
+                          ],
+                          "identityAttribute": "fonticon",
+                          "identitySelector": "mat-icon[fonticon]",
+                          "compact": {
+                            "scope": "mat-bottom-sheet-container:has(input-companion-item[role=\"menuitemradio\"])",
+                            "selectors": "input-companion-item[role=\"menuitemradio\"]",
+                            "index": 0,
+                            "expectedCount": 3,
+                            "identities": [
+                              "chat_spark_2",
+                              "record_voice_over",
+                              "voice_over_off"
+                            ],
+                            "identityAttribute": "fonticon",
+                            "identitySelector": "mat-icon[fonticon]"
+                          }
+                        }
+                      }
+                    ],
+                    "verificationSteps": [
+                      {
+                        "action": "click",
+                        "target": {
+                          "selectors": "input-companion-chip button[jslog^=\"339102;\"]"
+                        }
+                      }
+                    ],
+                    "selectedWhen": {
+                      "scope": ".cdk-overlay-pane:has(input-companion-item[role=\"menuitemradio\"])",
+                      "selectors": "input-companion-item[role=\"menuitemradio\"]",
+                      "index": 0,
+                      "expectedCount": 3,
+                      "identities": [
+                        "chat_spark_2",
+                        "record_voice_over",
+                        "voice_over_off"
+                      ],
+                      "identityAttribute": "fonticon",
+                      "identitySelector": "mat-icon[fonticon]",
+                      "compact": {
+                        "scope": "mat-bottom-sheet-container:has(input-companion-item[role=\"menuitemradio\"])",
+                        "selectors": "input-companion-item[role=\"menuitemradio\"]",
+                        "index": 0,
+                        "expectedCount": 3,
+                        "identities": [
+                          "chat_spark_2",
+                          "record_voice_over",
+                          "voice_over_off"
+                        ],
+                        "identityAttribute": "fonticon",
+                        "identitySelector": "mat-icon[fonticon]"
+                      },
+                      "requiredAttributes": {
+                        "aria-checked": "true"
+                      }
+                    },
+                    "closeSteps": [
+                      {
+                        "action": "escape"
+                      },
+                      {
+                        "action": "waitAbsent",
+                        "target": {
+                          "selectors": ".cdk-overlay-pane:has(input-companion-item[role=\"menuitemradio\"])",
+                          "compact": {
+                            "selectors": "mat-bottom-sheet-container:has(input-companion-item[role=\"menuitemradio\"])"
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "value": "on",
+                    "label": "Vocals on",
+                    "steps": [
+                      {
+                        "action": "click",
+                        "target": {
+                          "selectors": "input-companion-chip button[jslog^=\"339102;\"]"
+                        }
+                      },
+                      {
+                        "action": "click",
+                        "target": {
+                          "scope": ".cdk-overlay-pane:has(input-companion-item[role=\"menuitemradio\"])",
+                          "selectors": "input-companion-item[role=\"menuitemradio\"]",
+                          "index": 1,
+                          "expectedCount": 3,
+                          "identities": [
+                            "chat_spark_2",
+                            "record_voice_over",
+                            "voice_over_off"
+                          ],
+                          "identityAttribute": "fonticon",
+                          "identitySelector": "mat-icon[fonticon]",
+                          "compact": {
+                            "scope": "mat-bottom-sheet-container:has(input-companion-item[role=\"menuitemradio\"])",
+                            "selectors": "input-companion-item[role=\"menuitemradio\"]",
+                            "index": 1,
+                            "expectedCount": 3,
+                            "identities": [
+                              "chat_spark_2",
+                              "record_voice_over",
+                              "voice_over_off"
+                            ],
+                            "identityAttribute": "fonticon",
+                            "identitySelector": "mat-icon[fonticon]"
+                          }
+                        }
+                      }
+                    ],
+                    "verificationSteps": [
+                      {
+                        "action": "click",
+                        "target": {
+                          "selectors": "input-companion-chip button[jslog^=\"339102;\"]"
+                        }
+                      }
+                    ],
+                    "selectedWhen": {
+                      "scope": ".cdk-overlay-pane:has(input-companion-item[role=\"menuitemradio\"])",
+                      "selectors": "input-companion-item[role=\"menuitemradio\"]",
+                      "index": 1,
+                      "expectedCount": 3,
+                      "identities": [
+                        "chat_spark_2",
+                        "record_voice_over",
+                        "voice_over_off"
+                      ],
+                      "identityAttribute": "fonticon",
+                      "identitySelector": "mat-icon[fonticon]",
+                      "compact": {
+                        "scope": "mat-bottom-sheet-container:has(input-companion-item[role=\"menuitemradio\"])",
+                        "selectors": "input-companion-item[role=\"menuitemradio\"]",
+                        "index": 1,
+                        "expectedCount": 3,
+                        "identities": [
+                          "chat_spark_2",
+                          "record_voice_over",
+                          "voice_over_off"
+                        ],
+                        "identityAttribute": "fonticon",
+                        "identitySelector": "mat-icon[fonticon]"
+                      },
+                      "requiredAttributes": {
+                        "aria-checked": "true"
+                      }
+                    },
+                    "closeSteps": [
+                      {
+                        "action": "escape"
+                      },
+                      {
+                        "action": "waitAbsent",
+                        "target": {
+                          "selectors": ".cdk-overlay-pane:has(input-companion-item[role=\"menuitemradio\"])",
+                          "compact": {
+                            "selectors": "mat-bottom-sheet-container:has(input-companion-item[role=\"menuitemradio\"])"
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "value": "instrumental",
+                    "label": "Instrumental",
+                    "steps": [
+                      {
+                        "action": "click",
+                        "target": {
+                          "selectors": "input-companion-chip button[jslog^=\"339102;\"]"
+                        }
+                      },
+                      {
+                        "action": "click",
+                        "target": {
+                          "scope": ".cdk-overlay-pane:has(input-companion-item[role=\"menuitemradio\"])",
+                          "selectors": "input-companion-item[role=\"menuitemradio\"]",
+                          "index": 2,
+                          "expectedCount": 3,
+                          "identities": [
+                            "chat_spark_2",
+                            "record_voice_over",
+                            "voice_over_off"
+                          ],
+                          "identityAttribute": "fonticon",
+                          "identitySelector": "mat-icon[fonticon]",
+                          "compact": {
+                            "scope": "mat-bottom-sheet-container:has(input-companion-item[role=\"menuitemradio\"])",
+                            "selectors": "input-companion-item[role=\"menuitemradio\"]",
+                            "index": 2,
+                            "expectedCount": 3,
+                            "identities": [
+                              "chat_spark_2",
+                              "record_voice_over",
+                              "voice_over_off"
+                            ],
+                            "identityAttribute": "fonticon",
+                            "identitySelector": "mat-icon[fonticon]"
+                          }
+                        }
+                      }
+                    ],
+                    "verificationSteps": [
+                      {
+                        "action": "click",
+                        "target": {
+                          "selectors": "input-companion-chip button[jslog^=\"339102;\"]"
+                        }
+                      }
+                    ],
+                    "selectedWhen": {
+                      "scope": ".cdk-overlay-pane:has(input-companion-item[role=\"menuitemradio\"])",
+                      "selectors": "input-companion-item[role=\"menuitemradio\"]",
+                      "index": 2,
+                      "expectedCount": 3,
+                      "identities": [
+                        "chat_spark_2",
+                        "record_voice_over",
+                        "voice_over_off"
+                      ],
+                      "identityAttribute": "fonticon",
+                      "identitySelector": "mat-icon[fonticon]",
+                      "compact": {
+                        "scope": "mat-bottom-sheet-container:has(input-companion-item[role=\"menuitemradio\"])",
+                        "selectors": "input-companion-item[role=\"menuitemradio\"]",
+                        "index": 2,
+                        "expectedCount": 3,
+                        "identities": [
+                          "chat_spark_2",
+                          "record_voice_over",
+                          "voice_over_off"
+                        ],
+                        "identityAttribute": "fonticon",
+                        "identitySelector": "mat-icon[fonticon]"
+                      },
+                      "requiredAttributes": {
+                        "aria-checked": "true"
+                      }
+                    },
+                    "closeSteps": [
+                      {
+                        "action": "escape"
+                      },
+                      {
+                        "action": "waitAbsent",
+                        "target": {
+                          "selectors": ".cdk-overlay-pane:has(input-companion-item[role=\"menuitemradio\"])",
+                          "compact": {
+                            "selectors": "mat-bottom-sheet-container:has(input-companion-item[role=\"menuitemradio\"])"
+                          }
+                        }
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "key": "genre",
+                "label": "Genre",
+                "type": "enum",
+                "default": "custom",
+                "options": [
+                  {
+                    "value": "custom",
+                    "label": "Custom",
+                    "steps": [
+                      {
+                        "action": "click",
+                        "target": {
+                          "selectors": "input-companion-chip button[jslog^=\"339104;\"]"
+                        }
+                      },
+                      {
+                        "action": "click",
+                        "target": {
+                          "scope": ".cdk-overlay-pane:has(input-companion-item[role=\"menuitemradio\"])",
+                          "selectors": "input-companion-item[role=\"menuitemradio\"]",
+                          "index": 0,
+                          "expectedCount": 18,
+                          "compact": {
+                            "scope": "mat-bottom-sheet-container:has(input-companion-item[role=\"menuitemradio\"])",
+                            "selectors": "input-companion-item[role=\"menuitemradio\"]",
+                            "index": 0,
+                            "expectedCount": 18,
+                            "identityAttribute": "fonticon",
+                            "identitySelector": "mat-icon[fonticon]",
+                            "identities": [
+                              "chat_spark_2",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note"
+                            ]
+                          },
+                          "identityAttribute": "fonticon",
+                          "identitySelector": "mat-icon[fonticon]",
+                          "identities": [
+                            "chat_spark_2",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note"
+                          ]
+                        }
+                      }
+                    ],
+                    "verificationSteps": [
+                      {
+                        "action": "click",
+                        "target": {
+                          "selectors": "input-companion-chip button[jslog^=\"339104;\"]"
+                        }
+                      }
+                    ],
+                    "selectedWhen": {
+                      "scope": ".cdk-overlay-pane:has(input-companion-item[role=\"menuitemradio\"])",
+                      "selectors": "input-companion-item[role=\"menuitemradio\"]",
+                      "index": 0,
+                      "expectedCount": 18,
+                      "compact": {
+                        "scope": "mat-bottom-sheet-container:has(input-companion-item[role=\"menuitemradio\"])",
+                        "selectors": "input-companion-item[role=\"menuitemradio\"]",
+                        "index": 0,
+                        "expectedCount": 18,
+                        "identityAttribute": "fonticon",
+                        "identitySelector": "mat-icon[fonticon]",
+                        "identities": [
+                          "chat_spark_2",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note"
+                        ]
+                      },
+                      "requiredAttributes": {
+                        "aria-checked": "true"
+                      },
+                      "identityAttribute": "fonticon",
+                      "identitySelector": "mat-icon[fonticon]",
+                      "identities": [
+                        "chat_spark_2",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note"
+                      ]
+                    },
+                    "closeSteps": [
+                      {
+                        "action": "escape"
+                      },
+                      {
+                        "action": "waitAbsent",
+                        "target": {
+                          "selectors": ".cdk-overlay-pane:has(input-companion-item[role=\"menuitemradio\"])",
+                          "compact": {
+                            "selectors": "mat-bottom-sheet-container:has(input-companion-item[role=\"menuitemradio\"])"
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "value": "pop",
+                    "label": "Pop",
+                    "steps": [
+                      {
+                        "action": "click",
+                        "target": {
+                          "selectors": "input-companion-chip button[jslog^=\"339104;\"]"
+                        }
+                      },
+                      {
+                        "action": "click",
+                        "target": {
+                          "scope": ".cdk-overlay-pane:has(input-companion-item[role=\"menuitemradio\"])",
+                          "selectors": "input-companion-item[role=\"menuitemradio\"]",
+                          "index": 1,
+                          "expectedCount": 18,
+                          "compact": {
+                            "scope": "mat-bottom-sheet-container:has(input-companion-item[role=\"menuitemradio\"])",
+                            "selectors": "input-companion-item[role=\"menuitemradio\"]",
+                            "index": 1,
+                            "expectedCount": 18,
+                            "identityAttribute": "fonticon",
+                            "identitySelector": "mat-icon[fonticon]",
+                            "identities": [
+                              "chat_spark_2",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note"
+                            ]
+                          },
+                          "identityAttribute": "fonticon",
+                          "identitySelector": "mat-icon[fonticon]",
+                          "identities": [
+                            "chat_spark_2",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note"
+                          ]
+                        }
+                      }
+                    ],
+                    "verificationSteps": [
+                      {
+                        "action": "click",
+                        "target": {
+                          "selectors": "input-companion-chip button[jslog^=\"339104;\"]"
+                        }
+                      }
+                    ],
+                    "selectedWhen": {
+                      "scope": ".cdk-overlay-pane:has(input-companion-item[role=\"menuitemradio\"])",
+                      "selectors": "input-companion-item[role=\"menuitemradio\"]",
+                      "index": 1,
+                      "expectedCount": 18,
+                      "compact": {
+                        "scope": "mat-bottom-sheet-container:has(input-companion-item[role=\"menuitemradio\"])",
+                        "selectors": "input-companion-item[role=\"menuitemradio\"]",
+                        "index": 1,
+                        "expectedCount": 18,
+                        "identityAttribute": "fonticon",
+                        "identitySelector": "mat-icon[fonticon]",
+                        "identities": [
+                          "chat_spark_2",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note"
+                        ]
+                      },
+                      "requiredAttributes": {
+                        "aria-checked": "true"
+                      },
+                      "identityAttribute": "fonticon",
+                      "identitySelector": "mat-icon[fonticon]",
+                      "identities": [
+                        "chat_spark_2",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note"
+                      ]
+                    },
+                    "closeSteps": [
+                      {
+                        "action": "escape"
+                      },
+                      {
+                        "action": "waitAbsent",
+                        "target": {
+                          "selectors": ".cdk-overlay-pane:has(input-companion-item[role=\"menuitemradio\"])",
+                          "compact": {
+                            "selectors": "mat-bottom-sheet-container:has(input-companion-item[role=\"menuitemradio\"])"
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "value": "hip_hop_rap",
+                    "label": "Hip-hop & rap",
+                    "steps": [
+                      {
+                        "action": "click",
+                        "target": {
+                          "selectors": "input-companion-chip button[jslog^=\"339104;\"]"
+                        }
+                      },
+                      {
+                        "action": "click",
+                        "target": {
+                          "scope": ".cdk-overlay-pane:has(input-companion-item[role=\"menuitemradio\"])",
+                          "selectors": "input-companion-item[role=\"menuitemradio\"]",
+                          "index": 2,
+                          "expectedCount": 18,
+                          "compact": {
+                            "scope": "mat-bottom-sheet-container:has(input-companion-item[role=\"menuitemradio\"])",
+                            "selectors": "input-companion-item[role=\"menuitemradio\"]",
+                            "index": 2,
+                            "expectedCount": 18,
+                            "identityAttribute": "fonticon",
+                            "identitySelector": "mat-icon[fonticon]",
+                            "identities": [
+                              "chat_spark_2",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note"
+                            ]
+                          },
+                          "identityAttribute": "fonticon",
+                          "identitySelector": "mat-icon[fonticon]",
+                          "identities": [
+                            "chat_spark_2",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note"
+                          ]
+                        }
+                      }
+                    ],
+                    "verificationSteps": [
+                      {
+                        "action": "click",
+                        "target": {
+                          "selectors": "input-companion-chip button[jslog^=\"339104;\"]"
+                        }
+                      }
+                    ],
+                    "selectedWhen": {
+                      "scope": ".cdk-overlay-pane:has(input-companion-item[role=\"menuitemradio\"])",
+                      "selectors": "input-companion-item[role=\"menuitemradio\"]",
+                      "index": 2,
+                      "expectedCount": 18,
+                      "compact": {
+                        "scope": "mat-bottom-sheet-container:has(input-companion-item[role=\"menuitemradio\"])",
+                        "selectors": "input-companion-item[role=\"menuitemradio\"]",
+                        "index": 2,
+                        "expectedCount": 18,
+                        "identityAttribute": "fonticon",
+                        "identitySelector": "mat-icon[fonticon]",
+                        "identities": [
+                          "chat_spark_2",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note"
+                        ]
+                      },
+                      "requiredAttributes": {
+                        "aria-checked": "true"
+                      },
+                      "identityAttribute": "fonticon",
+                      "identitySelector": "mat-icon[fonticon]",
+                      "identities": [
+                        "chat_spark_2",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note"
+                      ]
+                    },
+                    "closeSteps": [
+                      {
+                        "action": "escape"
+                      },
+                      {
+                        "action": "waitAbsent",
+                        "target": {
+                          "selectors": ".cdk-overlay-pane:has(input-companion-item[role=\"menuitemradio\"])",
+                          "compact": {
+                            "selectors": "mat-bottom-sheet-container:has(input-companion-item[role=\"menuitemradio\"])"
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "value": "rock",
+                    "label": "Rock",
+                    "steps": [
+                      {
+                        "action": "click",
+                        "target": {
+                          "selectors": "input-companion-chip button[jslog^=\"339104;\"]"
+                        }
+                      },
+                      {
+                        "action": "click",
+                        "target": {
+                          "scope": ".cdk-overlay-pane:has(input-companion-item[role=\"menuitemradio\"])",
+                          "selectors": "input-companion-item[role=\"menuitemradio\"]",
+                          "index": 3,
+                          "expectedCount": 18,
+                          "compact": {
+                            "scope": "mat-bottom-sheet-container:has(input-companion-item[role=\"menuitemradio\"])",
+                            "selectors": "input-companion-item[role=\"menuitemradio\"]",
+                            "index": 3,
+                            "expectedCount": 18,
+                            "identityAttribute": "fonticon",
+                            "identitySelector": "mat-icon[fonticon]",
+                            "identities": [
+                              "chat_spark_2",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note"
+                            ]
+                          },
+                          "identityAttribute": "fonticon",
+                          "identitySelector": "mat-icon[fonticon]",
+                          "identities": [
+                            "chat_spark_2",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note"
+                          ]
+                        }
+                      }
+                    ],
+                    "verificationSteps": [
+                      {
+                        "action": "click",
+                        "target": {
+                          "selectors": "input-companion-chip button[jslog^=\"339104;\"]"
+                        }
+                      }
+                    ],
+                    "selectedWhen": {
+                      "scope": ".cdk-overlay-pane:has(input-companion-item[role=\"menuitemradio\"])",
+                      "selectors": "input-companion-item[role=\"menuitemradio\"]",
+                      "index": 3,
+                      "expectedCount": 18,
+                      "compact": {
+                        "scope": "mat-bottom-sheet-container:has(input-companion-item[role=\"menuitemradio\"])",
+                        "selectors": "input-companion-item[role=\"menuitemradio\"]",
+                        "index": 3,
+                        "expectedCount": 18,
+                        "identityAttribute": "fonticon",
+                        "identitySelector": "mat-icon[fonticon]",
+                        "identities": [
+                          "chat_spark_2",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note"
+                        ]
+                      },
+                      "requiredAttributes": {
+                        "aria-checked": "true"
+                      },
+                      "identityAttribute": "fonticon",
+                      "identitySelector": "mat-icon[fonticon]",
+                      "identities": [
+                        "chat_spark_2",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note"
+                      ]
+                    },
+                    "closeSteps": [
+                      {
+                        "action": "escape"
+                      },
+                      {
+                        "action": "waitAbsent",
+                        "target": {
+                          "selectors": ".cdk-overlay-pane:has(input-companion-item[role=\"menuitemradio\"])",
+                          "compact": {
+                            "selectors": "mat-bottom-sheet-container:has(input-companion-item[role=\"menuitemradio\"])"
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "value": "k_pop",
+                    "label": "K-pop",
+                    "steps": [
+                      {
+                        "action": "click",
+                        "target": {
+                          "selectors": "input-companion-chip button[jslog^=\"339104;\"]"
+                        }
+                      },
+                      {
+                        "action": "click",
+                        "target": {
+                          "scope": ".cdk-overlay-pane:has(input-companion-item[role=\"menuitemradio\"])",
+                          "selectors": "input-companion-item[role=\"menuitemradio\"]",
+                          "index": 4,
+                          "expectedCount": 18,
+                          "compact": {
+                            "scope": "mat-bottom-sheet-container:has(input-companion-item[role=\"menuitemradio\"])",
+                            "selectors": "input-companion-item[role=\"menuitemradio\"]",
+                            "index": 4,
+                            "expectedCount": 18,
+                            "identityAttribute": "fonticon",
+                            "identitySelector": "mat-icon[fonticon]",
+                            "identities": [
+                              "chat_spark_2",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note"
+                            ]
+                          },
+                          "identityAttribute": "fonticon",
+                          "identitySelector": "mat-icon[fonticon]",
+                          "identities": [
+                            "chat_spark_2",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note"
+                          ]
+                        }
+                      }
+                    ],
+                    "verificationSteps": [
+                      {
+                        "action": "click",
+                        "target": {
+                          "selectors": "input-companion-chip button[jslog^=\"339104;\"]"
+                        }
+                      }
+                    ],
+                    "selectedWhen": {
+                      "scope": ".cdk-overlay-pane:has(input-companion-item[role=\"menuitemradio\"])",
+                      "selectors": "input-companion-item[role=\"menuitemradio\"]",
+                      "index": 4,
+                      "expectedCount": 18,
+                      "compact": {
+                        "scope": "mat-bottom-sheet-container:has(input-companion-item[role=\"menuitemradio\"])",
+                        "selectors": "input-companion-item[role=\"menuitemradio\"]",
+                        "index": 4,
+                        "expectedCount": 18,
+                        "identityAttribute": "fonticon",
+                        "identitySelector": "mat-icon[fonticon]",
+                        "identities": [
+                          "chat_spark_2",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note"
+                        ]
+                      },
+                      "requiredAttributes": {
+                        "aria-checked": "true"
+                      },
+                      "identityAttribute": "fonticon",
+                      "identitySelector": "mat-icon[fonticon]",
+                      "identities": [
+                        "chat_spark_2",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note"
+                      ]
+                    },
+                    "closeSteps": [
+                      {
+                        "action": "escape"
+                      },
+                      {
+                        "action": "waitAbsent",
+                        "target": {
+                          "selectors": ".cdk-overlay-pane:has(input-companion-item[role=\"menuitemradio\"])",
+                          "compact": {
+                            "selectors": "mat-bottom-sheet-container:has(input-companion-item[role=\"menuitemradio\"])"
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "value": "latin",
+                    "label": "Latin",
+                    "steps": [
+                      {
+                        "action": "click",
+                        "target": {
+                          "selectors": "input-companion-chip button[jslog^=\"339104;\"]"
+                        }
+                      },
+                      {
+                        "action": "click",
+                        "target": {
+                          "scope": ".cdk-overlay-pane:has(input-companion-item[role=\"menuitemradio\"])",
+                          "selectors": "input-companion-item[role=\"menuitemradio\"]",
+                          "index": 5,
+                          "expectedCount": 18,
+                          "compact": {
+                            "scope": "mat-bottom-sheet-container:has(input-companion-item[role=\"menuitemradio\"])",
+                            "selectors": "input-companion-item[role=\"menuitemradio\"]",
+                            "index": 5,
+                            "expectedCount": 18,
+                            "identityAttribute": "fonticon",
+                            "identitySelector": "mat-icon[fonticon]",
+                            "identities": [
+                              "chat_spark_2",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note"
+                            ]
+                          },
+                          "identityAttribute": "fonticon",
+                          "identitySelector": "mat-icon[fonticon]",
+                          "identities": [
+                            "chat_spark_2",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note"
+                          ]
+                        }
+                      }
+                    ],
+                    "verificationSteps": [
+                      {
+                        "action": "click",
+                        "target": {
+                          "selectors": "input-companion-chip button[jslog^=\"339104;\"]"
+                        }
+                      }
+                    ],
+                    "selectedWhen": {
+                      "scope": ".cdk-overlay-pane:has(input-companion-item[role=\"menuitemradio\"])",
+                      "selectors": "input-companion-item[role=\"menuitemradio\"]",
+                      "index": 5,
+                      "expectedCount": 18,
+                      "compact": {
+                        "scope": "mat-bottom-sheet-container:has(input-companion-item[role=\"menuitemradio\"])",
+                        "selectors": "input-companion-item[role=\"menuitemradio\"]",
+                        "index": 5,
+                        "expectedCount": 18,
+                        "identityAttribute": "fonticon",
+                        "identitySelector": "mat-icon[fonticon]",
+                        "identities": [
+                          "chat_spark_2",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note"
+                        ]
+                      },
+                      "requiredAttributes": {
+                        "aria-checked": "true"
+                      },
+                      "identityAttribute": "fonticon",
+                      "identitySelector": "mat-icon[fonticon]",
+                      "identities": [
+                        "chat_spark_2",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note"
+                      ]
+                    },
+                    "closeSteps": [
+                      {
+                        "action": "escape"
+                      },
+                      {
+                        "action": "waitAbsent",
+                        "target": {
+                          "selectors": ".cdk-overlay-pane:has(input-companion-item[role=\"menuitemradio\"])",
+                          "compact": {
+                            "selectors": "mat-bottom-sheet-container:has(input-companion-item[role=\"menuitemradio\"])"
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "value": "electronic",
+                    "label": "Electronic",
+                    "steps": [
+                      {
+                        "action": "click",
+                        "target": {
+                          "selectors": "input-companion-chip button[jslog^=\"339104;\"]"
+                        }
+                      },
+                      {
+                        "action": "click",
+                        "target": {
+                          "scope": ".cdk-overlay-pane:has(input-companion-item[role=\"menuitemradio\"])",
+                          "selectors": "input-companion-item[role=\"menuitemradio\"]",
+                          "index": 6,
+                          "expectedCount": 18,
+                          "compact": {
+                            "scope": "mat-bottom-sheet-container:has(input-companion-item[role=\"menuitemradio\"])",
+                            "selectors": "input-companion-item[role=\"menuitemradio\"]",
+                            "index": 6,
+                            "expectedCount": 18,
+                            "identityAttribute": "fonticon",
+                            "identitySelector": "mat-icon[fonticon]",
+                            "identities": [
+                              "chat_spark_2",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note"
+                            ]
+                          },
+                          "identityAttribute": "fonticon",
+                          "identitySelector": "mat-icon[fonticon]",
+                          "identities": [
+                            "chat_spark_2",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note"
+                          ]
+                        }
+                      }
+                    ],
+                    "verificationSteps": [
+                      {
+                        "action": "click",
+                        "target": {
+                          "selectors": "input-companion-chip button[jslog^=\"339104;\"]"
+                        }
+                      }
+                    ],
+                    "selectedWhen": {
+                      "scope": ".cdk-overlay-pane:has(input-companion-item[role=\"menuitemradio\"])",
+                      "selectors": "input-companion-item[role=\"menuitemradio\"]",
+                      "index": 6,
+                      "expectedCount": 18,
+                      "compact": {
+                        "scope": "mat-bottom-sheet-container:has(input-companion-item[role=\"menuitemradio\"])",
+                        "selectors": "input-companion-item[role=\"menuitemradio\"]",
+                        "index": 6,
+                        "expectedCount": 18,
+                        "identityAttribute": "fonticon",
+                        "identitySelector": "mat-icon[fonticon]",
+                        "identities": [
+                          "chat_spark_2",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note"
+                        ]
+                      },
+                      "requiredAttributes": {
+                        "aria-checked": "true"
+                      },
+                      "identityAttribute": "fonticon",
+                      "identitySelector": "mat-icon[fonticon]",
+                      "identities": [
+                        "chat_spark_2",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note"
+                      ]
+                    },
+                    "closeSteps": [
+                      {
+                        "action": "escape"
+                      },
+                      {
+                        "action": "waitAbsent",
+                        "target": {
+                          "selectors": ".cdk-overlay-pane:has(input-companion-item[role=\"menuitemradio\"])",
+                          "compact": {
+                            "selectors": "mat-bottom-sheet-container:has(input-companion-item[role=\"menuitemradio\"])"
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "value": "rnb",
+                    "label": "R&B",
+                    "steps": [
+                      {
+                        "action": "click",
+                        "target": {
+                          "selectors": "input-companion-chip button[jslog^=\"339104;\"]"
+                        }
+                      },
+                      {
+                        "action": "click",
+                        "target": {
+                          "scope": ".cdk-overlay-pane:has(input-companion-item[role=\"menuitemradio\"])",
+                          "selectors": "input-companion-item[role=\"menuitemradio\"]",
+                          "index": 7,
+                          "expectedCount": 18,
+                          "compact": {
+                            "scope": "mat-bottom-sheet-container:has(input-companion-item[role=\"menuitemradio\"])",
+                            "selectors": "input-companion-item[role=\"menuitemradio\"]",
+                            "index": 7,
+                            "expectedCount": 18,
+                            "identityAttribute": "fonticon",
+                            "identitySelector": "mat-icon[fonticon]",
+                            "identities": [
+                              "chat_spark_2",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note"
+                            ]
+                          },
+                          "identityAttribute": "fonticon",
+                          "identitySelector": "mat-icon[fonticon]",
+                          "identities": [
+                            "chat_spark_2",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note"
+                          ]
+                        }
+                      }
+                    ],
+                    "verificationSteps": [
+                      {
+                        "action": "click",
+                        "target": {
+                          "selectors": "input-companion-chip button[jslog^=\"339104;\"]"
+                        }
+                      }
+                    ],
+                    "selectedWhen": {
+                      "scope": ".cdk-overlay-pane:has(input-companion-item[role=\"menuitemradio\"])",
+                      "selectors": "input-companion-item[role=\"menuitemradio\"]",
+                      "index": 7,
+                      "expectedCount": 18,
+                      "compact": {
+                        "scope": "mat-bottom-sheet-container:has(input-companion-item[role=\"menuitemradio\"])",
+                        "selectors": "input-companion-item[role=\"menuitemradio\"]",
+                        "index": 7,
+                        "expectedCount": 18,
+                        "identityAttribute": "fonticon",
+                        "identitySelector": "mat-icon[fonticon]",
+                        "identities": [
+                          "chat_spark_2",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note"
+                        ]
+                      },
+                      "requiredAttributes": {
+                        "aria-checked": "true"
+                      },
+                      "identityAttribute": "fonticon",
+                      "identitySelector": "mat-icon[fonticon]",
+                      "identities": [
+                        "chat_spark_2",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note"
+                      ]
+                    },
+                    "closeSteps": [
+                      {
+                        "action": "escape"
+                      },
+                      {
+                        "action": "waitAbsent",
+                        "target": {
+                          "selectors": ".cdk-overlay-pane:has(input-companion-item[role=\"menuitemradio\"])",
+                          "compact": {
+                            "selectors": "mat-bottom-sheet-container:has(input-companion-item[role=\"menuitemradio\"])"
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "value": "country",
+                    "label": "Country",
+                    "steps": [
+                      {
+                        "action": "click",
+                        "target": {
+                          "selectors": "input-companion-chip button[jslog^=\"339104;\"]"
+                        }
+                      },
+                      {
+                        "action": "click",
+                        "target": {
+                          "scope": ".cdk-overlay-pane:has(input-companion-item[role=\"menuitemradio\"])",
+                          "selectors": "input-companion-item[role=\"menuitemradio\"]",
+                          "index": 8,
+                          "expectedCount": 18,
+                          "compact": {
+                            "scope": "mat-bottom-sheet-container:has(input-companion-item[role=\"menuitemradio\"])",
+                            "selectors": "input-companion-item[role=\"menuitemradio\"]",
+                            "index": 8,
+                            "expectedCount": 18,
+                            "identityAttribute": "fonticon",
+                            "identitySelector": "mat-icon[fonticon]",
+                            "identities": [
+                              "chat_spark_2",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note"
+                            ]
+                          },
+                          "identityAttribute": "fonticon",
+                          "identitySelector": "mat-icon[fonticon]",
+                          "identities": [
+                            "chat_spark_2",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note"
+                          ]
+                        }
+                      }
+                    ],
+                    "verificationSteps": [
+                      {
+                        "action": "click",
+                        "target": {
+                          "selectors": "input-companion-chip button[jslog^=\"339104;\"]"
+                        }
+                      }
+                    ],
+                    "selectedWhen": {
+                      "scope": ".cdk-overlay-pane:has(input-companion-item[role=\"menuitemradio\"])",
+                      "selectors": "input-companion-item[role=\"menuitemradio\"]",
+                      "index": 8,
+                      "expectedCount": 18,
+                      "compact": {
+                        "scope": "mat-bottom-sheet-container:has(input-companion-item[role=\"menuitemradio\"])",
+                        "selectors": "input-companion-item[role=\"menuitemradio\"]",
+                        "index": 8,
+                        "expectedCount": 18,
+                        "identityAttribute": "fonticon",
+                        "identitySelector": "mat-icon[fonticon]",
+                        "identities": [
+                          "chat_spark_2",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note"
+                        ]
+                      },
+                      "requiredAttributes": {
+                        "aria-checked": "true"
+                      },
+                      "identityAttribute": "fonticon",
+                      "identitySelector": "mat-icon[fonticon]",
+                      "identities": [
+                        "chat_spark_2",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note"
+                      ]
+                    },
+                    "closeSteps": [
+                      {
+                        "action": "escape"
+                      },
+                      {
+                        "action": "waitAbsent",
+                        "target": {
+                          "selectors": ".cdk-overlay-pane:has(input-companion-item[role=\"menuitemradio\"])",
+                          "compact": {
+                            "selectors": "mat-bottom-sheet-container:has(input-companion-item[role=\"menuitemradio\"])"
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "value": "afrobeats",
+                    "label": "Afrobeats",
+                    "steps": [
+                      {
+                        "action": "click",
+                        "target": {
+                          "selectors": "input-companion-chip button[jslog^=\"339104;\"]"
+                        }
+                      },
+                      {
+                        "action": "click",
+                        "target": {
+                          "scope": ".cdk-overlay-pane:has(input-companion-item[role=\"menuitemradio\"])",
+                          "selectors": "input-companion-item[role=\"menuitemradio\"]",
+                          "index": 9,
+                          "expectedCount": 18,
+                          "compact": {
+                            "scope": "mat-bottom-sheet-container:has(input-companion-item[role=\"menuitemradio\"])",
+                            "selectors": "input-companion-item[role=\"menuitemradio\"]",
+                            "index": 9,
+                            "expectedCount": 18,
+                            "identityAttribute": "fonticon",
+                            "identitySelector": "mat-icon[fonticon]",
+                            "identities": [
+                              "chat_spark_2",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note"
+                            ]
+                          },
+                          "identityAttribute": "fonticon",
+                          "identitySelector": "mat-icon[fonticon]",
+                          "identities": [
+                            "chat_spark_2",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note"
+                          ]
+                        }
+                      }
+                    ],
+                    "verificationSteps": [
+                      {
+                        "action": "click",
+                        "target": {
+                          "selectors": "input-companion-chip button[jslog^=\"339104;\"]"
+                        }
+                      }
+                    ],
+                    "selectedWhen": {
+                      "scope": ".cdk-overlay-pane:has(input-companion-item[role=\"menuitemradio\"])",
+                      "selectors": "input-companion-item[role=\"menuitemradio\"]",
+                      "index": 9,
+                      "expectedCount": 18,
+                      "compact": {
+                        "scope": "mat-bottom-sheet-container:has(input-companion-item[role=\"menuitemradio\"])",
+                        "selectors": "input-companion-item[role=\"menuitemradio\"]",
+                        "index": 9,
+                        "expectedCount": 18,
+                        "identityAttribute": "fonticon",
+                        "identitySelector": "mat-icon[fonticon]",
+                        "identities": [
+                          "chat_spark_2",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note"
+                        ]
+                      },
+                      "requiredAttributes": {
+                        "aria-checked": "true"
+                      },
+                      "identityAttribute": "fonticon",
+                      "identitySelector": "mat-icon[fonticon]",
+                      "identities": [
+                        "chat_spark_2",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note"
+                      ]
+                    },
+                    "closeSteps": [
+                      {
+                        "action": "escape"
+                      },
+                      {
+                        "action": "waitAbsent",
+                        "target": {
+                          "selectors": ".cdk-overlay-pane:has(input-companion-item[role=\"menuitemradio\"])",
+                          "compact": {
+                            "selectors": "mat-bottom-sheet-container:has(input-companion-item[role=\"menuitemradio\"])"
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "value": "reggae",
+                    "label": "Reggae",
+                    "steps": [
+                      {
+                        "action": "click",
+                        "target": {
+                          "selectors": "input-companion-chip button[jslog^=\"339104;\"]"
+                        }
+                      },
+                      {
+                        "action": "click",
+                        "target": {
+                          "scope": ".cdk-overlay-pane:has(input-companion-item[role=\"menuitemradio\"])",
+                          "selectors": "input-companion-item[role=\"menuitemradio\"]",
+                          "index": 10,
+                          "expectedCount": 18,
+                          "compact": {
+                            "scope": "mat-bottom-sheet-container:has(input-companion-item[role=\"menuitemradio\"])",
+                            "selectors": "input-companion-item[role=\"menuitemradio\"]",
+                            "index": 10,
+                            "expectedCount": 18,
+                            "identityAttribute": "fonticon",
+                            "identitySelector": "mat-icon[fonticon]",
+                            "identities": [
+                              "chat_spark_2",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note"
+                            ]
+                          },
+                          "identityAttribute": "fonticon",
+                          "identitySelector": "mat-icon[fonticon]",
+                          "identities": [
+                            "chat_spark_2",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note"
+                          ]
+                        }
+                      }
+                    ],
+                    "verificationSteps": [
+                      {
+                        "action": "click",
+                        "target": {
+                          "selectors": "input-companion-chip button[jslog^=\"339104;\"]"
+                        }
+                      }
+                    ],
+                    "selectedWhen": {
+                      "scope": ".cdk-overlay-pane:has(input-companion-item[role=\"menuitemradio\"])",
+                      "selectors": "input-companion-item[role=\"menuitemradio\"]",
+                      "index": 10,
+                      "expectedCount": 18,
+                      "compact": {
+                        "scope": "mat-bottom-sheet-container:has(input-companion-item[role=\"menuitemradio\"])",
+                        "selectors": "input-companion-item[role=\"menuitemradio\"]",
+                        "index": 10,
+                        "expectedCount": 18,
+                        "identityAttribute": "fonticon",
+                        "identitySelector": "mat-icon[fonticon]",
+                        "identities": [
+                          "chat_spark_2",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note"
+                        ]
+                      },
+                      "requiredAttributes": {
+                        "aria-checked": "true"
+                      },
+                      "identityAttribute": "fonticon",
+                      "identitySelector": "mat-icon[fonticon]",
+                      "identities": [
+                        "chat_spark_2",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note"
+                      ]
+                    },
+                    "closeSteps": [
+                      {
+                        "action": "escape"
+                      },
+                      {
+                        "action": "waitAbsent",
+                        "target": {
+                          "selectors": ".cdk-overlay-pane:has(input-companion-item[role=\"menuitemradio\"])",
+                          "compact": {
+                            "selectors": "mat-bottom-sheet-container:has(input-companion-item[role=\"menuitemradio\"])"
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "value": "jazz_blues",
+                    "label": "Jazz & blues",
+                    "steps": [
+                      {
+                        "action": "click",
+                        "target": {
+                          "selectors": "input-companion-chip button[jslog^=\"339104;\"]"
+                        }
+                      },
+                      {
+                        "action": "click",
+                        "target": {
+                          "scope": ".cdk-overlay-pane:has(input-companion-item[role=\"menuitemradio\"])",
+                          "selectors": "input-companion-item[role=\"menuitemradio\"]",
+                          "index": 11,
+                          "expectedCount": 18,
+                          "compact": {
+                            "scope": "mat-bottom-sheet-container:has(input-companion-item[role=\"menuitemradio\"])",
+                            "selectors": "input-companion-item[role=\"menuitemradio\"]",
+                            "index": 11,
+                            "expectedCount": 18,
+                            "identityAttribute": "fonticon",
+                            "identitySelector": "mat-icon[fonticon]",
+                            "identities": [
+                              "chat_spark_2",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note"
+                            ]
+                          },
+                          "identityAttribute": "fonticon",
+                          "identitySelector": "mat-icon[fonticon]",
+                          "identities": [
+                            "chat_spark_2",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note"
+                          ]
+                        }
+                      }
+                    ],
+                    "verificationSteps": [
+                      {
+                        "action": "click",
+                        "target": {
+                          "selectors": "input-companion-chip button[jslog^=\"339104;\"]"
+                        }
+                      }
+                    ],
+                    "selectedWhen": {
+                      "scope": ".cdk-overlay-pane:has(input-companion-item[role=\"menuitemradio\"])",
+                      "selectors": "input-companion-item[role=\"menuitemradio\"]",
+                      "index": 11,
+                      "expectedCount": 18,
+                      "compact": {
+                        "scope": "mat-bottom-sheet-container:has(input-companion-item[role=\"menuitemradio\"])",
+                        "selectors": "input-companion-item[role=\"menuitemradio\"]",
+                        "index": 11,
+                        "expectedCount": 18,
+                        "identityAttribute": "fonticon",
+                        "identitySelector": "mat-icon[fonticon]",
+                        "identities": [
+                          "chat_spark_2",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note"
+                        ]
+                      },
+                      "requiredAttributes": {
+                        "aria-checked": "true"
+                      },
+                      "identityAttribute": "fonticon",
+                      "identitySelector": "mat-icon[fonticon]",
+                      "identities": [
+                        "chat_spark_2",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note"
+                      ]
+                    },
+                    "closeSteps": [
+                      {
+                        "action": "escape"
+                      },
+                      {
+                        "action": "waitAbsent",
+                        "target": {
+                          "selectors": ".cdk-overlay-pane:has(input-companion-item[role=\"menuitemradio\"])",
+                          "compact": {
+                            "selectors": "mat-bottom-sheet-container:has(input-companion-item[role=\"menuitemradio\"])"
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "value": "classical",
+                    "label": "Classical",
+                    "steps": [
+                      {
+                        "action": "click",
+                        "target": {
+                          "selectors": "input-companion-chip button[jslog^=\"339104;\"]"
+                        }
+                      },
+                      {
+                        "action": "click",
+                        "target": {
+                          "scope": ".cdk-overlay-pane:has(input-companion-item[role=\"menuitemradio\"])",
+                          "selectors": "input-companion-item[role=\"menuitemradio\"]",
+                          "index": 12,
+                          "expectedCount": 18,
+                          "compact": {
+                            "scope": "mat-bottom-sheet-container:has(input-companion-item[role=\"menuitemradio\"])",
+                            "selectors": "input-companion-item[role=\"menuitemradio\"]",
+                            "index": 12,
+                            "expectedCount": 18,
+                            "identityAttribute": "fonticon",
+                            "identitySelector": "mat-icon[fonticon]",
+                            "identities": [
+                              "chat_spark_2",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note"
+                            ]
+                          },
+                          "identityAttribute": "fonticon",
+                          "identitySelector": "mat-icon[fonticon]",
+                          "identities": [
+                            "chat_spark_2",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note"
+                          ]
+                        }
+                      }
+                    ],
+                    "verificationSteps": [
+                      {
+                        "action": "click",
+                        "target": {
+                          "selectors": "input-companion-chip button[jslog^=\"339104;\"]"
+                        }
+                      }
+                    ],
+                    "selectedWhen": {
+                      "scope": ".cdk-overlay-pane:has(input-companion-item[role=\"menuitemradio\"])",
+                      "selectors": "input-companion-item[role=\"menuitemradio\"]",
+                      "index": 12,
+                      "expectedCount": 18,
+                      "compact": {
+                        "scope": "mat-bottom-sheet-container:has(input-companion-item[role=\"menuitemradio\"])",
+                        "selectors": "input-companion-item[role=\"menuitemradio\"]",
+                        "index": 12,
+                        "expectedCount": 18,
+                        "identityAttribute": "fonticon",
+                        "identitySelector": "mat-icon[fonticon]",
+                        "identities": [
+                          "chat_spark_2",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note"
+                        ]
+                      },
+                      "requiredAttributes": {
+                        "aria-checked": "true"
+                      },
+                      "identityAttribute": "fonticon",
+                      "identitySelector": "mat-icon[fonticon]",
+                      "identities": [
+                        "chat_spark_2",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note"
+                      ]
+                    },
+                    "closeSteps": [
+                      {
+                        "action": "escape"
+                      },
+                      {
+                        "action": "waitAbsent",
+                        "target": {
+                          "selectors": ".cdk-overlay-pane:has(input-companion-item[role=\"menuitemradio\"])",
+                          "compact": {
+                            "selectors": "mat-bottom-sheet-container:has(input-companion-item[role=\"menuitemradio\"])"
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "value": "folk",
+                    "label": "Folk",
+                    "steps": [
+                      {
+                        "action": "click",
+                        "target": {
+                          "selectors": "input-companion-chip button[jslog^=\"339104;\"]"
+                        }
+                      },
+                      {
+                        "action": "click",
+                        "target": {
+                          "scope": ".cdk-overlay-pane:has(input-companion-item[role=\"menuitemradio\"])",
+                          "selectors": "input-companion-item[role=\"menuitemradio\"]",
+                          "index": 13,
+                          "expectedCount": 18,
+                          "compact": {
+                            "scope": "mat-bottom-sheet-container:has(input-companion-item[role=\"menuitemradio\"])",
+                            "selectors": "input-companion-item[role=\"menuitemradio\"]",
+                            "index": 13,
+                            "expectedCount": 18,
+                            "identityAttribute": "fonticon",
+                            "identitySelector": "mat-icon[fonticon]",
+                            "identities": [
+                              "chat_spark_2",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note"
+                            ]
+                          },
+                          "identityAttribute": "fonticon",
+                          "identitySelector": "mat-icon[fonticon]",
+                          "identities": [
+                            "chat_spark_2",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note"
+                          ]
+                        }
+                      }
+                    ],
+                    "verificationSteps": [
+                      {
+                        "action": "click",
+                        "target": {
+                          "selectors": "input-companion-chip button[jslog^=\"339104;\"]"
+                        }
+                      }
+                    ],
+                    "selectedWhen": {
+                      "scope": ".cdk-overlay-pane:has(input-companion-item[role=\"menuitemradio\"])",
+                      "selectors": "input-companion-item[role=\"menuitemradio\"]",
+                      "index": 13,
+                      "expectedCount": 18,
+                      "compact": {
+                        "scope": "mat-bottom-sheet-container:has(input-companion-item[role=\"menuitemradio\"])",
+                        "selectors": "input-companion-item[role=\"menuitemradio\"]",
+                        "index": 13,
+                        "expectedCount": 18,
+                        "identityAttribute": "fonticon",
+                        "identitySelector": "mat-icon[fonticon]",
+                        "identities": [
+                          "chat_spark_2",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note"
+                        ]
+                      },
+                      "requiredAttributes": {
+                        "aria-checked": "true"
+                      },
+                      "identityAttribute": "fonticon",
+                      "identitySelector": "mat-icon[fonticon]",
+                      "identities": [
+                        "chat_spark_2",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note"
+                      ]
+                    },
+                    "closeSteps": [
+                      {
+                        "action": "escape"
+                      },
+                      {
+                        "action": "waitAbsent",
+                        "target": {
+                          "selectors": ".cdk-overlay-pane:has(input-companion-item[role=\"menuitemradio\"])",
+                          "compact": {
+                            "selectors": "mat-bottom-sheet-container:has(input-companion-item[role=\"menuitemradio\"])"
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "value": "lo_fi",
+                    "label": "Lo-fi",
+                    "steps": [
+                      {
+                        "action": "click",
+                        "target": {
+                          "selectors": "input-companion-chip button[jslog^=\"339104;\"]"
+                        }
+                      },
+                      {
+                        "action": "click",
+                        "target": {
+                          "scope": ".cdk-overlay-pane:has(input-companion-item[role=\"menuitemradio\"])",
+                          "selectors": "input-companion-item[role=\"menuitemradio\"]",
+                          "index": 14,
+                          "expectedCount": 18,
+                          "compact": {
+                            "scope": "mat-bottom-sheet-container:has(input-companion-item[role=\"menuitemradio\"])",
+                            "selectors": "input-companion-item[role=\"menuitemradio\"]",
+                            "index": 14,
+                            "expectedCount": 18,
+                            "identityAttribute": "fonticon",
+                            "identitySelector": "mat-icon[fonticon]",
+                            "identities": [
+                              "chat_spark_2",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note"
+                            ]
+                          },
+                          "identityAttribute": "fonticon",
+                          "identitySelector": "mat-icon[fonticon]",
+                          "identities": [
+                            "chat_spark_2",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note"
+                          ]
+                        }
+                      }
+                    ],
+                    "verificationSteps": [
+                      {
+                        "action": "click",
+                        "target": {
+                          "selectors": "input-companion-chip button[jslog^=\"339104;\"]"
+                        }
+                      }
+                    ],
+                    "selectedWhen": {
+                      "scope": ".cdk-overlay-pane:has(input-companion-item[role=\"menuitemradio\"])",
+                      "selectors": "input-companion-item[role=\"menuitemradio\"]",
+                      "index": 14,
+                      "expectedCount": 18,
+                      "compact": {
+                        "scope": "mat-bottom-sheet-container:has(input-companion-item[role=\"menuitemradio\"])",
+                        "selectors": "input-companion-item[role=\"menuitemradio\"]",
+                        "index": 14,
+                        "expectedCount": 18,
+                        "identityAttribute": "fonticon",
+                        "identitySelector": "mat-icon[fonticon]",
+                        "identities": [
+                          "chat_spark_2",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note"
+                        ]
+                      },
+                      "requiredAttributes": {
+                        "aria-checked": "true"
+                      },
+                      "identityAttribute": "fonticon",
+                      "identitySelector": "mat-icon[fonticon]",
+                      "identities": [
+                        "chat_spark_2",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note"
+                      ]
+                    },
+                    "closeSteps": [
+                      {
+                        "action": "escape"
+                      },
+                      {
+                        "action": "waitAbsent",
+                        "target": {
+                          "selectors": ".cdk-overlay-pane:has(input-companion-item[role=\"menuitemradio\"])",
+                          "compact": {
+                            "selectors": "mat-bottom-sheet-container:has(input-companion-item[role=\"menuitemradio\"])"
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "value": "acoustic",
+                    "label": "Acoustic",
+                    "steps": [
+                      {
+                        "action": "click",
+                        "target": {
+                          "selectors": "input-companion-chip button[jslog^=\"339104;\"]"
+                        }
+                      },
+                      {
+                        "action": "click",
+                        "target": {
+                          "scope": ".cdk-overlay-pane:has(input-companion-item[role=\"menuitemradio\"])",
+                          "selectors": "input-companion-item[role=\"menuitemradio\"]",
+                          "index": 15,
+                          "expectedCount": 18,
+                          "compact": {
+                            "scope": "mat-bottom-sheet-container:has(input-companion-item[role=\"menuitemradio\"])",
+                            "selectors": "input-companion-item[role=\"menuitemradio\"]",
+                            "index": 15,
+                            "expectedCount": 18,
+                            "identityAttribute": "fonticon",
+                            "identitySelector": "mat-icon[fonticon]",
+                            "identities": [
+                              "chat_spark_2",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note"
+                            ]
+                          },
+                          "identityAttribute": "fonticon",
+                          "identitySelector": "mat-icon[fonticon]",
+                          "identities": [
+                            "chat_spark_2",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note"
+                          ]
+                        }
+                      }
+                    ],
+                    "verificationSteps": [
+                      {
+                        "action": "click",
+                        "target": {
+                          "selectors": "input-companion-chip button[jslog^=\"339104;\"]"
+                        }
+                      }
+                    ],
+                    "selectedWhen": {
+                      "scope": ".cdk-overlay-pane:has(input-companion-item[role=\"menuitemradio\"])",
+                      "selectors": "input-companion-item[role=\"menuitemradio\"]",
+                      "index": 15,
+                      "expectedCount": 18,
+                      "compact": {
+                        "scope": "mat-bottom-sheet-container:has(input-companion-item[role=\"menuitemradio\"])",
+                        "selectors": "input-companion-item[role=\"menuitemradio\"]",
+                        "index": 15,
+                        "expectedCount": 18,
+                        "identityAttribute": "fonticon",
+                        "identitySelector": "mat-icon[fonticon]",
+                        "identities": [
+                          "chat_spark_2",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note"
+                        ]
+                      },
+                      "requiredAttributes": {
+                        "aria-checked": "true"
+                      },
+                      "identityAttribute": "fonticon",
+                      "identitySelector": "mat-icon[fonticon]",
+                      "identities": [
+                        "chat_spark_2",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note"
+                      ]
+                    },
+                    "closeSteps": [
+                      {
+                        "action": "escape"
+                      },
+                      {
+                        "action": "waitAbsent",
+                        "target": {
+                          "selectors": ".cdk-overlay-pane:has(input-companion-item[role=\"menuitemradio\"])",
+                          "compact": {
+                            "selectors": "mat-bottom-sheet-container:has(input-companion-item[role=\"menuitemradio\"])"
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "value": "cinematic",
+                    "label": "Cinematic",
+                    "steps": [
+                      {
+                        "action": "click",
+                        "target": {
+                          "selectors": "input-companion-chip button[jslog^=\"339104;\"]"
+                        }
+                      },
+                      {
+                        "action": "click",
+                        "target": {
+                          "scope": ".cdk-overlay-pane:has(input-companion-item[role=\"menuitemradio\"])",
+                          "selectors": "input-companion-item[role=\"menuitemradio\"]",
+                          "index": 16,
+                          "expectedCount": 18,
+                          "compact": {
+                            "scope": "mat-bottom-sheet-container:has(input-companion-item[role=\"menuitemradio\"])",
+                            "selectors": "input-companion-item[role=\"menuitemradio\"]",
+                            "index": 16,
+                            "expectedCount": 18,
+                            "identityAttribute": "fonticon",
+                            "identitySelector": "mat-icon[fonticon]",
+                            "identities": [
+                              "chat_spark_2",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note"
+                            ]
+                          },
+                          "identityAttribute": "fonticon",
+                          "identitySelector": "mat-icon[fonticon]",
+                          "identities": [
+                            "chat_spark_2",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note"
+                          ]
+                        }
+                      }
+                    ],
+                    "verificationSteps": [
+                      {
+                        "action": "click",
+                        "target": {
+                          "selectors": "input-companion-chip button[jslog^=\"339104;\"]"
+                        }
+                      }
+                    ],
+                    "selectedWhen": {
+                      "scope": ".cdk-overlay-pane:has(input-companion-item[role=\"menuitemradio\"])",
+                      "selectors": "input-companion-item[role=\"menuitemradio\"]",
+                      "index": 16,
+                      "expectedCount": 18,
+                      "compact": {
+                        "scope": "mat-bottom-sheet-container:has(input-companion-item[role=\"menuitemradio\"])",
+                        "selectors": "input-companion-item[role=\"menuitemradio\"]",
+                        "index": 16,
+                        "expectedCount": 18,
+                        "identityAttribute": "fonticon",
+                        "identitySelector": "mat-icon[fonticon]",
+                        "identities": [
+                          "chat_spark_2",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note"
+                        ]
+                      },
+                      "requiredAttributes": {
+                        "aria-checked": "true"
+                      },
+                      "identityAttribute": "fonticon",
+                      "identitySelector": "mat-icon[fonticon]",
+                      "identities": [
+                        "chat_spark_2",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note"
+                      ]
+                    },
+                    "closeSteps": [
+                      {
+                        "action": "escape"
+                      },
+                      {
+                        "action": "waitAbsent",
+                        "target": {
+                          "selectors": ".cdk-overlay-pane:has(input-companion-item[role=\"menuitemradio\"])",
+                          "compact": {
+                            "selectors": "mat-bottom-sheet-container:has(input-companion-item[role=\"menuitemradio\"])"
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "value": "ambient",
+                    "label": "Ambient",
+                    "steps": [
+                      {
+                        "action": "click",
+                        "target": {
+                          "selectors": "input-companion-chip button[jslog^=\"339104;\"]"
+                        }
+                      },
+                      {
+                        "action": "click",
+                        "target": {
+                          "scope": ".cdk-overlay-pane:has(input-companion-item[role=\"menuitemradio\"])",
+                          "selectors": "input-companion-item[role=\"menuitemradio\"]",
+                          "index": 17,
+                          "expectedCount": 18,
+                          "compact": {
+                            "scope": "mat-bottom-sheet-container:has(input-companion-item[role=\"menuitemradio\"])",
+                            "selectors": "input-companion-item[role=\"menuitemradio\"]",
+                            "index": 17,
+                            "expectedCount": 18,
+                            "identityAttribute": "fonticon",
+                            "identitySelector": "mat-icon[fonticon]",
+                            "identities": [
+                              "chat_spark_2",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note",
+                              "music_note"
+                            ]
+                          },
+                          "identityAttribute": "fonticon",
+                          "identitySelector": "mat-icon[fonticon]",
+                          "identities": [
+                            "chat_spark_2",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note",
+                            "music_note"
+                          ]
+                        }
+                      }
+                    ],
+                    "verificationSteps": [
+                      {
+                        "action": "click",
+                        "target": {
+                          "selectors": "input-companion-chip button[jslog^=\"339104;\"]"
+                        }
+                      }
+                    ],
+                    "selectedWhen": {
+                      "scope": ".cdk-overlay-pane:has(input-companion-item[role=\"menuitemradio\"])",
+                      "selectors": "input-companion-item[role=\"menuitemradio\"]",
+                      "index": 17,
+                      "expectedCount": 18,
+                      "compact": {
+                        "scope": "mat-bottom-sheet-container:has(input-companion-item[role=\"menuitemradio\"])",
+                        "selectors": "input-companion-item[role=\"menuitemradio\"]",
+                        "index": 17,
+                        "expectedCount": 18,
+                        "identityAttribute": "fonticon",
+                        "identitySelector": "mat-icon[fonticon]",
+                        "identities": [
+                          "chat_spark_2",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note",
+                          "music_note"
+                        ]
+                      },
+                      "requiredAttributes": {
+                        "aria-checked": "true"
+                      },
+                      "identityAttribute": "fonticon",
+                      "identitySelector": "mat-icon[fonticon]",
+                      "identities": [
+                        "chat_spark_2",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note",
+                        "music_note"
+                      ]
+                    },
+                    "closeSteps": [
+                      {
+                        "action": "escape"
+                      },
+                      {
+                        "action": "waitAbsent",
+                        "target": {
+                          "selectors": ".cdk-overlay-pane:has(input-companion-item[role=\"menuitemradio\"])",
+                          "compact": {
+                            "selectors": "mat-bottom-sheet-container:has(input-companion-item[role=\"menuitemradio\"])"
+                          }
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
         }
       }
     },
@@ -482,27 +4469,1068 @@ export const BUILTIN_RECIPES: Record<'chatgpt' | 'claude' | 'gemini' | 'grok', C
         },
         "image": {
           "enabled": true,
-          "contentSelector": "img[alt*=\"Generated image\" i], img[src*=\"grok\"], img.media-attachment",
+          "contentSelector": "img[src*=\"assets.grok.com\"], img[src*=\"imagine-public\"], img[src^=\"blob:\"]",
           "mediaKind": "image",
           "inputAttachments": {
             "fileInput": "input[type=\"file\"]",
             "acceptedKinds": [
               "image"
             ],
-            "multiple": true
+            "multiple": true,
+            "acceptedMimeTypes": [
+              "image/jpeg",
+              "image/png",
+              "image/gif",
+              "image/webp"
+            ]
+          },
+          "pageUrl": "/imagine",
+          "inputSelector": "form [contenteditable=\"true\"]",
+          "submitSelector": "form button[type=\"submit\"]",
+          "generation": {
+            "activationSteps": [
+              {
+                "action": "click",
+                "target": {
+                  "scope": "form [role=\"radiogroup\"]:has(button[aria-label])",
+                  "selectors": "button[role=\"radio\"]:has(svg > path[d^=\"M14.0996 2.5\"])"
+                }
+              }
+            ],
+            "activeWhen": {
+              "scope": "form [role=\"radiogroup\"]:has(button[aria-label])",
+              "selectors": "button[role=\"radio\"]:has(svg > path[d^=\"M14.0996 2.5\"])",
+              "requiredAttributes": {
+                "aria-checked": "true"
+              }
+            },
+            "settings": [
+              {
+                "key": "quality",
+                "label": "Image quality",
+                "type": "enum",
+                "default": "speed",
+                "options": [
+                  {
+                    "value": "speed",
+                    "label": "Speed",
+                    "steps": [
+                      {
+                        "action": "click",
+                        "target": {
+                          "scope": "form [role=\"radiogroup\"]:not(:has(button[aria-label]))",
+                          "selectors": "button[role=\"radio\"]",
+                          "index": 0,
+                          "expectedCount": 2
+                        }
+                      }
+                    ],
+                    "selectedWhen": {
+                      "scope": "form [role=\"radiogroup\"]:not(:has(button[aria-label]))",
+                      "selectors": "button[role=\"radio\"]",
+                      "index": 0,
+                      "expectedCount": 2,
+                      "requiredAttributes": {
+                        "aria-checked": "true"
+                      }
+                    }
+                  },
+                  {
+                    "value": "quality_2",
+                    "label": "Quality 2.0",
+                    "steps": [
+                      {
+                        "action": "click",
+                        "target": {
+                          "scope": "form [role=\"radiogroup\"]:not(:has(button[aria-label]))",
+                          "selectors": "button[role=\"radio\"]",
+                          "index": 1,
+                          "expectedCount": 2
+                        }
+                      }
+                    ],
+                    "selectedWhen": {
+                      "scope": "form [role=\"radiogroup\"]:not(:has(button[aria-label]))",
+                      "selectors": "button[role=\"radio\"]",
+                      "index": 1,
+                      "expectedCount": 2,
+                      "requiredAttributes": {
+                        "aria-checked": "true"
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "key": "aspect_ratio",
+                "label": "Aspect ratio",
+                "type": "enum",
+                "default": "1:1",
+                "options": [
+                  {
+                    "value": "2:3",
+                    "label": "2:3",
+                    "steps": [
+                      {
+                        "action": "pointerDown",
+                        "target": {
+                          "selectors": "form button[aria-haspopup=\"menu\"]"
+                        }
+                      },
+                      {
+                        "action": "click",
+                        "target": {
+                          "scope": "[role=\"menu\"]",
+                          "selectors": "[role=\"menuitemradio\"]",
+                          "index": 0,
+                          "expectedCount": 5,
+                          "identities": [
+                            "2:3",
+                            "3:2",
+                            "1:1",
+                            "9:16",
+                            "16:9"
+                          ],
+                          "identityAttribute": "textContent",
+                          "identitySelector": "span.text-center"
+                        }
+                      }
+                    ],
+                    "verificationSteps": [
+                      {
+                        "action": "pointerDown",
+                        "target": {
+                          "selectors": "form button[aria-haspopup=\"menu\"]"
+                        }
+                      }
+                    ],
+                    "selectedWhen": {
+                      "scope": "[role=\"menu\"]",
+                      "selectors": "[role=\"menuitemradio\"]",
+                      "index": 0,
+                      "expectedCount": 5,
+                      "identities": [
+                        "2:3",
+                        "3:2",
+                        "1:1",
+                        "9:16",
+                        "16:9"
+                      ],
+                      "identityAttribute": "textContent",
+                      "identitySelector": "span.text-center",
+                      "requiredAttributes": {
+                        "aria-checked": "true"
+                      }
+                    },
+                    "closeSteps": [
+                      {
+                        "action": "escape"
+                      },
+                      {
+                        "action": "waitAbsent",
+                        "target": {
+                          "selectors": "[role=\"menu\"]"
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "value": "3:2",
+                    "label": "3:2",
+                    "steps": [
+                      {
+                        "action": "pointerDown",
+                        "target": {
+                          "selectors": "form button[aria-haspopup=\"menu\"]"
+                        }
+                      },
+                      {
+                        "action": "click",
+                        "target": {
+                          "scope": "[role=\"menu\"]",
+                          "selectors": "[role=\"menuitemradio\"]",
+                          "index": 1,
+                          "expectedCount": 5,
+                          "identities": [
+                            "2:3",
+                            "3:2",
+                            "1:1",
+                            "9:16",
+                            "16:9"
+                          ],
+                          "identityAttribute": "textContent",
+                          "identitySelector": "span.text-center"
+                        }
+                      }
+                    ],
+                    "verificationSteps": [
+                      {
+                        "action": "pointerDown",
+                        "target": {
+                          "selectors": "form button[aria-haspopup=\"menu\"]"
+                        }
+                      }
+                    ],
+                    "selectedWhen": {
+                      "scope": "[role=\"menu\"]",
+                      "selectors": "[role=\"menuitemradio\"]",
+                      "index": 1,
+                      "expectedCount": 5,
+                      "identities": [
+                        "2:3",
+                        "3:2",
+                        "1:1",
+                        "9:16",
+                        "16:9"
+                      ],
+                      "identityAttribute": "textContent",
+                      "identitySelector": "span.text-center",
+                      "requiredAttributes": {
+                        "aria-checked": "true"
+                      }
+                    },
+                    "closeSteps": [
+                      {
+                        "action": "escape"
+                      },
+                      {
+                        "action": "waitAbsent",
+                        "target": {
+                          "selectors": "[role=\"menu\"]"
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "value": "1:1",
+                    "label": "1:1",
+                    "steps": [
+                      {
+                        "action": "pointerDown",
+                        "target": {
+                          "selectors": "form button[aria-haspopup=\"menu\"]"
+                        }
+                      },
+                      {
+                        "action": "click",
+                        "target": {
+                          "scope": "[role=\"menu\"]",
+                          "selectors": "[role=\"menuitemradio\"]",
+                          "index": 2,
+                          "expectedCount": 5,
+                          "identities": [
+                            "2:3",
+                            "3:2",
+                            "1:1",
+                            "9:16",
+                            "16:9"
+                          ],
+                          "identityAttribute": "textContent",
+                          "identitySelector": "span.text-center"
+                        }
+                      }
+                    ],
+                    "verificationSteps": [
+                      {
+                        "action": "pointerDown",
+                        "target": {
+                          "selectors": "form button[aria-haspopup=\"menu\"]"
+                        }
+                      }
+                    ],
+                    "selectedWhen": {
+                      "scope": "[role=\"menu\"]",
+                      "selectors": "[role=\"menuitemradio\"]",
+                      "index": 2,
+                      "expectedCount": 5,
+                      "identities": [
+                        "2:3",
+                        "3:2",
+                        "1:1",
+                        "9:16",
+                        "16:9"
+                      ],
+                      "identityAttribute": "textContent",
+                      "identitySelector": "span.text-center",
+                      "requiredAttributes": {
+                        "aria-checked": "true"
+                      }
+                    },
+                    "closeSteps": [
+                      {
+                        "action": "escape"
+                      },
+                      {
+                        "action": "waitAbsent",
+                        "target": {
+                          "selectors": "[role=\"menu\"]"
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "value": "9:16",
+                    "label": "9:16",
+                    "steps": [
+                      {
+                        "action": "pointerDown",
+                        "target": {
+                          "selectors": "form button[aria-haspopup=\"menu\"]"
+                        }
+                      },
+                      {
+                        "action": "click",
+                        "target": {
+                          "scope": "[role=\"menu\"]",
+                          "selectors": "[role=\"menuitemradio\"]",
+                          "index": 3,
+                          "expectedCount": 5,
+                          "identities": [
+                            "2:3",
+                            "3:2",
+                            "1:1",
+                            "9:16",
+                            "16:9"
+                          ],
+                          "identityAttribute": "textContent",
+                          "identitySelector": "span.text-center"
+                        }
+                      }
+                    ],
+                    "verificationSteps": [
+                      {
+                        "action": "pointerDown",
+                        "target": {
+                          "selectors": "form button[aria-haspopup=\"menu\"]"
+                        }
+                      }
+                    ],
+                    "selectedWhen": {
+                      "scope": "[role=\"menu\"]",
+                      "selectors": "[role=\"menuitemradio\"]",
+                      "index": 3,
+                      "expectedCount": 5,
+                      "identities": [
+                        "2:3",
+                        "3:2",
+                        "1:1",
+                        "9:16",
+                        "16:9"
+                      ],
+                      "identityAttribute": "textContent",
+                      "identitySelector": "span.text-center",
+                      "requiredAttributes": {
+                        "aria-checked": "true"
+                      }
+                    },
+                    "closeSteps": [
+                      {
+                        "action": "escape"
+                      },
+                      {
+                        "action": "waitAbsent",
+                        "target": {
+                          "selectors": "[role=\"menu\"]"
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "value": "16:9",
+                    "label": "16:9",
+                    "steps": [
+                      {
+                        "action": "pointerDown",
+                        "target": {
+                          "selectors": "form button[aria-haspopup=\"menu\"]"
+                        }
+                      },
+                      {
+                        "action": "click",
+                        "target": {
+                          "scope": "[role=\"menu\"]",
+                          "selectors": "[role=\"menuitemradio\"]",
+                          "index": 4,
+                          "expectedCount": 5,
+                          "identities": [
+                            "2:3",
+                            "3:2",
+                            "1:1",
+                            "9:16",
+                            "16:9"
+                          ],
+                          "identityAttribute": "textContent",
+                          "identitySelector": "span.text-center"
+                        }
+                      }
+                    ],
+                    "verificationSteps": [
+                      {
+                        "action": "pointerDown",
+                        "target": {
+                          "selectors": "form button[aria-haspopup=\"menu\"]"
+                        }
+                      }
+                    ],
+                    "selectedWhen": {
+                      "scope": "[role=\"menu\"]",
+                      "selectors": "[role=\"menuitemradio\"]",
+                      "index": 4,
+                      "expectedCount": 5,
+                      "identities": [
+                        "2:3",
+                        "3:2",
+                        "1:1",
+                        "9:16",
+                        "16:9"
+                      ],
+                      "identityAttribute": "textContent",
+                      "identitySelector": "span.text-center",
+                      "requiredAttributes": {
+                        "aria-checked": "true"
+                      }
+                    },
+                    "closeSteps": [
+                      {
+                        "action": "escape"
+                      },
+                      {
+                        "action": "waitAbsent",
+                        "target": {
+                          "selectors": "[role=\"menu\"]"
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
           }
         },
         "video": {
           "enabled": true,
-          "contentSelector": "video source, video[src], video",
+          "contentSelector": "video[src],video",
           "mediaKind": "video",
           "inputAttachments": {
             "fileInput": "input[type=\"file\"]",
             "acceptedKinds": [
-              "image",
-              "video"
+              "image"
             ],
-            "multiple": true
+            "multiple": true,
+            "acceptedMimeTypes": [
+              "image/jpeg",
+              "image/png",
+              "image/gif",
+              "image/webp"
+            ]
+          },
+          "pageUrl": "/imagine",
+          "inputSelector": "form [contenteditable=\"true\"]",
+          "submitSelector": "form button[type=\"submit\"]",
+          "generation": {
+            "activationSteps": [
+              {
+                "action": "click",
+                "target": {
+                  "scope": "form [role=\"radiogroup\"]:has(button[aria-label])",
+                  "selectors": "button[role=\"radio\"]:has(svg > path[d^=\"M13.7314 4.00586\"])"
+                }
+              }
+            ],
+            "activeWhen": {
+              "scope": "form [role=\"radiogroup\"]:has(button[aria-label])",
+              "selectors": "button[role=\"radio\"]:has(svg > path[d^=\"M13.7314 4.00586\"])",
+              "requiredAttributes": {
+                "aria-checked": "true"
+              }
+            },
+            "settings": [
+              {
+                "key": "resolution",
+                "label": "Resolution",
+                "type": "enum",
+                "default": "480p",
+                "options": [
+                  {
+                    "value": "480p",
+                    "label": "480p",
+                    "steps": [
+                      {
+                        "action": "click",
+                        "target": {
+                          "scope": "form [role=\"radiogroup\"]:not(:has(button[aria-label])):has(button:nth-child(2)):not(:has(button:nth-child(3)))",
+                          "selectors": "button[role=\"radio\"]",
+                          "index": 0,
+                          "expectedCount": 2,
+                          "identities": [
+                            "480p",
+                            "720p"
+                          ],
+                          "identityAttribute": "textContent"
+                        }
+                      }
+                    ],
+                    "selectedWhen": {
+                      "scope": "form [role=\"radiogroup\"]:not(:has(button[aria-label])):has(button:nth-child(2)):not(:has(button:nth-child(3)))",
+                      "selectors": "button[role=\"radio\"]",
+                      "index": 0,
+                      "expectedCount": 2,
+                      "identities": [
+                        "480p",
+                        "720p"
+                      ],
+                      "identityAttribute": "textContent",
+                      "requiredAttributes": {
+                        "aria-checked": "true"
+                      }
+                    }
+                  },
+                  {
+                    "value": "720p",
+                    "label": "720p",
+                    "steps": [
+                      {
+                        "action": "click",
+                        "target": {
+                          "scope": "form [role=\"radiogroup\"]:not(:has(button[aria-label])):has(button:nth-child(2)):not(:has(button:nth-child(3)))",
+                          "selectors": "button[role=\"radio\"]",
+                          "index": 1,
+                          "expectedCount": 2,
+                          "identities": [
+                            "480p",
+                            "720p"
+                          ],
+                          "identityAttribute": "textContent"
+                        }
+                      }
+                    ],
+                    "selectedWhen": {
+                      "scope": "form [role=\"radiogroup\"]:not(:has(button[aria-label])):has(button:nth-child(2)):not(:has(button:nth-child(3)))",
+                      "selectors": "button[role=\"radio\"]",
+                      "index": 1,
+                      "expectedCount": 2,
+                      "identities": [
+                        "480p",
+                        "720p"
+                      ],
+                      "identityAttribute": "textContent",
+                      "requiredAttributes": {
+                        "aria-checked": "true"
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "key": "duration_seconds",
+                "label": "Duration",
+                "type": "number",
+                "default": 6,
+                "options": [
+                  {
+                    "value": 6,
+                    "label": "6 seconds",
+                    "steps": [
+                      {
+                        "action": "click",
+                        "target": {
+                          "scope": "form [role=\"radiogroup\"]:not(:has(button[aria-label])):has(button:nth-child(3))",
+                          "selectors": "button[role=\"radio\"]",
+                          "index": 0,
+                          "expectedCount": 3,
+                          "identities": [
+                            "6s",
+                            "10s",
+                            "15s"
+                          ],
+                          "identityAttribute": "textContent"
+                        }
+                      }
+                    ],
+                    "selectedWhen": {
+                      "scope": "form [role=\"radiogroup\"]:not(:has(button[aria-label])):has(button:nth-child(3))",
+                      "selectors": "button[role=\"radio\"]",
+                      "index": 0,
+                      "expectedCount": 3,
+                      "identities": [
+                        "6s",
+                        "10s",
+                        "15s"
+                      ],
+                      "identityAttribute": "textContent",
+                      "requiredAttributes": {
+                        "aria-checked": "true"
+                      }
+                    }
+                  },
+                  {
+                    "value": 10,
+                    "label": "10 seconds",
+                    "steps": [
+                      {
+                        "action": "click",
+                        "target": {
+                          "scope": "form [role=\"radiogroup\"]:not(:has(button[aria-label])):has(button:nth-child(3))",
+                          "selectors": "button[role=\"radio\"]",
+                          "index": 1,
+                          "expectedCount": 3,
+                          "identities": [
+                            "6s",
+                            "10s",
+                            "15s"
+                          ],
+                          "identityAttribute": "textContent"
+                        }
+                      }
+                    ],
+                    "selectedWhen": {
+                      "scope": "form [role=\"radiogroup\"]:not(:has(button[aria-label])):has(button:nth-child(3))",
+                      "selectors": "button[role=\"radio\"]",
+                      "index": 1,
+                      "expectedCount": 3,
+                      "identities": [
+                        "6s",
+                        "10s",
+                        "15s"
+                      ],
+                      "identityAttribute": "textContent",
+                      "requiredAttributes": {
+                        "aria-checked": "true"
+                      }
+                    }
+                  },
+                  {
+                    "value": 15,
+                    "label": "15 seconds",
+                    "steps": [
+                      {
+                        "action": "click",
+                        "target": {
+                          "scope": "form [role=\"radiogroup\"]:not(:has(button[aria-label])):has(button:nth-child(3))",
+                          "selectors": "button[role=\"radio\"]",
+                          "index": 2,
+                          "expectedCount": 3,
+                          "identities": [
+                            "6s",
+                            "10s",
+                            "15s"
+                          ],
+                          "identityAttribute": "textContent"
+                        }
+                      }
+                    ],
+                    "selectedWhen": {
+                      "scope": "form [role=\"radiogroup\"]:not(:has(button[aria-label])):has(button:nth-child(3))",
+                      "selectors": "button[role=\"radio\"]",
+                      "index": 2,
+                      "expectedCount": 3,
+                      "identities": [
+                        "6s",
+                        "10s",
+                        "15s"
+                      ],
+                      "identityAttribute": "textContent",
+                      "requiredAttributes": {
+                        "aria-checked": "true"
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "key": "aspect_ratio",
+                "label": "Aspect ratio",
+                "type": "enum",
+                "default": "16:9",
+                "options": [
+                  {
+                    "value": "2:3",
+                    "label": "2:3",
+                    "steps": [
+                      {
+                        "action": "pointerDown",
+                        "target": {
+                          "selectors": "form button[aria-haspopup=\"menu\"]"
+                        }
+                      },
+                      {
+                        "action": "click",
+                        "target": {
+                          "scope": "[role=\"menu\"]",
+                          "selectors": "[role=\"menuitemradio\"]",
+                          "index": 0,
+                          "expectedCount": 5,
+                          "identities": [
+                            "2:3",
+                            "3:2",
+                            "1:1",
+                            "9:16",
+                            "16:9"
+                          ],
+                          "identityAttribute": "textContent",
+                          "identitySelector": "span.text-center"
+                        }
+                      }
+                    ],
+                    "verificationSteps": [
+                      {
+                        "action": "pointerDown",
+                        "target": {
+                          "selectors": "form button[aria-haspopup=\"menu\"]"
+                        }
+                      }
+                    ],
+                    "selectedWhen": {
+                      "scope": "[role=\"menu\"]",
+                      "selectors": "[role=\"menuitemradio\"]",
+                      "index": 0,
+                      "expectedCount": 5,
+                      "identities": [
+                        "2:3",
+                        "3:2",
+                        "1:1",
+                        "9:16",
+                        "16:9"
+                      ],
+                      "identityAttribute": "textContent",
+                      "identitySelector": "span.text-center",
+                      "requiredAttributes": {
+                        "aria-checked": "true"
+                      }
+                    },
+                    "closeSteps": [
+                      {
+                        "action": "escape"
+                      },
+                      {
+                        "action": "waitAbsent",
+                        "target": {
+                          "selectors": "[role=\"menu\"]"
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "value": "3:2",
+                    "label": "3:2",
+                    "steps": [
+                      {
+                        "action": "pointerDown",
+                        "target": {
+                          "selectors": "form button[aria-haspopup=\"menu\"]"
+                        }
+                      },
+                      {
+                        "action": "click",
+                        "target": {
+                          "scope": "[role=\"menu\"]",
+                          "selectors": "[role=\"menuitemradio\"]",
+                          "index": 1,
+                          "expectedCount": 5,
+                          "identities": [
+                            "2:3",
+                            "3:2",
+                            "1:1",
+                            "9:16",
+                            "16:9"
+                          ],
+                          "identityAttribute": "textContent",
+                          "identitySelector": "span.text-center"
+                        }
+                      }
+                    ],
+                    "verificationSteps": [
+                      {
+                        "action": "pointerDown",
+                        "target": {
+                          "selectors": "form button[aria-haspopup=\"menu\"]"
+                        }
+                      }
+                    ],
+                    "selectedWhen": {
+                      "scope": "[role=\"menu\"]",
+                      "selectors": "[role=\"menuitemradio\"]",
+                      "index": 1,
+                      "expectedCount": 5,
+                      "identities": [
+                        "2:3",
+                        "3:2",
+                        "1:1",
+                        "9:16",
+                        "16:9"
+                      ],
+                      "identityAttribute": "textContent",
+                      "identitySelector": "span.text-center",
+                      "requiredAttributes": {
+                        "aria-checked": "true"
+                      }
+                    },
+                    "closeSteps": [
+                      {
+                        "action": "escape"
+                      },
+                      {
+                        "action": "waitAbsent",
+                        "target": {
+                          "selectors": "[role=\"menu\"]"
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "value": "1:1",
+                    "label": "1:1",
+                    "steps": [
+                      {
+                        "action": "pointerDown",
+                        "target": {
+                          "selectors": "form button[aria-haspopup=\"menu\"]"
+                        }
+                      },
+                      {
+                        "action": "click",
+                        "target": {
+                          "scope": "[role=\"menu\"]",
+                          "selectors": "[role=\"menuitemradio\"]",
+                          "index": 2,
+                          "expectedCount": 5,
+                          "identities": [
+                            "2:3",
+                            "3:2",
+                            "1:1",
+                            "9:16",
+                            "16:9"
+                          ],
+                          "identityAttribute": "textContent",
+                          "identitySelector": "span.text-center"
+                        }
+                      }
+                    ],
+                    "verificationSteps": [
+                      {
+                        "action": "pointerDown",
+                        "target": {
+                          "selectors": "form button[aria-haspopup=\"menu\"]"
+                        }
+                      }
+                    ],
+                    "selectedWhen": {
+                      "scope": "[role=\"menu\"]",
+                      "selectors": "[role=\"menuitemradio\"]",
+                      "index": 2,
+                      "expectedCount": 5,
+                      "identities": [
+                        "2:3",
+                        "3:2",
+                        "1:1",
+                        "9:16",
+                        "16:9"
+                      ],
+                      "identityAttribute": "textContent",
+                      "identitySelector": "span.text-center",
+                      "requiredAttributes": {
+                        "aria-checked": "true"
+                      }
+                    },
+                    "closeSteps": [
+                      {
+                        "action": "escape"
+                      },
+                      {
+                        "action": "waitAbsent",
+                        "target": {
+                          "selectors": "[role=\"menu\"]"
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "value": "9:16",
+                    "label": "9:16",
+                    "steps": [
+                      {
+                        "action": "pointerDown",
+                        "target": {
+                          "selectors": "form button[aria-haspopup=\"menu\"]"
+                        }
+                      },
+                      {
+                        "action": "click",
+                        "target": {
+                          "scope": "[role=\"menu\"]",
+                          "selectors": "[role=\"menuitemradio\"]",
+                          "index": 3,
+                          "expectedCount": 5,
+                          "identities": [
+                            "2:3",
+                            "3:2",
+                            "1:1",
+                            "9:16",
+                            "16:9"
+                          ],
+                          "identityAttribute": "textContent",
+                          "identitySelector": "span.text-center"
+                        }
+                      }
+                    ],
+                    "verificationSteps": [
+                      {
+                        "action": "pointerDown",
+                        "target": {
+                          "selectors": "form button[aria-haspopup=\"menu\"]"
+                        }
+                      }
+                    ],
+                    "selectedWhen": {
+                      "scope": "[role=\"menu\"]",
+                      "selectors": "[role=\"menuitemradio\"]",
+                      "index": 3,
+                      "expectedCount": 5,
+                      "identities": [
+                        "2:3",
+                        "3:2",
+                        "1:1",
+                        "9:16",
+                        "16:9"
+                      ],
+                      "identityAttribute": "textContent",
+                      "identitySelector": "span.text-center",
+                      "requiredAttributes": {
+                        "aria-checked": "true"
+                      }
+                    },
+                    "closeSteps": [
+                      {
+                        "action": "escape"
+                      },
+                      {
+                        "action": "waitAbsent",
+                        "target": {
+                          "selectors": "[role=\"menu\"]"
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "value": "16:9",
+                    "label": "16:9",
+                    "steps": [
+                      {
+                        "action": "pointerDown",
+                        "target": {
+                          "selectors": "form button[aria-haspopup=\"menu\"]"
+                        }
+                      },
+                      {
+                        "action": "click",
+                        "target": {
+                          "scope": "[role=\"menu\"]",
+                          "selectors": "[role=\"menuitemradio\"]",
+                          "index": 4,
+                          "expectedCount": 5,
+                          "identities": [
+                            "2:3",
+                            "3:2",
+                            "1:1",
+                            "9:16",
+                            "16:9"
+                          ],
+                          "identityAttribute": "textContent",
+                          "identitySelector": "span.text-center"
+                        }
+                      }
+                    ],
+                    "verificationSteps": [
+                      {
+                        "action": "pointerDown",
+                        "target": {
+                          "selectors": "form button[aria-haspopup=\"menu\"]"
+                        }
+                      }
+                    ],
+                    "selectedWhen": {
+                      "scope": "[role=\"menu\"]",
+                      "selectors": "[role=\"menuitemradio\"]",
+                      "index": 4,
+                      "expectedCount": 5,
+                      "identities": [
+                        "2:3",
+                        "3:2",
+                        "1:1",
+                        "9:16",
+                        "16:9"
+                      ],
+                      "identityAttribute": "textContent",
+                      "identitySelector": "span.text-center",
+                      "requiredAttributes": {
+                        "aria-checked": "true"
+                      }
+                    },
+                    "closeSteps": [
+                      {
+                        "action": "escape"
+                      },
+                      {
+                        "action": "waitAbsent",
+                        "target": {
+                          "selectors": "[role=\"menu\"]"
+                        }
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "key": "sound",
+                "label": "Sound",
+                "type": "boolean",
+                "default": true,
+                "options": [
+                  {
+                    "value": true,
+                    "label": "Enabled",
+                    "steps": [
+                      {
+                        "action": "click",
+                        "target": {
+                          "selectors": "form button[aria-pressed]",
+                          "requiredAttributes": {
+                            "aria-pressed": "false"
+                          }
+                        }
+                      }
+                    ],
+                    "selectedWhen": {
+                      "selectors": "form button[aria-pressed]",
+                      "requiredAttributes": {
+                        "aria-pressed": "true"
+                      }
+                    }
+                  },
+                  {
+                    "value": false,
+                    "label": "Disabled",
+                    "steps": [
+                      {
+                        "action": "click",
+                        "target": {
+                          "selectors": "form button[aria-pressed]",
+                          "requiredAttributes": {
+                            "aria-pressed": "true"
+                          }
+                        }
+                      }
+                    ],
+                    "selectedWhen": {
+                      "selectors": "form button[aria-pressed]",
+                      "requiredAttributes": {
+                        "aria-pressed": "false"
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
           }
         }
       }

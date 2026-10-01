@@ -86,7 +86,13 @@ describe('TransgenticMcpServer Integration', () => {
     const attachmentTools = parsed.result.tools.filter((tool: any) => ['prompt_model', 'ask_chatgpt', 'ask_claude', 'ask_gemini', 'ask_grok', 'ask_codex_cli', 'ask_claude_code_cli', 'ask_antigravity_cli', 'ask_grok_cli', 'edit_image', 'edit_video'].includes(tool.name));
     expect(attachmentTools.every((tool: any) => tool.inputSchema.properties.files?.items?.oneOf?.length === 3)).toBe(true);
     expect(attachmentTools.every((tool: any) => tool.inputSchema.properties.temporary_chat?.type === 'boolean')).toBe(true);
-    expect(parsed.result.tools.find((tool: any) => tool.name === 'generate_image').inputSchema.properties.files).toBeUndefined();
+    expect(toolNames).toContain('get_media_capabilities');
+    for (const name of ['generate_image', 'generate_video', 'generate_music', 'edit_image', 'edit_video']) {
+      const properties = parsed.result.tools.find((tool: any) => tool.name === name).inputSchema.properties;
+      expect(properties.settings.type).toBe('object');
+      expect(properties.provider_settings.type).toBe('object');
+    }
+    expect(parsed.result.tools.find((tool: any) => tool.name === 'generate_image').inputSchema.properties.files.items.oneOf).toHaveLength(3);
 
     reader?.cancel();
   });

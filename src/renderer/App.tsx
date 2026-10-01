@@ -347,10 +347,10 @@ export function App() {
     openDrawer(providerId);
   };
 
-  const handleSendPrompt = async (promptText: string, files: AttachmentInput[] = [], temporaryChat?: boolean) => {
+  const handleSendPrompt = async (promptText: string, files: AttachmentInput[] = [], temporaryChat?: boolean, mediaPreferences?: import('../shared/media.js').MediaPreferences) => {
     soundFx.playClick();
     try {
-      const result = await executePrompt(promptText, coreStatus.activeMode, undefined, undefined, undefined, files, temporaryChat);
+      const result = await executePrompt(promptText, coreStatus.activeMode, undefined, undefined, undefined, files, temporaryChat, mediaPreferences);
       soundFx.playTaskSuccess();
       return result;
     } catch (err) {

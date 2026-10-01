@@ -116,6 +116,30 @@
           "multiple": true,
           "ready": "[data-composer-attachments] [role=\"button\"]:has(button[aria-label^=\"Remove \"]):not(:has([role=\"progressbar\"]))",
           "cleanup": "[data-composer-attachments] button[aria-label^=\"Remove \"]"
+        },
+        "generation": {
+          "activationSteps": [
+            {
+              "action": "click",
+              "target": {
+                "selectors": "button[data-composer-navigation-target=\"add-context\"]"
+              }
+            },
+            {
+              "action": "click",
+              "target": {
+                "selectors": "button[data-list-navigation-item]:has(svg path[d^=\"M7 21.005c-2.211\"])"
+              }
+            }
+          ],
+          "activeWhen": {
+            "selectors": "button:not([data-list-navigation-item]):has(svg path[d^=\"M7 21.005c-2.211\"])"
+          },
+          "settings": [],
+          "nativeDefaults": {
+            "quality": "automatic",
+            "aspect_ratio": "automatic"
+          }
         }
       },
       "video": {

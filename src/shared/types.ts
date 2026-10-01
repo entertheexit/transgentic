@@ -544,7 +544,8 @@ export interface IpcApi {
   reloadProvider: (providerId: ProviderId) => Promise<void>;
   openProviderWindow: (providerId: ProviderId, partitionKey?: string) => Promise<void>;
   openSystemBrowser: (providerId: ProviderId) => Promise<void>;
-  executePrompt: (prompt: string, mode?: TaskMode, preferredProvider?: ProviderId, model?: string, cliRequest?: import('./cli.js').CliRequestOptions, files?: import('./attachments.js').AttachmentInput[], temporaryChat?: boolean) => Promise<any>;
+  executePrompt: (prompt: string, mode?: TaskMode, preferredProvider?: ProviderId, model?: string, cliRequest?: import('./cli.js').CliRequestOptions, files?: import('./attachments.js').AttachmentInput[], temporaryChat?: boolean, mediaPreferences?: import('./media.js').MediaPreferences) => Promise<any>;
+  getMediaConfiguration: (mode: TaskMode) => Promise<import('./media.js').MediaCapability[]>;
   getThreadSessions: () => Promise<any[]>;
   clearThreadSessions: (params?: { providerId?: ProviderId; threadId?: string; scope?: 'quick_prompt' | 'all' }) => Promise<{ success: boolean; sessions: any[] }>;
   getTemporaryChatSessions?: () => Promise<TemporaryChatSessionInfo[]>;

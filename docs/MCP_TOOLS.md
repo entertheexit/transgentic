@@ -25,6 +25,7 @@ The connected server's `tools/list` response is the reference for the tools and 
 | `edit_image` | Edit one or more attached images in Image mode |
 | `edit_video` | Edit attached image/video media in Video mode |
 | `generate_music` | Request Music mode |
+| `get_media_capabilities` | Discover recipe settings, defaults, attachment limits, and availability |
 | `get_status` | Inspect server health, provider state, limits, and model registry |
 
 Media tools request generation and attempt to save detected assets. They do not guarantee that a provider can generate the requested media or that extraction will succeed.
@@ -49,7 +50,9 @@ Camel-case aliases `threadId`, `newThread`, and `projectName` are accepted. Use 
 
 Each `files` entry contains exactly one source: `{ "path": "/absolute/file", "name"?: "...", "mimeType"?: "..." }`, `{ "data": "BASE64", "name": "...", "mimeType": "..." }`, or `{ "url": "https://...", "name"?: "...", "mimeType"?: "..." }`. Host paths require an authenticated loopback request. Remote clients must use inline bytes, a base64 `data:` URL, or a public HTTPS URL. URLs are checked against private/link-local destinations and redirect escapes. Supported inputs are PNG, JPEG, WebP, GIF, PDF, UTF-8 text/code, plus MP4, WebM, or MOV in Video mode.
 
-Attachments are explicit per request and are never inherited by later turns. `generate_image` and `generate_video` remain text-only; use `edit_image` or `edit_video` for source media. Auto-routing skips providers that do not declare every required input kind, while a forced incapable provider returns an error. Local LLM and custom-provider selection are configured through routing.
+Attachments are explicit per request and are never inherited by later turns. `generate_image` and `generate_video` accept reference images in `files`; `edit_image` and `edit_video` require source media. Auto-routing skips providers that do not declare every required input kind, while a forced incapable provider returns an error. Local LLM and custom-provider selection are configured through routing.
+
+Media generation/editing tools accept `settings` and `provider_settings`. Discover semantic values, recipe defaults, model dependencies and availability with `get_media_capabilities`. Media succeeds only with a saved, decoded artifact; text-only replies fail with `media_not_generated`. See [Media API](MEDIA_API.md) for settings precedence, defaults, reference examples and job endpoints. Grok Video remains supported even when the active account lacks the subscription required to generate it; its provisional result container is MP4.
 
 ## Multi-turn example
 

@@ -79,8 +79,9 @@ const api = {
   addCliWorkspace: () => ipcRenderer.invoke('cli:add-workspace'),
   updateCliWorkspace: (id: string, updates: any) => ipcRenderer.invoke('cli:update-workspace', id, updates),
   removeCliWorkspace: (id: string) => ipcRenderer.invoke('cli:remove-workspace', id),
-  executePrompt: (prompt: string, mode?: string, provider?: string, model?: string, cliRequest?: import('../../shared/cli.js').CliRequestOptions, files?: import('../../shared/attachments.js').AttachmentInput[], temporaryChat?: boolean) =>
-    ipcRenderer.invoke('execute-prompt', { prompt, mode, provider, model, cliRequest, files, temporaryChat }),
+  executePrompt: (prompt: string, mode?: string, provider?: string, model?: string, cliRequest?: import('../../shared/cli.js').CliRequestOptions, files?: import('../../shared/attachments.js').AttachmentInput[], temporaryChat?: boolean, mediaPreferences?: import('../../shared/media.js').MediaPreferences) =>
+    ipcRenderer.invoke('execute-prompt', { prompt, mode, provider, model, cliRequest, files, temporaryChat, mediaPreferences }),
+  getMediaConfiguration: (mode: string) => ipcRenderer.invoke('media:configuration', mode),
   getThreadSessions: () => ipcRenderer.invoke('threads:get-sessions'),
   clearThreadSessions: (params?: any) => ipcRenderer.invoke('threads:clear-sessions', params),
   getTemporaryChatSessions: () => ipcRenderer.invoke('temporary-chat:get-sessions'),
