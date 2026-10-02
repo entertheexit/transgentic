@@ -299,6 +299,14 @@ export abstract class BaseProviderAdapter {
     let lastMediaUrl = '';
     let stableTicks = 0;
     const inspectScript = DomObserver.getInspectionScript(this.providerId, mode, (this as any).recipe, options.excludedMediaUrls);
+    const checkProviderState = (inspection: DomInspectionResult) => {
+      if (inspection.isSecurityWarning) {
+        throw new Error(`[PROVIDER_ACTION_REQUIRED] ${this.name}: ${inspection.securityWarningReason || 'Provider verification or sign-in is required.'}`);
+      }
+      if (inspection.isRateLimited) {
+        throw new Error(`${this.name} rate limit or quota exceeded during response generation.`);
+      }
+    };
 
     while (Date.now() - startTime < maxBudgetMs) {
       // 1. Check for request cancellation / client disconnect
@@ -311,9 +319,7 @@ export abstract class BaseProviderAdapter {
 
       const inspection = await this.executeScript<DomInspectionResult>(inspectScript);
 
-      if (inspection.isRateLimited) {
-        throw new Error(`${this.name} rate limit or quota exceeded during response generation.`);
-      }
+      checkProviderState(inspection);
 
       // If model is actively thinking or rendering media, ensure budget accommodates deep reasoning & media generation (at least 420s)
       if (inspection.isThinking || inspection.isMediaRendering) {
@@ -377,6 +383,7 @@ export abstract class BaseProviderAdapter {
 
           // Grab final snapshot
           const finalInspect = await this.executeScript<DomInspectionResult>(inspectScript);
+          checkProviderState(finalInspect);
           const rawFinal = (finalInspect.text && finalInspect.text.trim().length > 0) ? finalInspect.text : lastText;
           const finalText = cleanModelOutput(rawFinal);
 

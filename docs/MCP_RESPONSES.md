@@ -9,6 +9,7 @@ Response contract for Transgentic MCP clients: agentic and plain profiles, conve
 - [Choosing a response profile](#choosing-a-response-profile)
 - [Conversation and request isolation](#conversation-and-request-isolation)
 - [Structured outcomes](#structured-outcomes)
+- [Provider intervention and uncertain submissions](#provider-intervention-and-uncertain-submissions)
 - [Optional progress](#optional-progress)
 - [Verification](#verification)
 
@@ -63,6 +64,12 @@ Model requests also return `structuredContent` with:
 A surviving Double Agent answer is `partial` when the other pipeline failed. A media request with no saved artifact is also `partial`. No routed service produces an explicit `handoff` for an agentic client and an ordinary configuration error for a plain caller; no model is credited with an answer. Errors retain `isError: true`.
 
 MCP cancellation suppresses the cancelled request's final result. The cancelled outcome remains available to the internal caller/log. Failure reminders and rate-limit notices apply only to agentic connections and respect the user's requested scope.
+
+## Provider intervention and uncertain submissions
+
+During response polling, a visible verification challenge, expired session, or account restriction produces a `PROVIDER_ACTION_REQUIRED` reason promptly. Check the provider window and complete any required sign-in or verification yourself. Conversation text quoting these notices is excluded from account-notice detection.
+
+`WEBVIEW_SUBMISSION_UNCERTAIN` and `TEMPORARY_CHAT_SUBMISSION_UNCERTAIN` mean a prompt may already have been sent. Transgentic stops that request's provider fallback chain in every task mode, including normal text chats and coalesced requests. MCP/SSE clients should inspect the provider conversation before explicitly retrying; automatic retries can create duplicate submissions. A timeout alone does not establish that the provider never received the prompt.
 
 ## Optional progress
 

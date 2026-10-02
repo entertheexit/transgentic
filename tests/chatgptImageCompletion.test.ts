@@ -13,6 +13,7 @@ async function inspectGallery({ loaded = true, user = false, stopped = true, wra
     closest: () => user ? {} : null,
   };
   const gallery = {
+    offsetWidth: 400, offsetHeight: 400,
     textContent: '', innerText: '', closest: () => user ? {} : null,
     matches: () => true, contains: () => false,
     querySelector: () => null,

@@ -55,43 +55,62 @@ export class DomObserver {
             bodyText.includes("Please wait a few moments") ||
             bodyText.includes("Capacity exceeded");
 
+          // 3. Helper to verify element visibility in DOM
+          const isVisible = (el) => {
+            if (!el) return false;
+            if (el.closest?.('[hidden], [inert], [aria-hidden="true"]')) return false;
+            const style = getComputedStyle(el);
+            if (style.display === 'none' || style.visibility === 'hidden' || style.visibility === 'collapse' || style.opacity === '0') return false;
+            // Some provider turn wrappers have no box of their own.
+            if (style.display === 'contents') return Array.from(el.children || []).some(isVisible);
+            return !!(el.offsetWidth || el.offsetHeight || (typeof el.getClientRects === 'function' && el.getClientRects().length > 0));
+          };
+
+          // Quoted prompts and assistant replies are not provider account notices.
+          let noticeText = bodyText;
+          if (document.body?.cloneNode) {
+            const noticeRoot = document.body.cloneNode(true);
+            for (const el of noticeRoot.querySelectorAll(
+              '[data-message-author-role], [data-conversation-role], model-response, user-query, ' +
+              '.font-claude-message, .font-user-message, [data-testid="assistant-message"], ' +
+              '[data-testid="user-message"], [id^="response-"], .response-turn, ' +
+              '.response-content-markdown, .streamdown-chat-md, .markdown, .prose, ' +
+              '[data-composer-markdown], textarea, [contenteditable="true"], [hidden], [aria-hidden="true"]'
+            )) el.remove();
+            noticeText = noticeRoot.textContent || '';
+          }
+
           // 2. Security, CAPTCHA, Reauthentication & Account Warning Detection
           let isSecurityWarning = false;
           let securityWarningReason = undefined;
 
           if (
-            document.querySelector('#challenge-running, #cf-turnstile, iframe[src*="challenges.cloudflare.com"], iframe[src*="recaptcha"], iframe[src*="hcaptcha"], .cf-turnstile') ||
-            bodyText.includes("Verify you are human") ||
-            bodyText.includes("Please verify you are a human") ||
-            bodyText.includes("Completing the challenge") ||
-            bodyText.includes("Security check") ||
-            bodyText.includes("Checking your browser before accessing")
+            Array.from(document.querySelectorAll('#challenge-running, #cf-turnstile, iframe[src*="challenges.cloudflare.com"], iframe[src*="recaptcha"], iframe[src*="hcaptcha"], .cf-turnstile')).some(isVisible) ||
+            noticeText.includes("Verify you are human") ||
+            noticeText.includes("Please verify you are a human") ||
+            noticeText.includes("Completing the challenge") ||
+            noticeText.includes("Security check") ||
+            noticeText.includes("Checking your browser before accessing")
           ) {
             isSecurityWarning = true;
             securityWarningReason = "Verification challenge / CAPTCHA encountered";
           } else if (
-            bodyText.includes("Session expired") ||
-            bodyText.includes("Please log in again") ||
-            bodyText.includes("Your session has timed out") ||
-            bodyText.includes("Sign in to continue")
+            noticeText.includes("Session expired") ||
+            noticeText.includes("Please log in again") ||
+            noticeText.includes("Your session has timed out") ||
+            noticeText.includes("Sign in to continue")
           ) {
             isSecurityWarning = true;
             securityWarningReason = "Session expired / Re-authentication required";
           } else if (
-            bodyText.includes("Suspicious activity detected") ||
-            bodyText.includes("Your account has been deactivated") ||
-            bodyText.includes("Your account is restricted") ||
-            bodyText.includes("Terms of service violation")
+            noticeText.includes("Suspicious activity detected") ||
+            noticeText.includes("Your account has been deactivated") ||
+            noticeText.includes("Your account is restricted") ||
+            noticeText.includes("Terms of service violation")
           ) {
             isSecurityWarning = true;
             securityWarningReason = "Provider account notice / restriction detected";
           }
-
-          // 3. Helper to verify element visibility in DOM
-          const isVisible = (el) => {
-            if (!el) return false;
-            return !!(el.offsetWidth || el.offsetHeight || (typeof el.getClientRects === 'function' && el.getClientRects().length > 0));
-          };
 
           // 4. Active Stop Button Detection (Standard Active Generation Indicator)
           const isStopBtn = (btn) => {
@@ -156,7 +175,7 @@ export class DomObserver {
             }
           }
 
-          const composerInput = document.querySelector('textarea[data-slot="textarea"], #prompt-textarea, textarea, input[data-testid="chat-input"]');
+          const composerInput = Array.from(document.querySelectorAll('textarea[data-slot="textarea"], #prompt-textarea, textarea, input[data-testid="chat-input"]')).find(isVisible);
           const isComposerDisabled = composerInput ? (composerInput.disabled || composerInput.hasAttribute('disabled')) : false;
 
           let isThinking = (hasStopBtn && hasActiveSpinner) || (hasActiveSpinner && isComposerDisabled);
@@ -322,7 +341,7 @@ export class DomObserver {
                 '[data-testid^="conversation-turn-"]:has([data-message-author-role="assistant"]), ' +
                 'div.agent-turn'
               )) + ', main [data-testid="generated-image-gallery"]'
-              )).filter(el => !el.closest('[data-message-author-role="user"], [data-conversation-role="user"]') && !el.querySelector('[data-message-author-role="user"], [data-conversation-role="user"]'))
+              )).filter(el => isVisible(el) && !el.closest('[data-message-author-role="user"], [data-conversation-role="user"]') && !el.querySelector('[data-message-author-role="user"], [data-conversation-role="user"]'))
                 // Keep captions when the gallery still belongs to an assistant text turn.
                 .filter((el, _, candidates) => !el.matches('[data-testid="generated-image-gallery"]') || !candidates.some(parent => parent !== el && parent.contains(el)));
               if (assistantMessages.length > 0) {
@@ -437,7 +456,7 @@ export class DomObserver {
                 'div.grid-cols-1 .prose, ' +
                 'div[data-is-streaming], ' +
                 'div.prose'
-              )).filter(el => !el.closest('[data-testid="user-message"], .font-user-message'));
+              )).filter(el => isVisible(el) && !el.closest('[data-testid="user-message"], .font-user-message'));
 
               if (messages.length > 0) {
                 const lastMsg = messages[messages.length - 1];
@@ -445,7 +464,7 @@ export class DomObserver {
 
                 const isMsgStreaming = lastMsg.getAttribute('data-is-streaming') === 'true' ||
                   !!lastMsg.closest('[data-is-streaming="true"]') ||
-                  !!document.querySelector('[data-is-streaming="true"]');
+                  Array.from(document.querySelectorAll('[data-is-streaming="true"]')).some(isVisible);
 
                 if (isMsgStreaming) {
                   isGenerating = true;
@@ -463,7 +482,7 @@ export class DomObserver {
             }
 
             case 'gemini': {
-              const responseNodes = document.querySelectorAll('model-response, response-container, structured-content-container, message-content');
+              const responseNodes = Array.from(document.querySelectorAll('model-response, response-container, structured-content-container, message-content')).filter(isVisible);
               if (responseNodes.length > 0) {
                 const targetNode = responseNodes[responseNodes.length - 1];
                 const turnContainer = targetNode.closest('model-response, response-container, structured-content-container') || targetNode.parentElement || targetNode;
@@ -660,6 +679,7 @@ export class DomObserver {
                 'main div.items-start, ' +
                 '.response-turn')
               )).filter(el => {
+                if (!isVisible(el)) return false;
                 if (el.closest('form, nav, aside, [data-sidebar="sidebar"], header, .message-input')) return false;
                 if (el.querySelector && el.querySelector('[data-testid="user-message"], [aria-label="You"]')) return false;
                 if (el.getAttribute && el.getAttribute('data-testid') === 'user-message') return false;
@@ -668,7 +688,7 @@ export class DomObserver {
 
               const targetList = turns.length > 0
                 ? turns
-                : Array.from(document.querySelectorAll('.response-content-markdown, .streamdown-chat-md, main .prose, .prose'));
+                : Array.from(document.querySelectorAll('.response-content-markdown, .streamdown-chat-md, main .prose, .prose')).filter(isVisible);
 
               if (targetList.length > 0) {
                 const lastTurn = targetList[targetList.length - 1];
@@ -759,6 +779,7 @@ export class DomObserver {
               );
 
               const turns = Array.from(document.querySelectorAll(containerSelector)).filter(el => {
+                if (!isVisible(el)) return false;
                 if (el.tagName === 'MAIN' || el.tagName === 'BODY' || el.tagName === 'HTML') return false;
                 if (el.closest('form, nav, aside, header, footer, .message-input, [data-role="user"], [class*="disclaimer" i]')) return false;
                 if (el.querySelector && el.querySelector('[data-message-author-role="user"], [data-role="user"]')) return false;
