@@ -64,6 +64,12 @@ const api = {
   },
 
   openProviderDrawer: (providerId) => ipcRenderer.invoke('open-provider-drawer', providerId),
+  getWindowLayout: () => ipcRenderer.invoke('get-window-layout'),
+  onWindowLayoutChanged: (callback) => {
+    const listener = (_event, layout) => callback(layout);
+    ipcRenderer.on('window-layout-changed', listener);
+    return () => ipcRenderer.removeListener('window-layout-changed', listener);
+  },
   closeProviderDrawer: () => ipcRenderer.invoke('close-provider-drawer'),
   setMode: (mode) => ipcRenderer.invoke('set-mode', mode),
   setCompactMode: (compact) => ipcRenderer.invoke('set-compact-mode', compact),

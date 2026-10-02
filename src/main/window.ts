@@ -1,6 +1,7 @@
 import { BrowserWindow, screen, app, Menu, MenuItem } from 'electron';
 import path from 'path';
 import fs from 'fs';
+import { MAIN_PANE_WIDTH, BROWSER_WIDTH, MIN_BROWSER_WIDTH, type WindowLayout } from '../shared/windowLayout.js';
 import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -11,6 +12,18 @@ export class WindowManager {
   private isPinned: boolean = false;
   private isDrawerOpen: boolean = false;
   public isQuitting: boolean = false;
+  private mainPaneWidth = MAIN_PANE_WIDTH;
+  private layoutRevision = 0;
+
+  public getWindowLayout(): WindowLayout {
+    return { mainPaneWidth: this.mainPaneWidth, drawerOpen: this.isDrawerOpen,
+      isCompact: this.isCompact, revision: this.layoutRevision };
+  }
+
+  private publishLayout(): void {
+    this.layoutRevision++;
+    this.mainWindow?.webContents.send('window-layout-changed', this.getWindowLayout());
+  }
 
   public createMainWindow(): BrowserWindow {
     const primaryDisplay = screen.getPrimaryDisplay();
@@ -131,6 +144,13 @@ export class WindowManager {
       }
     });
 
+    this.mainWindow.on('resize', () => {
+      if (!this.isCompact && !this.isDrawerOpen) {
+        this.mainPaneWidth = this.mainWindow!.getContentBounds().width;
+      }
+      this.publishLayout();
+    });
+    this.mainPaneWidth = this.mainWindow.getContentBounds().width;
     return this.mainWindow;
   }
 
@@ -138,36 +158,31 @@ export class WindowManager {
     return this.mainWindow;
   }
 
-  public setDrawerState(open: boolean): void {
-    this.isDrawerOpen = open;
-    if (!this.mainWindow) return;
+  public setDrawerState(open: boolean): boolean {
+    if (!this.mainWindow || this.isCompact) return false;
+    if (open === this.isDrawerOpen) return true;
 
     const bounds = this.mainWindow.getBounds();
     if (open) {
-      const targetWidth = 1180; // 480px hub + 700px browser drawer = 1180px total
-      const targetHeight = 706;
-      const newX = Math.max(20, bounds.x - (targetWidth - bounds.width));
-      this.mainWindow.setBounds(
-        {
-          x: newX,
-          y: bounds.y,
-          width: targetWidth,
-          height: targetHeight,
-        },
-        true
-      );
+      const mainWidth = this.mainWindow.getContentBounds().width;
+      const workArea = screen.getDisplayMatching(bounds).workArea;
+      const availableWidth = this.mainWindow.isMaximized() ? bounds.width : workArea.width;
+      const browserWidth = Math.min(BROWSER_WIDTH, availableWidth - bounds.width);
+      if (browserWidth < MIN_BROWSER_WIDTH) return false;
+      this.mainPaneWidth = mainWidth;
+      this.isDrawerOpen = true;
+      const width = bounds.width + browserWidth;
+      const x = Math.max(workArea.x, Math.min(bounds.x, workArea.x + workArea.width - width));
+      this.mainWindow.setMinimumSize(bounds.width + MIN_BROWSER_WIDTH, 520);
+      this.mainWindow.setBounds({ ...bounds, x, width });
     } else {
-      const newX = bounds.x + (bounds.width - 480);
-      this.mainWindow.setBounds(
-        {
-          x: newX,
-          y: bounds.y,
-          width: 480,
-          height: 706,
-        },
-        true
-      );
+      this.isDrawerOpen = false;
+      this.mainWindow.setMinimumSize(MAIN_PANE_WIDTH, 520);
+      const frameWidth = bounds.width - this.mainWindow.getContentBounds().width;
+      this.mainWindow.setBounds({ ...bounds, width: this.mainPaneWidth + frameWidth });
     }
+    this.publishLayout();
+    return true;
   }
 
   private previousBounds: { width: number; height: number; x: number; y: number } | null = null;
@@ -176,6 +191,7 @@ export class WindowManager {
 
   public setCompactMode(compact: boolean): { isCompact: boolean; isPinned: boolean } {
     if (!this.mainWindow) return { isCompact: false, isPinned: this.isPinned };
+    if (compact === this.isCompact) return { isCompact: this.isCompact, isPinned: this.isPinned };
     this.isCompact = compact;
 
     if (compact) {
@@ -201,7 +217,7 @@ export class WindowManager {
       // Restore previous pinned state
       this.isPinned = this.previousPinnedBeforeCompact;
       this.mainWindow.setAlwaysOnTop(this.isPinned);
-      this.mainWindow.setMinimumSize(480, 520);
+      this.mainWindow.setMinimumSize(this.isDrawerOpen ? this.mainPaneWidth + MIN_BROWSER_WIDTH : MAIN_PANE_WIDTH, 520);
       
       const targetWidth = this.previousBounds ? this.previousBounds.width : 480;
       const targetHeight = this.previousBounds ? this.previousBounds.height : 706;
@@ -216,6 +232,7 @@ export class WindowManager {
       }, true);
     }
 
+    this.publishLayout();
     return { isCompact: this.isCompact, isPinned: this.isPinned };
   }
 

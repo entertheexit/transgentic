@@ -51,6 +51,7 @@ import {
   Braces,
   Github,
 } from 'lucide-react';
+import { appUiScale } from '../shared/windowLayout.js';
 import { soundFx } from './audio/soundFx.js';
 
 type ActiveTab = 'hub' | 'logs' | 'mem' | 'routes' | 'settings';
@@ -72,6 +73,7 @@ export function App() {
     modeRoutes,
     routeMatrix,
     activeDrawerProvider,
+    windowLayout,
     setMode,
     setCompactMode,
     updateConfig,
@@ -190,7 +192,9 @@ export function App() {
   const [showLocalLLMModal, setShowLocalLLMModal] = useState<boolean>(false);
   const [isFirstLaunchAuth, setIsFirstLaunchAuth] = useState(false);
   const [showAccountModalProvider, setShowAccountModalProvider] = useState<ProviderId | null>(null);
-  const [isCompactMode, setIsCompactMode] = useState(false);
+  const [previewCompactMode, setIsCompactMode] = useState(false);
+  const isCompactMode = typeof window !== 'undefined' && window.transgenticApi?.getWindowLayout
+    ? windowLayout.isCompact : previewCompactMode;
   const [processingSec, setProcessingSec] = useState(0);
   const [footerEndpointType, setFooterEndpointType] = useState<'mcp' | 'sse' | 'completion'>('mcp');
   const [copiedEndpoint, setCopiedEndpoint] = useState(false);
@@ -362,9 +366,10 @@ export function App() {
   const handleToggleCompactMode = async () => {
     soundFx.playClick();
     const next = !isCompactMode;
-    setIsCompactMode(next);
+    if (!(window as any).transgenticApi) setIsCompactMode(next);
     if (setCompactMode) {
       const res = await setCompactMode(next);
+      if (res) setIsCompactMode(res.isCompact);
       if (res && typeof res.isPinned === 'boolean') {
         setIsPinned(res.isPinned);
       }
@@ -379,7 +384,8 @@ export function App() {
     setShowAboutModal(true);
   };
 
-  const currentDrawerProvider = activeDrawerProvider ? {
+  const uiScale = isCompactMode ? 1 : appUiScale(windowLayout.mainPaneWidth);
+  const currentDrawerProvider = activeDrawerProvider && windowLayout.drawerOpen ? {
     ...providers[activeDrawerProvider],
     url: providers[activeDrawerProvider]?.url || servicesManifest?.services?.[activeDrawerProvider]?.url || '',
     name: providers[activeDrawerProvider]?.name || servicesManifest?.services?.[activeDrawerProvider]?.name || activeDrawerProvider,
@@ -453,7 +459,7 @@ export function App() {
   };
 
   return (
-    <div className="w-screen h-screen flex overflow-hidden select-none bg-transparent">
+    <div className="app-shell w-screen h-screen flex overflow-hidden select-none bg-transparent" style={{ '--app-ui-scale': uiScale } as React.CSSProperties}>
       <div className="glass-panel w-full h-full flex overflow-hidden relative border border-white/10 shadow-2xl backdrop-blur-xl">
 
         {/* ========================================================= */}
@@ -557,8 +563,10 @@ export function App() {
           /* ========================================================= */
           <>
             {/* Left / Main Dynamic Hub Panel (Full width when right drawer is closed) */}
-            <div className={`h-full flex flex-col justify-between transition-all ${currentDrawerProvider ? 'w-[480px] min-w-[480px] shrink-0 border-r border-white/5' : 'flex-1 w-full'
-              }`}>
+            {/* Subtract the shell’s two 1px borders to preserve its closed inner width. */}
+            <div className="main-pane-frame h-full min-w-0 shrink-0"
+              style={currentDrawerProvider ? { width: windowLayout.mainPaneWidth - 2 } : { flex: 1 }}>
+            <div className="main-pane-content flex flex-col justify-between">
 
               {/* Top Titlebar & Controls */}
               <div className="h-11 pl-4 pr-2 flex items-center justify-between border-b border-white/5 drag-region">
@@ -887,9 +895,11 @@ export function App() {
 
             </div>
 
-            {/* Right Sliding Webview Drawer Panel (700px -> 1180px total width) */}
+            </div>
+
+            {/* Browser uses remaining physical width without dashboard scaling. */}
             {currentDrawerProvider && (
-              <div className="w-[700px] min-w-[700px] h-full flex-1 no-drag">
+              <div className="browser-pane min-w-0 h-full flex-1 no-drag border-l border-white/5">
                 <DrawerWebview
                   provider={currentDrawerProvider}
                   browserTitle={getProviderDisplayName(currentDrawerProvider.id, servicesManifest, providers)}

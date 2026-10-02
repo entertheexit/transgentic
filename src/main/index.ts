@@ -1355,12 +1355,16 @@ function setupIpcHandlers() {
     }
   });
 
+  ipcMain.handle('get-window-layout', () => globalWindowManager.getWindowLayout());
   ipcMain.handle('open-provider-drawer', (_, providerId: ProviderId) => {
-    globalWindowManager.setDrawerState(true);
+    const inline = globalWindowManager.setDrawerState(true);
+    if (!inline) globalSessionManager.openProviderWindow(providerId);
+    return { presentation: inline ? 'inline' : 'window', layout: globalWindowManager.getWindowLayout() };
   });
 
   ipcMain.handle('close-provider-drawer', () => {
     globalWindowManager.setDrawerState(false);
+    return globalWindowManager.getWindowLayout();
   });
 
   ipcMain.handle('set-mode', (_, mode: TaskMode | 'writing' | 'music') => {
