@@ -1647,7 +1647,7 @@ export class TransgenticMcpServer {
         } catch (err) {
           throwIfCancelled(reqAbortController?.signal || abortSignal);
           lastCandidateError = err;
-          if (forcedProvider || (['image', 'video', 'music'].includes(effectiveMode) && /SUBMISSION_UNCERTAIN|MEDIA_NOT_GENERATED/.test((err as Error).message || ''))) throw err;
+          if (forcedProvider || /SUBMISSION_UNCERTAIN/.test((err as Error).message || '') || (['image', 'video', 'music'].includes(effectiveMode) && /MEDIA_NOT_GENERATED/.test((err as Error).message || ''))) throw err;
           continue;
         }
       }
@@ -1950,7 +1950,9 @@ export class TransgenticMcpServer {
           globalSessionManager.updateProviderState(providerId, 'disconnected');
         }
 
-        if (['image', 'video', 'music'].includes(effectiveMode) && /SUBMISSION_UNCERTAIN|MEDIA_NOT_GENERATED/.test(candidateErr.message || '')) throw candidateErr;
+        // A dispatched prompt must never be retried on another account/provider
+        // merely because its response could not be observed, in any task mode.
+        if (/SUBMISSION_UNCERTAIN/.test(candidateErr.message || '') || (['image', 'video', 'music'].includes(effectiveMode) && /MEDIA_NOT_GENERATED/.test(candidateErr.message || ''))) throw candidateErr;
         lastCandidateError = candidateErr;
         console.warn(`[Transgentic] Provider ${providerId} (${activeAccount.alias}) failed: ${candidateErr.message}.`);
 

@@ -91,6 +91,28 @@ beforeEach(() => {
   configure();
 });
 
+it.each(['chatgpt', 'claude', 'gemini', 'grok'] as const)('never falls back after an uncertain normal-chat submission on %s', async provider => {
+  vi.spyOn(DynamicRouter, 'getCandidateChain').mockReturnValue([provider, 'localllm']);
+  adapter.executePrompt.mockRejectedValueOnce(new Error('[WEBVIEW_SUBMISSION_UNCERTAIN] response not observed'));
+  const result = await run('Connection test', 'general');
+  expect(result.isError).toBe(true);
+  expect(result.content[0].text).toContain('SUBMISSION_UNCERTAIN');
+  expect(adapter.executePrompt).toHaveBeenCalledOnce();
+  expect(completion).not.toHaveBeenCalled();
+});
+
+it('never falls back when a coalesced normal-chat submission is uncertain', async () => {
+  vi.spyOn(DynamicRouter, 'getCandidateChain').mockReturnValue(['claude', 'localllm']);
+  vi.spyOn(DuplicateActionGuard, 'getInFlight').mockImplementation(() => ({
+    promise: Promise.reject(new Error('[WEBVIEW_SUBMISSION_UNCERTAIN] shared response not observed')),
+  }) as any);
+  const result = await run('Connection test', 'general');
+  expect(result.isError).toBe(true);
+  expect(result.content[0].text).toContain('SUBMISSION_UNCERTAIN');
+  expect(adapter.executePrompt).not.toHaveBeenCalled();
+  expect(completion).not.toHaveBeenCalled();
+});
+
 it('rejects reserved Audio intent before selecting or invoking a provider', async () => {
   const result = await server.orchestratePrompt(
     'Generate a voiceover narration for this trailer',
