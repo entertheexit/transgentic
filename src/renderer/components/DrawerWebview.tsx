@@ -438,12 +438,12 @@ Respond ONLY with valid JSON.`;
   return (
     <div className="w-full h-full flex flex-col bg-[#0b0c0e] select-none">
       {/* Drawer Top Navigation Bar */}
-      <div className="h-10 px-3 bg-[#13151b] border-b border-white/10 flex items-center justify-between drag-region">
+      <div className="browser-toolbar h-10 shrink-0 px-3 bg-[#13151b] border-b border-white/10 flex items-center justify-between gap-2 drag-region">
         {/* Left Side: Provider Identity + URL Tag */}
-        <div className="flex items-center gap-2 no-drag">
-          <div className="flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
-            <span className="font-bold text-xs text-slate-100 uppercase tracking-wide">
+        <div className="flex items-center gap-2 min-w-0 flex-1 no-drag">
+          <div className="flex items-center gap-1.5 min-w-0">
+            <span className="shrink-0 w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
+            <span className="font-bold text-xs text-slate-100 uppercase tracking-wide truncate">
               {browserTitle || displayName}
             </span>
           </div>
@@ -455,14 +455,14 @@ Respond ONLY with valid JSON.`;
               title="Open in System Browser"
             >
               <Globe className="w-2.5 h-2.5" />
-              <span>Open Browser</span>
+              <span className="browser-action-label">Open Browser</span>
               <ExternalLink className="w-2.5 h-2.5 opacity-60" />
             </button>
           )}
         </div>
 
         {/* Right Side: Account Switcher + Actions */}
-        <div className="flex items-center gap-1.5 no-drag">
+        <div className="flex items-center gap-1.5 shrink-0 no-drag">
           {accountStore && (
             <button
               onClick={() => {
@@ -473,7 +473,7 @@ Respond ONLY with valid JSON.`;
               className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 text-[11px] font-medium transition-all cursor-pointer"
             >
               <Users className="w-3.5 h-3.5 text-cyan-400" />
-              <span className="max-w-[110px] truncate">{activeAccount?.alias || 'Profiles'}</span>
+              <span className="browser-action-label max-w-[110px] truncate">{activeAccount?.alias || 'Profiles'}</span>
             </button>
           )}
 
@@ -486,7 +486,7 @@ Respond ONLY with valid JSON.`;
             className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-teal-500/20 hover:bg-teal-500/30 text-teal-300 border border-teal-500/40 text-[11px] font-semibold transition-all shadow-[0_0_10px_rgba(20,184,166,0.2)] cursor-pointer"
           >
             <Link className="w-3.5 h-3.5 text-teal-400" />
-            <span>Chrome Sync</span>
+            <span className="browser-action-label">Chrome Sync</span>
           </button>
 
           <button
@@ -502,7 +502,7 @@ Respond ONLY with valid JSON.`;
             }`}
           >
             <Wrench className="w-3.5 h-3.5 text-orange-400" />
-            <span>Self-Healing</span>
+            <span className="browser-action-label">Self-Healing</span>
           </button>
 
           <button

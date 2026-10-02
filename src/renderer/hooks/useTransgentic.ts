@@ -27,6 +27,7 @@ import {
   DoubleAgentConfig,
 } from '../../shared/types.js';
 import type { AttachmentInput, DesktopAttachmentSelection } from '../../shared/attachments.js';
+import type { WindowLayout, DrawerOpenResult } from '../../shared/windowLayout.js';
 import { requestLogCategory } from '../../shared/logCategory.js';
 
 const countLogCategories = (items: McpRequestLog[]): Record<ChatMode, number> =>
@@ -177,6 +178,30 @@ export function useTransgentic() {
   const [activeDrawerProvider, setActiveDrawerProvider] = useState<ProviderId | null>(null);
 
   const api = typeof window !== 'undefined' ? window.transgenticApi : undefined;
+  const [windowLayout, setWindowLayout] = useState<WindowLayout>({
+    mainPaneWidth: typeof window === 'undefined' ? 480 : window.innerWidth,
+    drawerOpen: false, isCompact: false, revision: -1,
+  });
+  const drawerRequest = useRef(0);
+  const applyWindowLayout = useCallback((layout: WindowLayout) => {
+    setWindowLayout(previous => layout.revision >= previous.revision ? layout : previous);
+  }, []);
+  useEffect(() => {
+    let active = true;
+    if (api?.getWindowLayout) {
+      const unsubscribe = api.onWindowLayoutChanged((layout: WindowLayout) => {
+        if (active) applyWindowLayout(layout);
+      });
+      void api.getWindowLayout().then((layout: WindowLayout) => {
+        if (active) applyWindowLayout(layout);
+      });
+      return () => { active = false; unsubscribe(); };
+    }
+    const resize = () => setWindowLayout(previous => previous.drawerOpen || previous.isCompact
+      ? previous : { ...previous, mainPaneWidth: window.innerWidth });
+    window.addEventListener('resize', resize);
+    return () => window.removeEventListener('resize', resize);
+  }, [api, applyWindowLayout]);
 
   const [activeSessions, setActiveSessions] = useState<any[]>([]);
   const [temporaryChatSessions, setTemporaryChatSessions] = useState<import('../../shared/types.js').TemporaryChatSessionInfo[]>([]);
@@ -469,16 +494,27 @@ export function useTransgentic() {
     return { success: false, port: config.port, error: 'API not available' };
   }, [api, config.port]);
 
-  const openDrawer = useCallback((providerId: ProviderId) => {
+  const openDrawer = useCallback(async (providerId: ProviderId) => {
     if (providerId.startsWith('api_')) return;
-    setActiveDrawerProvider(providerId);
-    api?.openProviderDrawer(providerId);
-  }, [api]);
+    const request = ++drawerRequest.current;
+    if (api) {
+      const result: DrawerOpenResult = await api.openProviderDrawer(providerId);
+      applyWindowLayout(result.layout);
+      if (request === drawerRequest.current && result.presentation === 'inline') {
+        setActiveDrawerProvider(providerId);
+      }
+    } else {
+      setWindowLayout(previous => ({ ...previous, drawerOpen: true }));
+      setActiveDrawerProvider(providerId);
+    }
+  }, [api, applyWindowLayout]);
 
-  const closeDrawer = useCallback(() => {
-    setActiveDrawerProvider(null);
-    api?.closeProviderDrawer();
-  }, [api]);
+  const closeDrawer = useCallback(async () => {
+    const request = ++drawerRequest.current;
+    if (api) applyWindowLayout(await api.closeProviderDrawer());
+    else setWindowLayout(previous => ({ ...previous, drawerOpen: false }));
+    if (request === drawerRequest.current) setActiveDrawerProvider(null);
+  }, [api, applyWindowLayout]);
 
   const setMode = useCallback((mode: TaskMode) => {
     setCoreStatus((prev) => ({ ...prev, activeMode: mode }));
@@ -1161,6 +1197,7 @@ export function useTransgentic() {
     modeRoutes,
     routeMatrix,
     activeDrawerProvider,
+    windowLayout,
     activeSessions,
     temporaryChatSessions,
     hasActiveSession: activeSessions.some((session) => isQuickPromptConversation(session.threadId)),

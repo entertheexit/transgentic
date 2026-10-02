@@ -534,8 +534,10 @@ export interface IpcApi {
   applyPort: (newPort: number) => Promise<{ success: boolean; port: number; error?: string }>;
   getNetworkInterfaces?: () => Promise<Array<{ name: string; address: string }>>;
   applyNetworkAccess?: (lanEnabled: boolean, advertisedAddress: string) => Promise<{ success: boolean; port: number; serverAccess?: { lanEnabled: boolean; advertisedAddress: string }; error?: string }>;
-  openProviderDrawer: (providerId: ProviderId) => Promise<void>;
-  closeProviderDrawer: () => Promise<void>;
+  openProviderDrawer: (providerId: ProviderId) => Promise<import('./windowLayout.js').DrawerOpenResult>;
+  getWindowLayout: () => Promise<import('./windowLayout.js').WindowLayout>;
+  onWindowLayoutChanged: (callback: (layout: import('./windowLayout.js').WindowLayout) => void) => () => void;
+  closeProviderDrawer: () => Promise<import('./windowLayout.js').WindowLayout>;
   setMode: (mode: TaskMode) => Promise<void>;
   setCompactMode?: (compact: boolean) => Promise<{ isCompact: boolean; isPinned: boolean }>;
   toggleWindowPin: () => Promise<boolean>;

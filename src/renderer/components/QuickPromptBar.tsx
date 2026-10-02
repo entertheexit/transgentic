@@ -212,7 +212,9 @@ export const QuickPromptBar: React.FC<QuickPromptBarProps> = ({
       {settingsOpen && <MediaSettingsModal mode={activeMode || 'general'} routeIdentity={routeIdentity} onClose={() => setSettingsOpen(false)} />}
       <div className="relative flex items-center mx-4">
         
-        <button type="button" aria-label="Quick Prompt settings" aria-haspopup="dialog" onClick={() => setSettingsOpen(true)} className={`absolute left-1 flex h-7 w-7 items-center justify-center rounded-lg focus-visible:outline focus-visible:outline-cyan-400 ${isServiceDeselected ? 'text-amber-400' : 'text-cyan-400'}`}>
+        <button type="button" aria-label="Quick Prompt settings" aria-haspopup="dialog" onClick={() => setSettingsOpen(true)} className={`absolute left-1.5 flex h-6 w-6 items-center justify-center rounded-lg border transition-all focus-visible:outline focus-visible:outline-cyan-400 ${isServiceDeselected
+          ? 'border-amber-500/40 bg-amber-500/20 text-amber-400 hover:border-amber-400 hover:bg-amber-500/30'
+          : 'border-cyan-500/40 bg-cyan-500/20 text-cyan-400 hover:border-cyan-400 hover:bg-cyan-500/30'}`}>
           <Sparkles className="w-3.5 h-3.5" />
         </button>
 
@@ -227,7 +229,7 @@ export const QuickPromptBar: React.FC<QuickPromptBarProps> = ({
           }
           disabled={isProcessing || isServiceDeselected}
           style={{ paddingRight: inputRightPadding }}
-          className={`w-full h-8 pl-8 ${
+          className={`w-full h-8 pl-9 ${
             isServiceDeselected
               ? 'bg-black/40 border border-amber-500/20 text-slate-400 opacity-70 cursor-not-allowed'
               : 'bg-black/60 border border-white/10 text-slate-100 placeholder-slate-500 focus:border-cyan-500/60 focus:ring-1 focus:ring-cyan-500/40'
