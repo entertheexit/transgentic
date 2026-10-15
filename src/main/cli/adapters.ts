@@ -22,7 +22,11 @@ export function adapterArgs(id: CliProviderId, input: AdapterInput): string[] {
   if (id === 'cli_claude_code') return ['--safe-mode', '-p', '--verbose', '--output-format', 'stream-json', '--permission-mode', 'dontAsk', '--tools', [
     'Read', 'Glob', 'Grep', ...(input.policy.allowProjectEditing ? ['Edit', 'Write'] : []), ...(input.policy.allowCommands ? ['Bash'] : []),
   ].join(','), '--allowedTools', ['Read', 'Glob', 'Grep', ...(input.policy.allowProjectEditing ? ['Edit', 'Write'] : []), ...(input.policy.allowCommands ? ['Bash'] : [])].join(','), '--disallowedTools', 'mcp__*', ...(input.model ? ['--model', input.model] : []), ...(input.sessionId ? ['--resume', input.sessionId] : [])];
-  return ['-p', promptWithAttachmentManifest(input), '--output-format', 'stream-json', '--disable-slash-commands', ...(input.model ? ['--model', input.model] : []), ...(input.sessionId ? ['--conversation', input.sessionId] : [])];
+  // Headless Antigravity cannot show tool permission prompts. The outer OS sandbox
+  // remains authoritative for the exact workspace and allowed action kinds.
+  return ['-p', promptWithAttachmentManifest(input), '--output-format', 'stream-json', '--disable-slash-commands',
+    ...(input.policy.allowProjectEditing || input.policy.allowCommands ? ['--dangerously-skip-permissions'] : []),
+    ...(input.model ? ['--model', input.model] : []), ...(input.sessionId ? ['--conversation', input.sessionId] : [])];
 }
 
 function boundedText(text: string) { if (Buffer.byteLength(text) > 16 * 1024 * 1024) throw new Error('CLI answer exceeds the output limit.'); return text; }

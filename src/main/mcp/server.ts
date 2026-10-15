@@ -1001,7 +1001,7 @@ export class TransgenticMcpServer {
             },
             model: {
               type: 'string',
-              description: 'Optional target model ID (e.g. gpt-4o, claude-3-5-sonnet, o1, grok-3). If allowMcpOverride is enabled, switches model in Webview.',
+              description: 'Optional model ID discovered from the current provider picker, or default to keep its current selection. An unavailable explicit choice fails before submission.',
             },
             files: filesProperty,
             ...sessionProperties,
@@ -1609,6 +1609,12 @@ export class TransgenticMcpServer {
         DynamicRouter.resolveTargetModel(providerId, effectiveMode, requestedModel, pipeline) ||
         ModelRegistryManager.getEffectiveModel(providerId, requestedModel) ||
         undefined;
+      if (requestedModel && requestedModel !== 'default' && targetModel !== requestedModel) {
+        const error = new Error(`[MODEL_SELECTION_FAILED] The requested model ${requestedModel} is unavailable for ${providerId}. The prompt was not submitted.`);
+        if (forcedProvider) throw error;
+        lastCandidateError = error;
+        continue;
+      }
 
       let effectiveSettings: MediaSettings = {};
       if (['image', 'video', 'music'].includes(effectiveMode)) {

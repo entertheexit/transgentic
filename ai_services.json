@@ -9,7 +9,7 @@
       "hidden": false,
       "url": "https://chatgpt.com",
       "partition": "persist:chatgpt",
-      "defaultModelId": "gpt-4o",
+      "defaultModelId": "default",
       "accentColor": "emerald",
       "iconName": "Bot",
       "theme": {
@@ -23,56 +23,15 @@
       },
       "models": [
         {
-          "id": "gpt-4o",
-          "displayName": "GPT-4o (Omni & Multimodal)",
+          "id": "default",
+          "displayName": "Current provider model",
           "enabled": true,
           "discoveredAvailable": true,
           "userEnabled": true,
-          "requiresTier": "Free/Plus",
-          "mode": "general",
           "modes": [
             "general",
             "coding",
             "image"
-          ]
-        },
-        {
-          "id": "o1",
-          "displayName": "o1 (Deep Reasoning)",
-          "enabled": true,
-          "discoveredAvailable": true,
-          "userEnabled": true,
-          "requiresTier": "Plus/Pro",
-          "mode": "general",
-          "modes": [
-            "general",
-            "coding"
-          ]
-        },
-        {
-          "id": "o3-mini",
-          "displayName": "o3-mini (High Speed Reasoning)",
-          "enabled": true,
-          "discoveredAvailable": true,
-          "userEnabled": true,
-          "requiresTier": "Free/Plus",
-          "mode": "coding",
-          "modes": [
-            "coding",
-            "general"
-          ]
-        },
-        {
-          "id": "gpt-4o-mini",
-          "displayName": "GPT-4o mini (Lightweight)",
-          "enabled": true,
-          "discoveredAvailable": true,
-          "userEnabled": true,
-          "requiresTier": "Free",
-          "mode": "general",
-          "modes": [
-            "general",
-            "coding"
           ]
         }
       ]
@@ -85,7 +44,7 @@
       "hidden": false,
       "url": "https://claude.ai",
       "partition": "persist:claude",
-      "defaultModelId": "claude-3-5-sonnet",
+      "defaultModelId": "default",
       "accentColor": "amber",
       "iconName": "Brain",
       "theme": {
@@ -99,39 +58,11 @@
       },
       "models": [
         {
-          "id": "claude-3-5-sonnet",
-          "displayName": "Claude 3.5 Sonnet (Coding & Reasoning)",
+          "id": "default",
+          "displayName": "Current provider model",
           "enabled": true,
           "discoveredAvailable": true,
           "userEnabled": true,
-          "requiresTier": "Free/Pro",
-          "mode": "coding",
-          "modes": [
-            "general",
-            "coding"
-          ]
-        },
-        {
-          "id": "claude-3-opus",
-          "displayName": "Claude 3 Opus (High Intelligence)",
-          "enabled": true,
-          "discoveredAvailable": true,
-          "userEnabled": true,
-          "requiresTier": "Pro",
-          "mode": "general",
-          "modes": [
-            "general",
-            "coding"
-          ]
-        },
-        {
-          "id": "claude-3-5-haiku",
-          "displayName": "Claude 3.5 Haiku (Lightning Fast)",
-          "enabled": true,
-          "discoveredAvailable": true,
-          "userEnabled": true,
-          "requiresTier": "Free/Pro",
-          "mode": "general",
           "modes": [
             "general",
             "coding"
@@ -147,7 +78,7 @@
       "hidden": false,
       "url": "https://gemini.google.com/app",
       "partition": "persist:gemini",
-      "defaultModelId": "gemini-2-0-flash",
+      "defaultModelId": "default",
       "accentColor": "blue",
       "iconName": "Sparkles",
       "theme": {
@@ -161,63 +92,15 @@
       },
       "models": [
         {
-          "id": "gemini-2-0-flash",
-          "displayName": "Gemini 2.0 Flash (Next-Gen Multimodal)",
+          "id": "default",
+          "displayName": "Current provider model",
           "enabled": true,
           "discoveredAvailable": true,
           "userEnabled": true,
-          "requiresTier": "Free/Advanced",
-          "mode": "general",
           "modes": [
             "general",
             "coding",
             "image",
-            "video",
-            "music"
-          ]
-        },
-        {
-          "id": "gemini-2-0-pro",
-          "displayName": "Gemini 2.0 Pro Experimental",
-          "enabled": true,
-          "discoveredAvailable": true,
-          "userEnabled": true,
-          "requiresTier": "Advanced",
-          "mode": "general",
-          "modes": [
-            "general",
-            "coding",
-            "image",
-            "video",
-            "music"
-          ]
-        },
-        {
-          "id": "gemini-1-5-flash",
-          "displayName": "Gemini 1.5 Flash (Fast)",
-          "enabled": true,
-          "discoveredAvailable": true,
-          "userEnabled": true,
-          "requiresTier": "Free",
-          "mode": "general",
-          "modes": [
-            "general",
-            "coding",
-            "video",
-            "music"
-          ]
-        },
-        {
-          "id": "gemini-1-5-pro",
-          "displayName": "Gemini 1.5 Pro (2M Context)",
-          "enabled": true,
-          "discoveredAvailable": true,
-          "userEnabled": true,
-          "requiresTier": "Free/Advanced",
-          "mode": "general",
-          "modes": [
-            "general",
-            "coding",
             "video",
             "music"
           ]
@@ -232,7 +115,7 @@
       "hidden": false,
       "url": "https://grok.com",
       "partition": "persist:grok",
-      "defaultModelId": "grok-3",
+      "defaultModelId": "default",
       "accentColor": "purple",
       "iconName": "Cpu",
       "theme": {
@@ -246,58 +129,16 @@
       },
       "models": [
         {
-          "id": "grok-3",
-          "displayName": "Grok 3 (State-of-the-Art)",
+          "id": "default",
+          "displayName": "Current provider model",
           "enabled": true,
           "discoveredAvailable": true,
           "userEnabled": true,
-          "requiresTier": "Premium",
-          "mode": "general",
           "modes": [
             "general",
             "coding",
-            "video"
-          ]
-        },
-        {
-          "id": "grok-3-think",
-          "displayName": "Grok 3 Think / DeepSearch",
-          "enabled": true,
-          "discoveredAvailable": true,
-          "userEnabled": true,
-          "requiresTier": "Premium+",
-          "mode": "general",
-          "modes": [
-            "general",
-            "coding",
-            "video"
-          ]
-        },
-        {
-          "id": "grok-2",
-          "displayName": "Grok 2 (Speed & Coding)",
-          "enabled": true,
-          "discoveredAvailable": true,
-          "userEnabled": true,
-          "requiresTier": "Premium",
-          "mode": "coding",
-          "modes": [
-            "general",
-            "coding"
-          ]
-        },
-        {
-          "id": "grok-2-vision",
-          "displayName": "Grok 2 Vision / Imagine",
-          "enabled": true,
-          "discoveredAvailable": true,
-          "userEnabled": true,
-          "requiresTier": "Premium",
-          "mode": "image",
-          "modes": [
             "image",
-            "video",
-            "general"
+            "video"
           ]
         }
       ]

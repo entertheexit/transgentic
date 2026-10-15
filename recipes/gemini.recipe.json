@@ -1,5 +1,5 @@
 {
-  "version": "1.1.2",
+  "version": "1.1.3",
   "id": "gemini",
   "title": "Google Gemini",
   "domainMatch": "gemini.google.com",
@@ -58,7 +58,7 @@
     "inputPrompt": "div.ql-editor, rich-textarea textarea, rich-textarea div[contenteditable=\"true\"], div[contenteditable=\"true\"]",
     "submitButton": "button[aria-label*=\"Send message\" i], button[aria-label*=\"Send prompt\" i], button[aria-label*=\"Send\" i], button[aria-label*=\"ส่ง\" i], button.send-button, button[mattooltip*=\"Send\" i]",
     "stopButton": "button[aria-label*=\"Stop\" i], .streaming-indicator",
-    "modelDropdownTrigger": "button[aria-label*=\"model\" i], div.model-switcher"
+    "modelDropdownTrigger": "button[aria-label*=\"Open mode picker\" i], button[aria-label*=\"model\" i], div.model-switcher"
   },
   "response": {
     "container": "model-response, response-container, structured-content-container, message-content",

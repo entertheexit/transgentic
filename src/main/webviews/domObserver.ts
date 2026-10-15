@@ -228,6 +228,45 @@ export class DomObserver {
               if (toolProtocolText !== null) return toolProtocolText;
               const clone = target.cloneNode(true);
               if (clone && clone.querySelectorAll) {
+                const preserveCodeFence = (block, code) => {
+                  const fenced = document.createElement('span');
+                  const newline = String.fromCharCode(10);
+                  const fence = String.fromCharCode(96).repeat(3);
+                  fenced.textContent = newline + fence + newline +
+                    (code.textContent || '').trimEnd() + newline + fence + newline;
+                  block.replaceWith(fenced);
+                };
+                if (recipe?.response?.codeBlockSelector) {
+                  for (const block of clone.querySelectorAll(selectorString(recipe.response.codeBlockSelector))) {
+                    const code = block.querySelector('pre code');
+                    if (code) preserveCodeFence(block, code);
+                  }
+                }
+                if (${JSON.stringify(providerId)} === 'chatgpt') {
+                  for (const block of clone.querySelectorAll('[data-code-block="true"]')) {
+                    const code = block.querySelector('pre code');
+                    if (code) preserveCodeFence(block, code);
+                  }
+                }
+                if (${JSON.stringify(providerId)} === 'grok') {
+                  for (const pre of clone.querySelectorAll('pre[role="group"][aria-label$=" code"]')) {
+                    const code = pre.querySelector('code');
+                    const block = pre.parentElement?.parentElement;
+                    if (code && block) preserveCodeFence(block, code);
+                  }
+                }
+                if (${JSON.stringify(providerId)} === 'claude') {
+                  for (const block of clone.querySelectorAll('div[role="group"][aria-label$=" code"]:has(pre code)')) {
+                    const code = block.querySelector('pre code');
+                    if (code) preserveCodeFence(block, code);
+                  }
+                }
+                if (${JSON.stringify(providerId)} === 'gemini') {
+                  for (const block of clone.querySelectorAll('code-block:has(pre code)')) {
+                    const code = block.querySelector('pre code');
+                    if (code) preserveCodeFence(block, code);
+                  }
+                }
                 const toRemove = clone.querySelectorAll(
                   (selectorString(recipe?.response?.excludeSelectors) ? selectorString(recipe.response.excludeSelectors) + ', ' : '') + 'details, [data-conversation-role], button, ' +
                   '[data-testid*="thought" i], ' +

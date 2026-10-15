@@ -35,7 +35,7 @@ describe('request log categories', () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'transgentic-log-fallback-')); roots.push(root);
     const store = new PersistentLogStorage();
     (store as any).getStoragePath = () => path.join(root, 'request_logs.json');
-    for (const status of ['success', 'failed']) store.insert({ id: status, timestamp: 1, mode: 'general', targetProvider: 'webview_aipass', status,
+    for (const status of ['success', 'failed']) store.insert({ id: status, timestamp: 1, mode: 'general', targetProvider: 'webview_custom_example', status,
       temporaryChat: true, maskedSecretsCount: 0, promptSnippet: 'sentinel',
       chatExecution: { policy: 'prefer-temporary', actualMode: 'normal', verified: false, fallbackReason: 'unsupported' } } as any);
     store.insert({ id: 'unresolved', timestamp: 2, mode: 'general', targetProvider: 'chatgpt', status: 'failed', maskedSecretsCount: 0,

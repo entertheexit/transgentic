@@ -13,9 +13,90 @@ function webview(document: any = {}) {
   return {
     isDestroyed: () => false,
     executeJavaScript: vi.fn(async (script: string) =>
-      runInNewContext(script, { document, setTimeout: (fn: () => void) => fn() })),
+      runInNewContext(script, {
+        document, setTimeout: (fn: () => void) => fn(),
+        getComputedStyle: () => ({ display: 'block', visibility: 'visible' }),
+        KeyboardEvent: class { constructor(_type: string, _options: unknown) {} },
+      })),
   } as any;
 }
+
+describe('Built-in web model controls', () => {
+  it('does not invent a catalog when the picker is unavailable', async () => {
+    const view = webview({ querySelectorAll: () => [] });
+    expect(await ModelScraperEngine.discoverModels('gemini', view)).toEqual([]);
+    await expect(ModelScraperEngine.selectRequestedModel('gemini', '3-8-flash', view))
+      .rejects.toThrow('[MODEL_SELECTION_FAILED]');
+  });
+
+  it('discovers the enabled current choices and rejects a disabled choice before submission', async () => {
+    let opened = false;
+    const trigger = {
+      textContent: 'Flash-Lite', getAttribute: () => 'Open mode picker, currently Flash-Lite',
+      getClientRects: () => [1], click: () => { opened = !opened; },
+    };
+    const choice = (label: string, disabled = false) => ({
+      textContent: `${label} Description`,
+      classList: { contains: () => false },
+      querySelector: (selector: string) => selector === '.label' ? { textContent: label } : null,
+      getAttribute: (name: string) => name === 'data-mode-id' ? label : null,
+      getClientRects: () => [1], matches: (selector: string) => disabled && selector.includes('disabled'),
+      click: vi.fn(),
+    });
+    const available = choice('3.8 Flash');
+    const disabled = choice('4 Argon', true);
+    const view = webview({
+      querySelectorAll: (selector: string) => selector.includes('Open mode picker') ? [trigger] : opened ? [available, disabled] : [],
+      dispatchEvent: () => { opened = false; },
+    });
+    expect(await ModelScraperEngine.discoverModels('gemini', view)).toEqual([{ id: '3-8-flash', displayName: '3.8 Flash' }]);
+    expect(opened).toBe(false);
+    await expect(ModelScraperEngine.selectRequestedModel('gemini', '4-argon', view))
+      .rejects.toThrow('[MODEL_SELECTION_FAILED]');
+    expect(disabled.click).not.toHaveBeenCalled();
+  });
+
+  it('selects and verifies one already-open Gemini choice', async () => {
+    let current = 'Other model';
+    let selected = false;
+    const trigger = {
+      textContent: current,
+      getAttribute: (name: string) => name === 'aria-expanded' ? 'true' : current,
+      getClientRects: () => [1], click: vi.fn(),
+    };
+    const choice = {
+      textContent: '3.8 Flash All-around help',
+      querySelector: (selector: string) => selector === '.label' ? { textContent: '3.8 Flash' } : null,
+      getAttribute: () => null,
+      classList: { contains: (name: string) => name === 'selected' && selected },
+      getClientRects: () => [1], matches: () => false,
+      click: vi.fn(() => { selected = true; current = 'Open mode picker, currently Flash'; }),
+    };
+    const view = webview({
+      querySelectorAll: (selector: string) => selector.includes('Open mode picker') ? [trigger] : [choice],
+    });
+    await expect(ModelScraperEngine.selectRequestedModel('gemini', '3-8-flash', view)).resolves.toBeUndefined();
+    expect(trigger.click).toHaveBeenCalledTimes(1);
+    expect(choice.click).toHaveBeenCalledTimes(1);
+  });
+
+  it('accepts Gemini selected state even when the trigger abbreviates the model name', async () => {
+    const trigger = {
+      textContent: 'Flash', getAttribute: (name: string) => name === 'aria-expanded' ? 'true' : 'Open mode picker, currently Flash',
+      getClientRects: () => [1], click: vi.fn(),
+    };
+    const choice = {
+      textContent: '3.8 Flash All-around help',
+      querySelector: () => ({ textContent: '3.8 Flash' }),
+      getAttribute: () => null,
+      classList: { contains: (name: string) => name === 'selected' },
+      getClientRects: () => [1], matches: () => false, click: vi.fn(),
+    };
+    const view = webview({ querySelectorAll: (selector: string) => selector.includes('Open mode picker') ? [trigger] : [choice] });
+    await expect(ModelScraperEngine.selectRequestedModel('gemini', '3-8-flash', view)).resolves.toBeUndefined();
+    expect(choice.click).not.toHaveBeenCalled();
+  });
+});
 
 describe('Recipe-driven custom model controls', () => {
   beforeEach(() => {

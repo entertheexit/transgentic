@@ -16,13 +16,13 @@ export class ModelScraperEngine {
 
     switch (providerId) {
       case 'chatgpt':
-        return this.scrapeChatGPT(webContents);
+        return this.scrapeBuiltIn('chatgpt', webContents);
       case 'claude':
-        return this.scrapeClaude(webContents);
+        return this.scrapeBuiltIn('claude', webContents);
       case 'gemini':
-        return this.scrapeGemini(webContents);
+        return this.scrapeBuiltIn('gemini', webContents);
       case 'grok':
-        return this.scrapeGrok(webContents);
+        return this.scrapeBuiltIn('grok', webContents);
       default:
         if (
           providerId.startsWith('custom_') ||
@@ -49,13 +49,13 @@ export class ModelScraperEngine {
 
     switch (providerId) {
       case 'chatgpt':
-        return this.switchChatGPT(targetModelId, webContents);
+        return this.switchBuiltIn('chatgpt', targetModelId, webContents);
       case 'claude':
-        return this.switchClaude(targetModelId, webContents);
+        return this.switchBuiltIn('claude', targetModelId, webContents);
       case 'gemini':
-        return this.switchGemini(targetModelId, webContents);
+        return this.switchBuiltIn('gemini', targetModelId, webContents);
       case 'grok':
-        return this.switchGrok(targetModelId, webContents);
+        return this.switchBuiltIn('grok', targetModelId, webContents);
       default:
         if (
           providerId.startsWith('custom_') ||
@@ -68,206 +68,137 @@ export class ModelScraperEngine {
     }
   }
 
-  // --- Scraper Implementations ---
+  // Built-in sites change their picker labels frequently. Discover only choices visible to
+  // the current account; never advertise a catalog inferred from API or CLI model names.
+  private static readonly pickerTriggers: Record<string, string> = {
+    chatgpt: '[data-testid="model-selector-button"], button[aria-label*="model" i]',
+    claude: 'button[aria-label*="model" i], [data-testid="model-selector"]',
+    gemini: 'button[aria-label*="Open mode picker" i], button[aria-label*="model" i], div.model-switcher',
+    grok: 'button[aria-label*="model" i]',
+  };
 
-  private static async scrapeChatGPT(
-    webContents: WebContents
-  ): Promise<Array<{ id: string; displayName: string; requiresTier?: string }>> {
+  private static readonly pickerItems = '[role="menuitemradio"], [role="option"], [role="menuitem"], mat-option';
+
+  private static readonly geminiModelItems = '[role="menuitem"][data-mode-id]';
+
+  private static async scrapeBuiltIn(
+    providerId: string, webContents: WebContents
+  ): Promise<Array<{ id: string; displayName: string }>> {
     try {
-      return await webContents.executeJavaScript(`
-        (function() {
-          const discovered = [];
-          const defaultList = [
-            { id: 'gpt-4o', displayName: 'GPT-4o (Omni & Multimodal)', requiresTier: 'Free/Plus' },
-            { id: 'o1', displayName: 'o1 (Deep Reasoning)', requiresTier: 'Plus/Pro' },
-            { id: 'o3-mini', displayName: 'o3-mini (High Speed Reasoning)', requiresTier: 'Free/Plus' },
-            { id: 'gpt-4o-mini', displayName: 'GPT-4o mini (Lightweight)', requiresTier: 'Free' }
-          ];
-
-          // Check model switcher elements
-          const selectorBtn = document.querySelector('[data-testid="model-selector-button"], button[aria-haspopup="menu"]');
-          if (selectorBtn) {
-            const text = selectorBtn.textContent || '';
-            if (text.includes('4o')) discovered.push({ id: 'gpt-4o', displayName: 'GPT-4o' });
-            if (text.includes('o1')) discovered.push({ id: 'o1', displayName: 'o1' });
-            if (text.includes('o3-mini')) discovered.push({ id: 'o3-mini', displayName: 'o3-mini' });
-          }
-
-          // Return discovered or fallback to verified defaults
-          return discovered.length > 0 ? defaultList : defaultList;
-        })()
-      `, true);
-    } catch {
-      return [];
-    }
-  }
-
-  private static async scrapeClaude(
-    webContents: WebContents
-  ): Promise<Array<{ id: string; displayName: string; requiresTier?: string }>> {
-    try {
-      return await webContents.executeJavaScript(`
-        (function() {
-          const defaultList = [
-            { id: 'claude-3-5-sonnet', displayName: 'Claude 3.5 Sonnet (Coding & Reasoning)', requiresTier: 'Free/Pro' },
-            { id: 'claude-3-opus', displayName: 'Claude 3 Opus (High Intelligence)', requiresTier: 'Pro' },
-            { id: 'claude-3-5-haiku', displayName: 'Claude 3.5 Haiku (Lightning Fast)', requiresTier: 'Free/Pro' }
-          ];
-          return defaultList;
-        })()
-      `, true);
-    } catch {
-      return [];
-    }
-  }
-
-  private static async scrapeGemini(
-    webContents: WebContents
-  ): Promise<Array<{ id: string; displayName: string; requiresTier?: string }>> {
-    try {
-      return await webContents.executeJavaScript(`
-        (function() {
-          const defaultList = [
-            { id: 'gemini-2-0-flash', displayName: 'Gemini 2.0 Flash (Next-Gen Multimodal)', requiresTier: 'Free/Advanced' },
-            { id: 'gemini-2-0-pro', displayName: 'Gemini 2.0 Pro Experimental', requiresTier: 'Advanced' },
-            { id: 'gemini-1-5-flash', displayName: 'Gemini 1.5 Flash (Fast)', requiresTier: 'Free' },
-            { id: 'gemini-1-5-pro', displayName: 'Gemini 1.5 Pro (2M Context)', requiresTier: 'Free/Advanced' }
-          ];
-          return defaultList;
-        })()
-      `, true);
-    } catch {
-      return [];
-    }
-  }
-
-  private static async scrapeGrok(
-    webContents: WebContents
-  ): Promise<Array<{ id: string; displayName: string; requiresTier?: string }>> {
-    try {
-      return await webContents.executeJavaScript(`
-        (function() {
-          const defaultList = [
-            { id: 'grok-3', displayName: 'Grok 3 (State-of-the-Art)', requiresTier: 'Premium' },
-            { id: 'grok-3-think', displayName: 'Grok 3 Think / DeepSearch', requiresTier: 'Premium+' },
-            { id: 'grok-2', displayName: 'Grok 2 (Speed & Coding)', requiresTier: 'Premium' },
-            { id: 'grok-2-vision', displayName: 'Grok 2 Vision / Imagine', requiresTier: 'Premium' }
-          ];
-          return defaultList;
-        })()
-      `, true);
-    } catch {
-      return [];
-    }
-  }
-
-  // --- Switcher Implementations ---
-
-  private static async switchChatGPT(targetModelId: string, webContents: WebContents): Promise<boolean> {
-    try {
-      const script = `
+      const result = await webContents.executeJavaScript(`
         (async function() {
-          try {
-            const btnSelector = '[data-testid="model-selector-button"], button[aria-haspopup="menu"]';
-            const btn = document.querySelector(btnSelector);
-            if (btn) {
-              const rect = btn.getBoundingClientRect();
-              const clickX = rect.left + rect.width / 2;
-              const clickY = rect.top + rect.height / 2;
-              btn.dispatchEvent(new MouseEvent('click', { clientX: clickX, clientY: clickY, bubbles: true }));
+          const triggerSelector = ${JSON.stringify(this.pickerTriggers[providerId])};
+          const itemSelector = ${JSON.stringify(providerId === 'gemini' ? this.geminiModelItems : this.pickerItems)};
+          const provider = ${JSON.stringify(providerId)};
+          const visible = element => {
+            const style = getComputedStyle(element);
+            return style.display !== 'none' && style.visibility !== 'hidden' && element.getClientRects().length > 0;
+          };
+          const choices = () => Array.from(document.querySelectorAll(itemSelector))
+            .filter(item => visible(item) && !item.matches('[aria-disabled="true"], [disabled], [data-disabled="true"]'))
+            .map(item => {
+              const displayName = (provider === 'gemini'
+                ? item.querySelector('.label')?.textContent
+                : item.getAttribute('aria-label') || item.textContent || '').trim().split('\\n')[0].trim();
+              const id = item.getAttribute('data-model-id') || displayName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+              return { id, displayName };
+            }).filter(item => item.id && item.displayName);
+          let trigger = Array.from(document.querySelectorAll(triggerSelector)).find(visible);
+          for (let i = 0; i < 50 && !trigger; i++) {
+            await new Promise(resolve => setTimeout(resolve, 100));
+            trigger = Array.from(document.querySelectorAll(triggerSelector)).find(visible);
+          }
+          if (!trigger) return [];
+          let opened = false;
+          if (trigger.getAttribute('aria-expanded') !== 'true') {
+            trigger.click(); opened = true;
+          }
+          let found = choices();
+          for (let i = 0; i < 30 && !found.length; i++) {
+            await new Promise(resolve => setTimeout(resolve, 100));
+            found = choices();
+          }
+          if (opened) {
+            if (provider === 'gemini') trigger.click();
+            else document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+          }
+          return Array.from(new Map(found.map(item => [item.id, item])).values());
+        })()
+      `, true);
+      return Array.isArray(result) ? result : [];
+    } catch {
+      return [];
+    }
+  }
 
-              await new Promise(r => setTimeout(r, 220));
-
-              const items = Array.from(document.querySelectorAll('[role="menuitem"], [data-testid*="model-"]'));
-              for (const item of items) {
-                const text = (item.textContent || '').toLowerCase();
-                if (
-                  ('${targetModelId}'.includes('4o') && text.includes('4o') && !text.includes('mini')) ||
-                  ('${targetModelId}'.includes('o1') && text.includes('o1')) ||
-                  ('${targetModelId}'.includes('o3') && text.includes('o3-mini')) ||
-                  ('${targetModelId}'.includes('mini') && text.includes('mini'))
-                ) {
-                  const itemRect = item.getBoundingClientRect();
-                  item.dispatchEvent(new MouseEvent('click', { clientX: itemRect.left + itemRect.width / 2, clientY: itemRect.top + itemRect.height / 2, bubbles: true }));
-                  return true;
-                }
+  private static async switchBuiltIn(
+    providerId: string, targetModelId: string, webContents: WebContents
+  ): Promise<boolean> {
+    try {
+      return Boolean(await webContents.executeJavaScript(`
+        (async function() {
+          const triggerSelector = ${JSON.stringify(this.pickerTriggers[providerId])};
+          const itemSelector = ${JSON.stringify(providerId === 'gemini' ? this.geminiModelItems : this.pickerItems)};
+          const provider = ${JSON.stringify(providerId)};
+          const target = ${JSON.stringify(targetModelId)};
+          const normalize = value => String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+          const visible = element => {
+            const style = getComputedStyle(element);
+            return style.display !== 'none' && style.visibility !== 'hidden' && element.getClientRects().length > 0;
+          };
+          const trigger = Array.from(document.querySelectorAll(triggerSelector)).find(visible);
+          if (!trigger) return false;
+          const active = label => {
+            const current = trigger.getAttribute('aria-label') || trigger.textContent || '';
+            return normalize(current) === normalize(label) || normalize(current).endsWith(normalize(label));
+          };
+          const find = () => Array.from(document.querySelectorAll(itemSelector)).filter(visible).filter(item => {
+            const label = (provider === 'gemini'
+              ? item.querySelector('.label')?.textContent
+              : item.getAttribute('aria-label') || item.textContent || '').trim().split('\\n')[0].trim();
+            const id = item.getAttribute('data-model-id') || label.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+            return id === target || normalize(label) === normalize(target);
+          });
+          if (active(target)) return true;
+          let opened = false;
+          if (trigger.getAttribute('aria-expanded') !== 'true') {
+            trigger.click(); opened = true;
+          }
+          let matches = find();
+          for (let i = 0; i < 12 && !matches.length; i++) {
+            await new Promise(resolve => setTimeout(resolve, 100));
+            matches = find();
+          }
+          if (matches.length !== 1 || matches[0].matches('[aria-disabled="true"], [disabled], [data-disabled="true"]')) {
+            if (opened) document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+            return false;
+          }
+          const item = matches[0];
+          if (provider === 'gemini' && item.classList.contains('selected')) {
+            if (opened) trigger.click();
+            return true;
+          }
+          const label = (provider === 'gemini'
+            ? item.querySelector('.label')?.textContent
+            : item.getAttribute('aria-label') || item.textContent || '').trim().split('\\n')[0].trim();
+          item.click();
+          for (let i = 0; i < 20; i++) {
+            if (provider === 'gemini') {
+              if (trigger.getAttribute('aria-expanded') !== 'true') trigger.click();
+              const selected = find().filter(candidate => candidate.classList.contains('selected'));
+              if (selected.length === 1) {
+                trigger.click();
+                return true;
               }
+            } else if (active(label) || item.getAttribute('aria-checked') === 'true' || item.getAttribute('aria-selected') === 'true') {
+              return true;
             }
-            return true;
-          } catch {
-            return false;
+            await new Promise(resolve => setTimeout(resolve, 100));
           }
+          if (provider === 'gemini' && trigger.getAttribute('aria-expanded') === 'true') trigger.click();
+          return false;
         })()
-      `;
-      return await webContents.executeJavaScript(script, true);
-    } catch {
-      return false;
-    }
-  }
-
-  private static async switchClaude(targetModelId: string, webContents: WebContents): Promise<boolean> {
-    try {
-      const script = `
-        (function() {
-          try {
-            const selector = document.querySelector('button[aria-label*="model"], [data-testid="model-selector"]');
-            if (selector) {
-              const rect = selector.getBoundingClientRect();
-              selector.dispatchEvent(new MouseEvent('click', { clientX: rect.left + rect.width / 2, clientY: rect.top + rect.height / 2, bubbles: true }));
-            }
-            return true;
-          } catch {
-            return false;
-          }
-        })()
-      `;
-      return await webContents.executeJavaScript(script, true);
-    } catch {
-      return false;
-    }
-  }
-
-  private static async switchGemini(targetModelId: string, webContents: WebContents): Promise<boolean> {
-    try {
-      const script = `
-        (function() {
-          try {
-            const selector = document.querySelector('button[aria-label*="model"], div.model-switcher');
-            if (selector) {
-              const rect = selector.getBoundingClientRect();
-              selector.dispatchEvent(new MouseEvent('click', { clientX: rect.left + rect.width / 2, clientY: rect.top + rect.height / 2, bubbles: true }));
-            }
-            return true;
-          } catch {
-            return false;
-          }
-        })()
-      `;
-      return await webContents.executeJavaScript(script, true);
-    } catch {
-      return false;
-    }
-  }
-
-  private static async switchGrok(targetModelId: string, webContents: WebContents): Promise<boolean> {
-    try {
-      const script = `
-        (function() {
-          try {
-            if ('${targetModelId}'.includes('think')) {
-              const thinkBtn = document.querySelector('button:contains("Think"), button[aria-label*="Think"]');
-              if (thinkBtn) {
-                const rect = thinkBtn.getBoundingClientRect();
-                thinkBtn.dispatchEvent(new MouseEvent('click', { clientX: rect.left + rect.width / 2, clientY: rect.top + rect.height / 2, bubbles: true }));
-              }
-            }
-            return true;
-          } catch {
-            return false;
-          }
-        })()
-      `;
-      return await webContents.executeJavaScript(script, true);
+      `, true));
     } catch {
       return false;
     }
@@ -282,7 +213,7 @@ export class ModelScraperEngine {
     // "default" means use the current provider selection, not a named model.
     if (modelId === 'default') return;
     const switched = await this.switchModel(providerId, modelId, webContents);
-    if (!switched && /^(custom_|webview_|recipe_)/.test(providerId)) {
+    if (!switched) {
       throw new Error(`[MODEL_SELECTION_FAILED] Model selection failed for ${modelId}. The prompt was not submitted. Check the installed recipe's modelSelection controls and the provider's model picker.`);
     }
   }

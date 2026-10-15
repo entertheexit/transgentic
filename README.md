@@ -381,6 +381,7 @@ Model responses include `content` and structured fields such as `status`, `answe
 | [Custom webview recipes](docs/RECIPES.md) | Recipe fields, JSON examples, installation, consent, storage, selector repair |
 | [Architecture and data handling](docs/ARCHITECTURE.md) | Request flow, session lifecycle, credential masking, storage boundaries |
 | [Development and builds](docs/DEVELOPMENT.md) | Source setup, isolated tests, desktop packaging, documentation maintenance |
+| [Weekly provider health check](docs/PROVIDER_HEALTH_CHECK.md) | Repeatable model, mode, Temporary Chat, CLI, transport, and recipe verification |
 | [Publication guidance](docs/PUBLICATION.md) | Source hygiene, release review, third-party notices, publication checks |
 
 The guides describe this source checkout. They are not a live provider compatibility list or confirmation that an installed release includes every documented change.

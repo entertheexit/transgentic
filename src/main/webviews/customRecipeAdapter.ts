@@ -245,7 +245,10 @@ export class CustomRecipeAdapter extends BaseProviderAdapter {
               // 2. Explicit logged-out markers
               const loggedOutSel = ${JSON.stringify(toCombinedCssSelector(authCfg?.loggedOutSelector || null))};
               if (loggedOutSel) {
-                const hasLoggedOutEl = !!document.querySelector(loggedOutSel);
+                const hasLoggedOutEl = Array.from(document.querySelectorAll(loggedOutSel)).some(element => {
+                  const style = getComputedStyle(element);
+                  return style.display !== 'none' && style.visibility !== 'hidden' && element.getClientRects().length > 0;
+                });
                 if (hasLoggedOutEl) return false;
               }
 
@@ -495,7 +498,9 @@ export class CustomRecipeAdapter extends BaseProviderAdapter {
       await verifyMedia?.();
       const rawInput = modeConfig?.inputSelector || this.recipe.selectors.inputPrompt;
       const inputSelector = toCombinedCssSelector(rawInput);
-      const inputResult = await this.dispatchRealisticInput(inputSelector, prompt);
+      const inputResult = this.recipe.id === 'chatgpt' && mode === 'image'
+        ? await this.dispatchPromptAfterImagePill(inputSelector, prompt)
+        : await this.dispatchRealisticInput(inputSelector, prompt);
       if (!inputResult?.success) throw new Error(`Failed to inject prompt into "${this.name}": ${inputResult?.error || 'Target input not found'}`);
       await new Promise((r) => setTimeout(r, 250));
 
@@ -546,6 +551,47 @@ export class CustomRecipeAdapter extends BaseProviderAdapter {
       if (!this.temporaryChatRequired) throw new Error(`[WEBVIEW_SUBMISSION_UNCERTAIN] The prompt may have been submitted, and the response could not be completed: ${error?.message || 'unknown provider error'}`);
       throw error;
     }
+  }
+
+  private async dispatchPromptAfterImagePill(selector: string, prompt: string): Promise<{ success: boolean; error?: string }> {
+    if (!this.webContents || this.webContents.isDestroyed()) {
+      return { success: false, error: 'ChatGPT composer is unavailable.' };
+    }
+
+    const pillSelector = '[data-inline-selection-pill][data-system-hint-type="picture_v2"]';
+    const focusState = await this.executeScript<string>(`(() => {
+      const editor = [...document.querySelectorAll(${JSON.stringify(selector)})].find(el => {
+        const rect = el.getBoundingClientRect();
+        return el.isContentEditable && rect.width > 0 && rect.height > 0 && el.querySelector(${JSON.stringify(pillSelector)});
+      });
+      const pill = editor?.querySelector(${JSON.stringify(pillSelector)});
+      if (!editor || !pill) return 'missing';
+      const existingPrompt = (editor.textContent || '').replace(pill.textContent || '', '').trim();
+      if (existingPrompt === ${JSON.stringify(prompt.trim())}) return 'already-entered';
+      if (existingPrompt) return 'occupied:' + existingPrompt.length;
+      editor.focus();
+      const range = document.createRange();
+      range.setStartAfter(pill);
+      range.collapse(true);
+      const selection = window.getSelection();
+      selection?.removeAllRanges();
+      selection?.addRange(range);
+      return document.activeElement === editor ? 'ready' : 'not-focused';
+    })()`);
+    if (focusState === 'already-entered') return { success: true };
+    if (focusState !== 'ready') return { success: false, error: `The selected ChatGPT image composer was not ready (${focusState}).` };
+
+    // Image mode is an inline, non-editable pill. Replacing the editor's whole
+    // selection would erase it, so insert text after the pill and verify both.
+    await this.webContents.insertText(prompt);
+    const preserved = await this.executeScript<boolean>(`(() => {
+      const editor = [...document.querySelectorAll(${JSON.stringify(selector)})].find(el =>
+        el.querySelector(${JSON.stringify(pillSelector)}));
+      return !!editor && (editor.innerText || editor.textContent || '').includes(${JSON.stringify(prompt)});
+    })()`);
+    return preserved
+      ? { success: true }
+      : { success: false, error: 'ChatGPT image mode or prompt was lost during entry.' };
   }
 
   private async attachFiles(upload: NonNullable<RecipeModes[keyof RecipeModes]>['inputAttachments'], attachments: readonly StagedAttachment[], abortSignal?: AbortSignal): Promise<void> {

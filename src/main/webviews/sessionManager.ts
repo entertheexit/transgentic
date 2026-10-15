@@ -667,6 +667,13 @@ export class SessionManager {
         } catch {
           isDomAuth = null;
         }
+      } else if (adapter instanceof CustomRecipeAdapter && adapter.supportsTemporaryChat()) {
+        // Availability observed in a previous view may belong to another account or session.
+        current.temporaryChat = {
+          supported: true,
+          availability: 'unknown',
+          reason: 'Temporary Chat will be checked when the provider view opens.',
+        };
       }
 
       // If active DOM is loaded, DOM auth is the source of truth (detects explicit logouts immediately).
@@ -674,14 +681,8 @@ export class SessionManager {
       let isAuth = false;
       if (isDomAuth !== null) {
         isAuth = isDomAuth;
-        if (isDomAuth === false) {
-          // If live DOM reports false (e.g. login screen or intermediate redirect)
-          // but partition contains valid session cookies, retain authenticated state
-          if (hasAuthCookies) {
-            isAuth = true;
-          } else if (activeAcc) {
-            AccountRegistryManager.markStatus(id, activeAcc.id, 'unauthenticated');
-          }
+        if (isDomAuth === false && activeAcc) {
+          AccountRegistryManager.markStatus(id, activeAcc.id, 'unauthenticated');
         }
       } else {
         // When drawer is closed, partition cookies indicate valid stored session.

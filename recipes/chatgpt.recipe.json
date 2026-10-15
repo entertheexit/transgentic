@@ -1,5 +1,5 @@
 {
-  "version": "1.2.2",
+  "version": "1.2.3",
   "id": "chatgpt",
   "title": "OpenAI ChatGPT",
   "domainMatch": "chatgpt.com",
@@ -133,7 +133,7 @@
             }
           ],
           "activeWhen": {
-            "selectors": "button:not([data-list-navigation-item]):has(svg path[d^=\"M7 21.005c-2.211\"])"
+            "selectors": "[data-inline-selection-pill][data-system-hint-type=\"picture_v2\"]"
           },
           "settings": [],
           "nativeDefaults": {

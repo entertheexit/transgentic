@@ -221,13 +221,21 @@ export class RecipeManager {
     }
     const cleanId = id.replace(/^custom_|^recipe_/, '');
 
+    const withBundledTemporaryChat = (recipe: CustomRecipe): CustomRecipe => {
+      const bundled = (BUILTIN_RECIPES as Record<string, CustomRecipe>)[cleanId];
+      if (recipe.id !== cleanId || !bundled?.temporaryChat || recipe.temporaryChat !== undefined) return recipe;
+      // Older personalized built-in overrides may predate the native privacy contract.
+      // Inherit the current bundled declaration without changing the saved override.
+      return { ...recipe, temporaryChat: bundled.temporaryChat };
+    };
+
     // 1. Local healed override takes top priority
-    if (this.healedMap.has(id)) return this.healedMap.get(id);
-    if (this.healedMap.has(cleanId)) return this.healedMap.get(cleanId);
+    if (this.healedMap.has(id)) return withBundledTemporaryChat(this.healedMap.get(id)!);
+    if (this.healedMap.has(cleanId)) return withBundledTemporaryChat(this.healedMap.get(cleanId)!);
 
     // 2. Custom recipe
-    if (this.recipesMap.has(id)) return this.recipesMap.get(id);
-    if (this.recipesMap.has(cleanId)) return this.recipesMap.get(cleanId);
+    if (this.recipesMap.has(id)) return withBundledTemporaryChat(this.recipesMap.get(id)!);
+    if (this.recipesMap.has(cleanId)) return withBundledTemporaryChat(this.recipesMap.get(cleanId)!);
 
     // 3. Bundled built-in default
     if ((BUILTIN_RECIPES as any)[cleanId]) {
