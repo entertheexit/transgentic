@@ -175,6 +175,23 @@ describe('Recipe Versioning, Storage & Self-Healing Tests', () => {
   });
 
   describe('Self-Healing Recipe Versioning, History & Rollback', () => {
+    it('inherits a bundled Temporary Chat contract for an older built-in override without changing its file', () => {
+      const bundled = recipeManager.getRecipe('chatgpt')!;
+      const olderOverride = { ...bundled, selectors: { ...bundled.selectors, inputPrompt: '#personalized-input' } };
+      delete olderOverride.temporaryChat;
+      const healedFile = path.join(tempBaseDir, 'Recipes', 'Healed', 'chatgpt.json');
+      fs.writeFileSync(healedFile, JSON.stringify(olderOverride), 'utf8');
+      recipeManager.loadPersistedRecipes();
+
+      expect(recipeManager.getRecipe('chatgpt')?.temporaryChat).toEqual(bundled.temporaryChat);
+      expect(recipeManager.getRecipe('chatgpt')?.selectors.inputPrompt).toBe('#personalized-input');
+      expect(JSON.parse(fs.readFileSync(healedFile, 'utf8')).temporaryChat).toBeUndefined();
+
+      fs.writeFileSync(healedFile, JSON.stringify({ ...olderOverride, temporaryChat: { enabled: false } }), 'utf8');
+      recipeManager.loadPersistedRecipes();
+      expect(recipeManager.getRecipe('chatgpt')?.temporaryChat).toEqual({ enabled: false });
+    });
+
     it('should heal selectors, bump version, create history snapshot, and persist to Recipes/Healed/', async () => {
       // 1. Use the current built-in recipe version as the healing baseline.
       const initialRecipe = recipeManager.getRecipe('chatgpt');

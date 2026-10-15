@@ -3,7 +3,7 @@ import type { CustomRecipe } from '../types/recipe.js';
 
 export const BUILTIN_RECIPES: Record<'chatgpt' | 'claude' | 'gemini' | 'grok', CustomRecipe> = {
   "chatgpt": {
-    "version": "1.2.2",
+    "version": "1.2.3",
     "id": "chatgpt",
     "title": "OpenAI ChatGPT",
     "domainMatch": "chatgpt.com",
@@ -137,7 +137,7 @@ export const BUILTIN_RECIPES: Record<'chatgpt' | 'claude' | 'gemini' | 'grok', C
               }
             ],
             "activeWhen": {
-              "selectors": "button:not([data-list-navigation-item]):has(svg path[d^=\"M7 21.005c-2.211\"])"
+              "selectors": "[data-inline-selection-pill][data-system-hint-type=\"picture_v2\"]"
             },
             "settings": [],
             "nativeDefaults": {
@@ -264,7 +264,7 @@ export const BUILTIN_RECIPES: Record<'chatgpt' | 'claude' | 'gemini' | 'grok', C
     }
   },
   "gemini": {
-    "version": "1.1.2",
+    "version": "1.1.3",
     "id": "gemini",
     "title": "Google Gemini",
     "domainMatch": "gemini.google.com",
@@ -323,7 +323,7 @@ export const BUILTIN_RECIPES: Record<'chatgpt' | 'claude' | 'gemini' | 'grok', C
       "inputPrompt": "div.ql-editor, rich-textarea textarea, rich-textarea div[contenteditable=\"true\"], div[contenteditable=\"true\"]",
       "submitButton": "button[aria-label*=\"Send message\" i], button[aria-label*=\"Send prompt\" i], button[aria-label*=\"Send\" i], button[aria-label*=\"ส่ง\" i], button.send-button, button[mattooltip*=\"Send\" i]",
       "stopButton": "button[aria-label*=\"Stop\" i], .streaming-indicator",
-      "modelDropdownTrigger": "button[aria-label*=\"model\" i], div.model-switcher"
+      "modelDropdownTrigger": "button[aria-label*=\"Open mode picker\" i], button[aria-label*=\"model\" i], div.model-switcher"
     },
     "response": {
       "container": "model-response, response-container, structured-content-container, message-content",
@@ -4396,7 +4396,7 @@ export const BUILTIN_RECIPES: Record<'chatgpt' | 'claude' | 'gemini' | 'grok', C
     "modeSchemaVersion": 2
   },
   "grok": {
-    "version": "1.1.0",
+    "version": "1.1.4",
     "id": "grok",
     "modeSchemaVersion": 2,
     "title": "xAI Grok",
@@ -4443,7 +4443,7 @@ export const BUILTIN_RECIPES: Record<'chatgpt' | 'claude' | 'gemini' | 'grok', C
     },
     "createdAt": "2026-01-01T00:00:00.000Z",
     "selectors": {
-      "inputPrompt": "textarea[aria-label=\"Ask Grok anything\"], textarea[placeholder*=\"Ask\" i], textarea[placeholder*=\"Grok\" i], textarea[data-id=\"root\"], form textarea, div[contenteditable=\"true\"][role=\"textbox\"]",
+      "inputPrompt": "div[contenteditable=\"true\"][role=\"combobox\"][aria-label=\"Ask Grok anything\"], textarea[aria-label=\"Ask Grok anything\"], textarea[placeholder*=\"Ask\" i], textarea[placeholder*=\"Grok\" i], textarea[data-id=\"root\"], form textarea, div[contenteditable=\"true\"][role=\"textbox\"]",
       "submitButton": "button[data-testid=\"chat-submit\"], button[type=\"submit\"][aria-label=\"Submit\"], button[aria-label=\"Send\"], button[data-testid=\"send-button\"]",
       "stopButton": "button[aria-label*=\"Stop\" i]",
       "modelDropdownTrigger": "#model-select-trigger, button[aria-label=\"Model select\"]"
@@ -4492,14 +4492,14 @@ export const BUILTIN_RECIPES: Record<'chatgpt' | 'claude' | 'gemini' | 'grok', C
               {
                 "action": "click",
                 "target": {
-                  "scope": "form [role=\"radiogroup\"]:has(button[aria-label])",
-                  "selectors": "button[role=\"radio\"]:has(svg > path[d^=\"M14.0996 2.5\"])"
+                  "scope": "[role=\"group\"][aria-label=\"Generation mode\"]",
+                  "selectors": "button[role=\"radio\"][aria-label=\"Image\"]"
                 }
               }
             ],
             "activeWhen": {
-              "scope": "form [role=\"radiogroup\"]:has(button[aria-label])",
-              "selectors": "button[role=\"radio\"]:has(svg > path[d^=\"M14.0996 2.5\"])",
+              "scope": "[role=\"group\"][aria-label=\"Generation mode\"]",
+              "selectors": "button[role=\"radio\"][aria-label=\"Image\"]",
               "requiredAttributes": {
                 "aria-checked": "true"
               }
@@ -4518,7 +4518,7 @@ export const BUILTIN_RECIPES: Record<'chatgpt' | 'claude' | 'gemini' | 'grok', C
                       {
                         "action": "click",
                         "target": {
-                          "scope": "form [role=\"radiogroup\"]:not(:has(button[aria-label]))",
+                          "scope": "[role=\"group\"][aria-label=\"Image generation speed\"]",
                           "selectors": "button[role=\"radio\"]",
                           "index": 0,
                           "expectedCount": 2
@@ -4526,7 +4526,7 @@ export const BUILTIN_RECIPES: Record<'chatgpt' | 'claude' | 'gemini' | 'grok', C
                       }
                     ],
                     "selectedWhen": {
-                      "scope": "form [role=\"radiogroup\"]:not(:has(button[aria-label]))",
+                      "scope": "[role=\"group\"][aria-label=\"Image generation speed\"]",
                       "selectors": "button[role=\"radio\"]",
                       "index": 0,
                       "expectedCount": 2,
@@ -4542,7 +4542,7 @@ export const BUILTIN_RECIPES: Record<'chatgpt' | 'claude' | 'gemini' | 'grok', C
                       {
                         "action": "click",
                         "target": {
-                          "scope": "form [role=\"radiogroup\"]:not(:has(button[aria-label]))",
+                          "scope": "[role=\"group\"][aria-label=\"Image generation speed\"]",
                           "selectors": "button[role=\"radio\"]",
                           "index": 1,
                           "expectedCount": 2
@@ -4550,7 +4550,7 @@ export const BUILTIN_RECIPES: Record<'chatgpt' | 'claude' | 'gemini' | 'grok', C
                       }
                     ],
                     "selectedWhen": {
-                      "scope": "form [role=\"radiogroup\"]:not(:has(button[aria-label]))",
+                      "scope": "[role=\"group\"][aria-label=\"Image generation speed\"]",
                       "selectors": "button[role=\"radio\"]",
                       "index": 1,
                       "expectedCount": 2,
@@ -4932,14 +4932,14 @@ export const BUILTIN_RECIPES: Record<'chatgpt' | 'claude' | 'gemini' | 'grok', C
               {
                 "action": "click",
                 "target": {
-                  "scope": "form [role=\"radiogroup\"]:has(button[aria-label])",
-                  "selectors": "button[role=\"radio\"]:has(svg > path[d^=\"M13.7314 4.00586\"])"
+                  "scope": "[role=\"group\"][aria-label=\"Generation mode\"]",
+                  "selectors": "button[role=\"radio\"][aria-label=\"Video\"]"
                 }
               }
             ],
             "activeWhen": {
-              "scope": "form [role=\"radiogroup\"]:has(button[aria-label])",
-              "selectors": "button[role=\"radio\"]:has(svg > path[d^=\"M13.7314 4.00586\"])",
+              "scope": "[role=\"group\"][aria-label=\"Generation mode\"]",
+              "selectors": "button[role=\"radio\"][aria-label=\"Video\"]",
               "requiredAttributes": {
                 "aria-checked": "true"
               }
@@ -4958,7 +4958,7 @@ export const BUILTIN_RECIPES: Record<'chatgpt' | 'claude' | 'gemini' | 'grok', C
                       {
                         "action": "click",
                         "target": {
-                          "scope": "form [role=\"radiogroup\"]:not(:has(button[aria-label])):has(button:nth-child(2)):not(:has(button:nth-child(3)))",
+                          "scope": "[role=\"group\"][aria-label=\"Video resolution\"]",
                           "selectors": "button[role=\"radio\"]",
                           "index": 0,
                           "expectedCount": 2,
@@ -4971,7 +4971,7 @@ export const BUILTIN_RECIPES: Record<'chatgpt' | 'claude' | 'gemini' | 'grok', C
                       }
                     ],
                     "selectedWhen": {
-                      "scope": "form [role=\"radiogroup\"]:not(:has(button[aria-label])):has(button:nth-child(2)):not(:has(button:nth-child(3)))",
+                      "scope": "[role=\"group\"][aria-label=\"Video resolution\"]",
                       "selectors": "button[role=\"radio\"]",
                       "index": 0,
                       "expectedCount": 2,
@@ -4992,7 +4992,7 @@ export const BUILTIN_RECIPES: Record<'chatgpt' | 'claude' | 'gemini' | 'grok', C
                       {
                         "action": "click",
                         "target": {
-                          "scope": "form [role=\"radiogroup\"]:not(:has(button[aria-label])):has(button:nth-child(2)):not(:has(button:nth-child(3)))",
+                          "scope": "[role=\"group\"][aria-label=\"Video resolution\"]",
                           "selectors": "button[role=\"radio\"]",
                           "index": 1,
                           "expectedCount": 2,
@@ -5005,7 +5005,7 @@ export const BUILTIN_RECIPES: Record<'chatgpt' | 'claude' | 'gemini' | 'grok', C
                       }
                     ],
                     "selectedWhen": {
-                      "scope": "form [role=\"radiogroup\"]:not(:has(button[aria-label])):has(button:nth-child(2)):not(:has(button:nth-child(3)))",
+                      "scope": "[role=\"group\"][aria-label=\"Video resolution\"]",
                       "selectors": "button[role=\"radio\"]",
                       "index": 1,
                       "expectedCount": 2,
@@ -5034,7 +5034,7 @@ export const BUILTIN_RECIPES: Record<'chatgpt' | 'claude' | 'gemini' | 'grok', C
                       {
                         "action": "click",
                         "target": {
-                          "scope": "form [role=\"radiogroup\"]:not(:has(button[aria-label])):has(button:nth-child(3))",
+                          "scope": "[role=\"group\"][aria-label=\"Video duration\"]",
                           "selectors": "button[role=\"radio\"]",
                           "index": 0,
                           "expectedCount": 3,
@@ -5048,7 +5048,7 @@ export const BUILTIN_RECIPES: Record<'chatgpt' | 'claude' | 'gemini' | 'grok', C
                       }
                     ],
                     "selectedWhen": {
-                      "scope": "form [role=\"radiogroup\"]:not(:has(button[aria-label])):has(button:nth-child(3))",
+                      "scope": "[role=\"group\"][aria-label=\"Video duration\"]",
                       "selectors": "button[role=\"radio\"]",
                       "index": 0,
                       "expectedCount": 3,
@@ -5070,7 +5070,7 @@ export const BUILTIN_RECIPES: Record<'chatgpt' | 'claude' | 'gemini' | 'grok', C
                       {
                         "action": "click",
                         "target": {
-                          "scope": "form [role=\"radiogroup\"]:not(:has(button[aria-label])):has(button:nth-child(3))",
+                          "scope": "[role=\"group\"][aria-label=\"Video duration\"]",
                           "selectors": "button[role=\"radio\"]",
                           "index": 1,
                           "expectedCount": 3,
@@ -5084,7 +5084,7 @@ export const BUILTIN_RECIPES: Record<'chatgpt' | 'claude' | 'gemini' | 'grok', C
                       }
                     ],
                     "selectedWhen": {
-                      "scope": "form [role=\"radiogroup\"]:not(:has(button[aria-label])):has(button:nth-child(3))",
+                      "scope": "[role=\"group\"][aria-label=\"Video duration\"]",
                       "selectors": "button[role=\"radio\"]",
                       "index": 1,
                       "expectedCount": 3,
@@ -5106,7 +5106,7 @@ export const BUILTIN_RECIPES: Record<'chatgpt' | 'claude' | 'gemini' | 'grok', C
                       {
                         "action": "click",
                         "target": {
-                          "scope": "form [role=\"radiogroup\"]:not(:has(button[aria-label])):has(button:nth-child(3))",
+                          "scope": "[role=\"group\"][aria-label=\"Video duration\"]",
                           "selectors": "button[role=\"radio\"]",
                           "index": 2,
                           "expectedCount": 3,
@@ -5120,7 +5120,7 @@ export const BUILTIN_RECIPES: Record<'chatgpt' | 'claude' | 'gemini' | 'grok', C
                       }
                     ],
                     "selectedWhen": {
-                      "scope": "form [role=\"radiogroup\"]:not(:has(button[aria-label])):has(button:nth-child(3))",
+                      "scope": "[role=\"group\"][aria-label=\"Video duration\"]",
                       "selectors": "button[role=\"radio\"]",
                       "index": 2,
                       "expectedCount": 3,
@@ -5158,9 +5158,10 @@ export const BUILTIN_RECIPES: Record<'chatgpt' | 'claude' | 'gemini' | 'grok', C
                         "target": {
                           "scope": "[role=\"menu\"]",
                           "selectors": "[role=\"menuitemradio\"]",
-                          "index": 0,
-                          "expectedCount": 5,
+                          "index": 1,
+                          "expectedCount": 6,
                           "identities": [
+                            "Auto",
                             "2:3",
                             "3:2",
                             "1:1",
@@ -5168,7 +5169,7 @@ export const BUILTIN_RECIPES: Record<'chatgpt' | 'claude' | 'gemini' | 'grok', C
                             "16:9"
                           ],
                           "identityAttribute": "textContent",
-                          "identitySelector": "span.text-center"
+                          "identitySelector": "span.text-sm:not(:has(span)), span.text-center"
                         }
                       }
                     ],
@@ -5183,9 +5184,10 @@ export const BUILTIN_RECIPES: Record<'chatgpt' | 'claude' | 'gemini' | 'grok', C
                     "selectedWhen": {
                       "scope": "[role=\"menu\"]",
                       "selectors": "[role=\"menuitemradio\"]",
-                      "index": 0,
-                      "expectedCount": 5,
+                      "index": 1,
+                      "expectedCount": 6,
                       "identities": [
+                        "Auto",
                         "2:3",
                         "3:2",
                         "1:1",
@@ -5193,7 +5195,7 @@ export const BUILTIN_RECIPES: Record<'chatgpt' | 'claude' | 'gemini' | 'grok', C
                         "16:9"
                       ],
                       "identityAttribute": "textContent",
-                      "identitySelector": "span.text-center",
+                      "identitySelector": "span.text-sm:not(:has(span)), span.text-center",
                       "requiredAttributes": {
                         "aria-checked": "true"
                       }
@@ -5225,9 +5227,10 @@ export const BUILTIN_RECIPES: Record<'chatgpt' | 'claude' | 'gemini' | 'grok', C
                         "target": {
                           "scope": "[role=\"menu\"]",
                           "selectors": "[role=\"menuitemradio\"]",
-                          "index": 1,
-                          "expectedCount": 5,
+                          "index": 2,
+                          "expectedCount": 6,
                           "identities": [
+                            "Auto",
                             "2:3",
                             "3:2",
                             "1:1",
@@ -5235,7 +5238,7 @@ export const BUILTIN_RECIPES: Record<'chatgpt' | 'claude' | 'gemini' | 'grok', C
                             "16:9"
                           ],
                           "identityAttribute": "textContent",
-                          "identitySelector": "span.text-center"
+                          "identitySelector": "span.text-sm:not(:has(span)), span.text-center"
                         }
                       }
                     ],
@@ -5250,9 +5253,10 @@ export const BUILTIN_RECIPES: Record<'chatgpt' | 'claude' | 'gemini' | 'grok', C
                     "selectedWhen": {
                       "scope": "[role=\"menu\"]",
                       "selectors": "[role=\"menuitemradio\"]",
-                      "index": 1,
-                      "expectedCount": 5,
+                      "index": 2,
+                      "expectedCount": 6,
                       "identities": [
+                        "Auto",
                         "2:3",
                         "3:2",
                         "1:1",
@@ -5260,7 +5264,7 @@ export const BUILTIN_RECIPES: Record<'chatgpt' | 'claude' | 'gemini' | 'grok', C
                         "16:9"
                       ],
                       "identityAttribute": "textContent",
-                      "identitySelector": "span.text-center",
+                      "identitySelector": "span.text-sm:not(:has(span)), span.text-center",
                       "requiredAttributes": {
                         "aria-checked": "true"
                       }
@@ -5292,9 +5296,10 @@ export const BUILTIN_RECIPES: Record<'chatgpt' | 'claude' | 'gemini' | 'grok', C
                         "target": {
                           "scope": "[role=\"menu\"]",
                           "selectors": "[role=\"menuitemradio\"]",
-                          "index": 2,
-                          "expectedCount": 5,
+                          "index": 3,
+                          "expectedCount": 6,
                           "identities": [
+                            "Auto",
                             "2:3",
                             "3:2",
                             "1:1",
@@ -5302,7 +5307,7 @@ export const BUILTIN_RECIPES: Record<'chatgpt' | 'claude' | 'gemini' | 'grok', C
                             "16:9"
                           ],
                           "identityAttribute": "textContent",
-                          "identitySelector": "span.text-center"
+                          "identitySelector": "span.text-sm:not(:has(span)), span.text-center"
                         }
                       }
                     ],
@@ -5317,9 +5322,10 @@ export const BUILTIN_RECIPES: Record<'chatgpt' | 'claude' | 'gemini' | 'grok', C
                     "selectedWhen": {
                       "scope": "[role=\"menu\"]",
                       "selectors": "[role=\"menuitemradio\"]",
-                      "index": 2,
-                      "expectedCount": 5,
+                      "index": 3,
+                      "expectedCount": 6,
                       "identities": [
+                        "Auto",
                         "2:3",
                         "3:2",
                         "1:1",
@@ -5327,7 +5333,7 @@ export const BUILTIN_RECIPES: Record<'chatgpt' | 'claude' | 'gemini' | 'grok', C
                         "16:9"
                       ],
                       "identityAttribute": "textContent",
-                      "identitySelector": "span.text-center",
+                      "identitySelector": "span.text-sm:not(:has(span)), span.text-center",
                       "requiredAttributes": {
                         "aria-checked": "true"
                       }
@@ -5359,9 +5365,10 @@ export const BUILTIN_RECIPES: Record<'chatgpt' | 'claude' | 'gemini' | 'grok', C
                         "target": {
                           "scope": "[role=\"menu\"]",
                           "selectors": "[role=\"menuitemradio\"]",
-                          "index": 3,
-                          "expectedCount": 5,
+                          "index": 4,
+                          "expectedCount": 6,
                           "identities": [
+                            "Auto",
                             "2:3",
                             "3:2",
                             "1:1",
@@ -5369,7 +5376,7 @@ export const BUILTIN_RECIPES: Record<'chatgpt' | 'claude' | 'gemini' | 'grok', C
                             "16:9"
                           ],
                           "identityAttribute": "textContent",
-                          "identitySelector": "span.text-center"
+                          "identitySelector": "span.text-sm:not(:has(span)), span.text-center"
                         }
                       }
                     ],
@@ -5384,9 +5391,10 @@ export const BUILTIN_RECIPES: Record<'chatgpt' | 'claude' | 'gemini' | 'grok', C
                     "selectedWhen": {
                       "scope": "[role=\"menu\"]",
                       "selectors": "[role=\"menuitemradio\"]",
-                      "index": 3,
-                      "expectedCount": 5,
+                      "index": 4,
+                      "expectedCount": 6,
                       "identities": [
+                        "Auto",
                         "2:3",
                         "3:2",
                         "1:1",
@@ -5394,7 +5402,7 @@ export const BUILTIN_RECIPES: Record<'chatgpt' | 'claude' | 'gemini' | 'grok', C
                         "16:9"
                       ],
                       "identityAttribute": "textContent",
-                      "identitySelector": "span.text-center",
+                      "identitySelector": "span.text-sm:not(:has(span)), span.text-center",
                       "requiredAttributes": {
                         "aria-checked": "true"
                       }
@@ -5426,9 +5434,10 @@ export const BUILTIN_RECIPES: Record<'chatgpt' | 'claude' | 'gemini' | 'grok', C
                         "target": {
                           "scope": "[role=\"menu\"]",
                           "selectors": "[role=\"menuitemradio\"]",
-                          "index": 4,
-                          "expectedCount": 5,
+                          "index": 5,
+                          "expectedCount": 6,
                           "identities": [
+                            "Auto",
                             "2:3",
                             "3:2",
                             "1:1",
@@ -5436,7 +5445,7 @@ export const BUILTIN_RECIPES: Record<'chatgpt' | 'claude' | 'gemini' | 'grok', C
                             "16:9"
                           ],
                           "identityAttribute": "textContent",
-                          "identitySelector": "span.text-center"
+                          "identitySelector": "span.text-sm:not(:has(span)), span.text-center"
                         }
                       }
                     ],
@@ -5451,9 +5460,10 @@ export const BUILTIN_RECIPES: Record<'chatgpt' | 'claude' | 'gemini' | 'grok', C
                     "selectedWhen": {
                       "scope": "[role=\"menu\"]",
                       "selectors": "[role=\"menuitemradio\"]",
-                      "index": 4,
-                      "expectedCount": 5,
+                      "index": 5,
+                      "expectedCount": 6,
                       "identities": [
+                        "Auto",
                         "2:3",
                         "3:2",
                         "1:1",
@@ -5461,7 +5471,7 @@ export const BUILTIN_RECIPES: Record<'chatgpt' | 'claude' | 'gemini' | 'grok', C
                         "16:9"
                       ],
                       "identityAttribute": "textContent",
-                      "identitySelector": "span.text-center",
+                      "identitySelector": "span.text-sm:not(:has(span)), span.text-center",
                       "requiredAttributes": {
                         "aria-checked": "true"
                       }

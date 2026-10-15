@@ -35,6 +35,22 @@ export async function applyMediaControls(config: RecipeGeneration, settings: Med
     if (typeof result !== 'boolean') throw new Error(result.error);
     return result;
   };
+  const inspectStable = async (target: MediaLocator): Promise<boolean> => {
+    const deadline = Date.now() + 5000;
+    do {
+      if (signal?.aborted) throw Object.assign(new Error('Media setup cancelled.'), { name: 'AbortError' });
+      try { return await inspect(target); }
+      catch (error) {
+        if (!(error instanceof Error) ||
+          error.message !== 'Media control scope is ambiguous.' ||
+          Date.now() >= deadline) {
+          throw error;
+        }
+        // The provider can briefly render both outgoing and incoming menu overlays.
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+    } while (true);
+  };
   const wait = async (target: MediaLocator, click: boolean | 'pointerDown' = false, absent = false) => {
     const deadline = Date.now() + 5000;
     let structureError: Error | undefined;
@@ -45,7 +61,11 @@ export async function applyMediaControls(config: RecipeGeneration, settings: Med
       catch (error) {
         // Animated menus may expose only part of their option group initially.
         // Never select until the complete count guard succeeds.
-        if (!(error instanceof Error) || !error.message.startsWith('Media option count changed (')) throw error;
+        if (!(error instanceof Error) ||
+          (!error.message.startsWith('Media option count changed (') &&
+            error.message !== 'Media control scope is ambiguous.')) {
+          throw error;
+        }
         structureError = error;
       }
       if (absent ? !present : present) return;
@@ -70,7 +90,7 @@ export async function applyMediaControls(config: RecipeGeneration, settings: Med
     try { await wait(choice.selectedWhen); } finally { await execute(choice.closeSteps); }
   };
   try {
-    if (!await inspect(config.activeWhen)) {
+    if (!await inspectStable(config.activeWhen)) {
       await execute(config.activationSteps);
       await wait(config.activeWhen);
     }
@@ -87,7 +107,7 @@ export async function applyMediaControls(config: RecipeGeneration, settings: Med
       if (!(setting.key in settings)) continue;
       const choice = setting.options.find(o => o.value === settings[setting.key]);
       if (!choice) throw new Error(`Unsupported ${setting.key}.`);
-      if (!await inspect(choice.selectedWhen)) await execute(choice.steps);
+      if (!await inspectStable(choice.selectedWhen)) await execute(choice.steps);
       await verifyChoice(choice);
     }
     await verify();

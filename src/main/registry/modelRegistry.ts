@@ -20,55 +20,44 @@ export class ModelRegistryManager {
       serviceEnabled: true,
       activeSelectionMode: 'hybrid',
       allowMcpOverride: true,
-      defaultModelId: 'gpt-4o',
+      defaultModelId: 'default',
       hourlyLimit: 30,
       cooldownSeconds: 6,
       models: [
-        { id: 'gpt-4o', displayName: 'GPT-4o (Omni & Multimodal)', discoveredAvailable: true, userEnabled: true, requiresTier: 'Free/Plus', mode: 'general', modes: ['general', 'coding', 'image'] },
-        { id: 'o1', displayName: 'o1 (Deep Reasoning)', discoveredAvailable: true, userEnabled: true, requiresTier: 'Plus/Pro', mode: 'general', modes: ['general', 'coding'] },
-        { id: 'o3-mini', displayName: 'o3-mini (High Speed Reasoning)', discoveredAvailable: true, userEnabled: true, requiresTier: 'Free/Plus', mode: 'coding', modes: ['coding', 'general'] },
-        { id: 'gpt-4o-mini', displayName: 'GPT-4o mini (Lightweight)', discoveredAvailable: true, userEnabled: true, requiresTier: 'Free', mode: 'general', modes: ['general', 'coding'] },
+        { id: 'default', displayName: 'Current provider model', discoveredAvailable: true, userEnabled: true, modes: ['general', 'coding', 'image'] },
       ],
     },
     claude: {
       serviceEnabled: true,
       activeSelectionMode: 'hybrid',
       allowMcpOverride: true,
-      defaultModelId: 'claude-3-5-sonnet',
+      defaultModelId: 'default',
       hourlyLimit: 35,
       cooldownSeconds: 6,
       models: [
-        { id: 'claude-3-5-sonnet', displayName: 'Claude 3.5 Sonnet (Coding & Reasoning)', discoveredAvailable: true, userEnabled: true, requiresTier: 'Free/Pro', mode: 'coding', modes: ['general', 'coding'] },
-        { id: 'claude-3-opus', displayName: 'Claude 3 Opus (High Intelligence)', discoveredAvailable: true, userEnabled: true, requiresTier: 'Pro', mode: 'general', modes: ['general', 'coding'] },
-        { id: 'claude-3-5-haiku', displayName: 'Claude 3.5 Haiku (Lightning Fast)', discoveredAvailable: true, userEnabled: true, requiresTier: 'Free/Pro', mode: 'general', modes: ['general', 'coding'] },
+        { id: 'default', displayName: 'Current provider model', discoveredAvailable: true, userEnabled: true, modes: ['general', 'coding'] },
       ],
     },
     gemini: {
       serviceEnabled: true,
       activeSelectionMode: 'hybrid',
       allowMcpOverride: true,
-      defaultModelId: 'gemini-2-0-flash',
+      defaultModelId: 'default',
       hourlyLimit: 50,
       cooldownSeconds: 5,
       models: [
-        { id: 'gemini-2-0-flash', displayName: 'Gemini 2.0 Flash (Next-Gen Multimodal)', discoveredAvailable: true, userEnabled: true, requiresTier: 'Free/Advanced', mode: 'general', modes: ['general', 'coding', 'image', 'video', 'music'] },
-        { id: 'gemini-2-0-pro', displayName: 'Gemini 2.0 Pro Experimental', discoveredAvailable: true, userEnabled: true, requiresTier: 'Advanced', mode: 'general', modes: ['general', 'coding', 'image', 'video', 'music'] },
-        { id: 'gemini-1-5-flash', displayName: 'Gemini 1.5 Flash (Fast)', discoveredAvailable: true, userEnabled: true, requiresTier: 'Free', mode: 'general', modes: ['general', 'coding', 'video', 'music'] },
-        { id: 'gemini-1-5-pro', displayName: 'Gemini 1.5 Pro (2M Context)', discoveredAvailable: true, userEnabled: true, requiresTier: 'Free/Advanced', mode: 'general', modes: ['general', 'coding', 'video', 'music'] },
+        { id: 'default', displayName: 'Current provider model', discoveredAvailable: true, userEnabled: true, modes: ['general', 'coding', 'image', 'video', 'music'] },
       ],
     },
     grok: {
       serviceEnabled: true,
       activeSelectionMode: 'hybrid',
       allowMcpOverride: true,
-      defaultModelId: 'grok-3',
+      defaultModelId: 'default',
       hourlyLimit: 40,
       cooldownSeconds: 6,
       models: [
-        { id: 'grok-3', displayName: 'Grok 3 (State-of-the-Art)', discoveredAvailable: true, userEnabled: true, requiresTier: 'Premium', mode: 'general', modes: ['general', 'coding', 'video'] },
-        { id: 'grok-3-think', displayName: 'Grok 3 Think / DeepSearch', discoveredAvailable: true, userEnabled: true, requiresTier: 'Premium+', mode: 'general', modes: ['general', 'coding', 'video'] },
-        { id: 'grok-2', displayName: 'Grok 2 (Speed & Coding)', discoveredAvailable: true, userEnabled: true, requiresTier: 'Premium', mode: 'coding', modes: ['general', 'coding'] },
-        { id: 'grok-2-vision', displayName: 'Grok 2 Vision / Imagine', discoveredAvailable: true, userEnabled: true, requiresTier: 'Premium', mode: 'image', modes: ['image', 'video', 'general'] },
+        { id: 'default', displayName: 'Current provider model', discoveredAvailable: true, userEnabled: true, modes: ['general', 'coding', 'image', 'video'] },
       ],
     },
   };
@@ -112,6 +101,25 @@ export class ModelRegistryManager {
 
     for (const config of Object.values(this.currentRegistry)) {
       if (config?.models) config.models = config.models.map(normalizeModelEntryModes);
+    }
+
+    // A saved web catalog is historical until this account's picker is observed again.
+    for (const id of ['chatgpt', 'claude', 'gemini', 'grok'] as const) {
+      const config = this.currentRegistry[id];
+      if (!config) continue;
+      for (const model of config.models) {
+        if (model.id !== 'default') model.discoveredAvailable = false;
+      }
+      if (!config.models.some(model => model.id === 'default')) {
+        config.models.unshift({
+          id: 'default', displayName: 'Current provider model',
+          discoveredAvailable: true, userEnabled: true,
+          modes: ['general', 'coding', 'image', 'video', 'music'],
+        });
+      }
+      if (!config.models.some(model => model.id === config.defaultModelId)) {
+        config.defaultModelId = 'default';
+      }
     }
 
     // Ensure serviceEnabled aligns with ServiceManifestManager
@@ -337,11 +345,14 @@ export class ModelRegistryManager {
     const config = this.currentRegistry[providerId];
     if (!config) return this.getRegistry();
 
+    ServiceManifestManager.setDiscoveredWebModels(providerId, discovered);
+
     const discoveredIds = new Set(discovered.map((d) => d.id));
     const nowIso = new Date().toISOString();
 
     // 1. Update existing models
     for (const existing of config.models) {
+      if (existing.id === 'default') continue;
       if (discoveredIds.has(existing.id)) {
         existing.discoveredAvailable = true;
         existing.lastSeen = nowIso;

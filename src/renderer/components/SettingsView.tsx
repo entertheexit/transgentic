@@ -586,7 +586,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     serviceEnabled: true,
     activeSelectionMode: 'hybrid',
     allowMcpOverride: true,
-    defaultModelId: 'gpt-4o',
+    defaultModelId: 'default',
     hourlyLimit: 30,
     cooldownSeconds: 6,
     models: [],
@@ -2303,7 +2303,7 @@ http_headers = { "Authorization" = "Bearer ${clientToken || 'YOUR_TOKEN'}" }`;
                       <div>
                         <span className="text-amber-300 font-bold">GET /claude/sse</span>
                         <p className="text-[10px] text-slate-400 font-sans mt-0.5">
-                          Dedicated direct Claude 3.5 Sonnet / Opus endpoint.
+                          Dedicated direct Claude endpoint using the active web model.
                         </p>
                       </div>
                       <button
@@ -2318,7 +2318,7 @@ http_headers = { "Authorization" = "Bearer ${clientToken || 'YOUR_TOKEN'}" }`;
                       <div>
                         <span className="text-emerald-300 font-bold">GET /chatgpt/sse</span>
                         <p className="text-[10px] text-slate-400 font-sans mt-0.5">
-                          Dedicated direct ChatGPT (GPT-4o, o1, o3-mini) endpoint.
+                          Dedicated direct ChatGPT endpoint using the active web model.
                         </p>
                       </div>
                       <button
@@ -2354,7 +2354,7 @@ http_headers = { "Authorization" = "Bearer ${clientToken || 'YOUR_TOKEN'}" }`;
                         <div>• <b>mode</b> (enum): general | writing | coding | image | video | music</div>
                         <div>• <b>writing</b>: Keeps Writing guidance and identity while using General route settings.</div>
                         <div>• <b>provider</b> (enum): chatgpt | claude | gemini | grok</div>
-                        <div>• <b>model</b> (string): e.g. 'gpt-4o', 'o1', 'claude-3-5-sonnet', 'grok-3'</div>
+                        <div>• <b>model</b> (string): 'default' or an ID discovered from the current provider picker.</div>
                         <div>• <b>threadId</b> (string): Conversation session ID for stateful multi-turn memory.</div>
                         <div>• <b>newThread</b> (boolean): Force fresh conversation session creation.</div>
                         <div>• <b>projectName</b> (string): Workspace or thread name.</div>
@@ -3537,7 +3537,7 @@ http_headers = { "Authorization" = "Bearer ${clientToken || 'YOUR_TOKEN'}" }`;
               {resyncSuccess && (
                 <div className="text-[10px] font-mono text-emerald-400 bg-emerald-500/10 px-2 py-1 rounded-lg border border-emerald-500/20 flex items-center gap-1.5">
                   <CheckCircle2 className="w-3.5 h-3.5" />
-                  <span>Live models refreshed & synced non-destructively!</span>
+                  <span>Model scan finished. Available choices appear below when the provider picker exposes them.</span>
                 </div>
               )}
 
@@ -3699,7 +3699,7 @@ http_headers = { "Authorization" = "Bearer ${clientToken || 'YOUR_TOKEN'}" }`;
                       Allow MCP Tool Model Override
                     </span>
                     <p className="text-[9px] text-slate-500 font-mono">
-                      Enables Codex/Antigravity to pass specific model argument (e.g. o1, opus, grok-3).
+                      Enables a client to request a model currently available in the provider picker.
                     </p>
                   </div>
                   <label className="relative inline-flex items-center cursor-pointer">

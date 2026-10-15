@@ -29,15 +29,27 @@ describe.skipIf(!CLI_IDS.includes(selected as CliProviderId))('opt-in native CLI
       expect(fs.readFileSync(path.join(workspace, 'verification.txt'), 'utf8').trim()).toBe('marigold');
     } finally { globalCliRuntime.dispose(); globalCliRuntime.clearSessions(); fs.rmSync(workspace, { recursive: true, force: true }); }
   }, 70000);
-  it.skipIf(selected !== 'cli_codex')('runs a command while project editing remains disabled', async () => {
+  it.skipIf(selected !== 'cli_codex' && selected !== 'cli_antigravity')('runs a command while project editing remains disabled', async () => {
+    const id = selected as CliProviderId;
     const workspace = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'tg-native-command-')));
     const key = `command_${Date.now()}`;
-    globalCliRuntime.setConfig({ services: { cli_codex: { workMode: 'agentic', allowCommands: true, allowProjectEditing: false, timeoutSeconds: 60 } }, workspaces: [{ id: key, path: workspace, name: 'Disposable command test', allowMcp: false, grants: { cli_codex: { allowProjectEditing: false, allowCommands: true } } }] });
+    globalCliRuntime.setConfig({ services: { [id]: { workMode: 'agentic', allowCommands: true, allowProjectEditing: false, timeoutSeconds: 60 } }, workspaces: [{ id: key, path: workspace, name: 'Disposable command test', allowMcp: false, grants: { [id]: { allowProjectEditing: false, allowCommands: true } } }] });
     try {
-      const result = await globalCliRuntime.execute('cli_codex', 'Run the shell command printf marigold and report its output. Do not create or edit any files.', { reqId: key, conversationKey: key, newThread: true, desktop: true, request: { workspaceId: key } });
+      const result = await globalCliRuntime.execute(id, 'Run the shell command printf marigold and report its output. Do not create or edit any files.', { reqId: key, conversationKey: key, newThread: true, desktop: true, request: { workspaceId: key } });
       expect(result.text.toLowerCase()).toContain('marigold');
-      expect(result.actions?.commands).toBeGreaterThan(0);
+      if (id === 'cli_codex') expect(result.actions?.commands).toBeGreaterThan(0);
       expect(fs.readdirSync(workspace)).toEqual([]);
+    } finally { globalCliRuntime.dispose(); globalCliRuntime.clearSessions(); fs.rmSync(workspace, { recursive: true, force: true }); }
+  }, 70000);
+  it.skipIf(selected !== 'cli_codex' && selected !== 'cli_antigravity')('edits and runs a command when both actions are granted', async () => {
+    const id = selected as CliProviderId;
+    const workspace = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'tg-native-both-')));
+    const key = `both_${Date.now()}`;
+    globalCliRuntime.setConfig({ services: { [id]: { workMode: 'agentic', allowCommands: true, allowProjectEditing: true, timeoutSeconds: 60 } }, workspaces: [{ id: key, path: workspace, name: 'Disposable combined test', allowMcp: false, grants: { [id]: { allowProjectEditing: true, allowCommands: true } } }] });
+    try {
+      const result = await globalCliRuntime.execute(id, 'First run the shell command printf marigold. Then use your file editing tool to create verification.txt containing exactly marigold. Report the command output. Do not modify other files.', { reqId: key, conversationKey: key, newThread: true, desktop: true, request: { workspaceId: key } });
+      expect(result.text.toLowerCase()).toContain('marigold');
+      expect(fs.readFileSync(path.join(workspace, 'verification.txt'), 'utf8').trim()).toBe('marigold');
     } finally { globalCliRuntime.dispose(); globalCliRuntime.clearSessions(); fs.rmSync(workspace, { recursive: true, force: true }); }
   }, 70000);
 });

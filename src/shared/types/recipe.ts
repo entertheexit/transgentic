@@ -137,6 +137,8 @@ export interface RecipeResponseStructure {
   container: SelectorCandidate;
   /** Optional CSS selector or fallback list for inner markdown or prose text */
   textSelector?: SelectorCandidate;
+  /** Optional wrapper around rendered code blocks, including any language toolbar */
+  codeBlockSelector?: SelectorCandidate;
   /** Optional CSS selector or fallback list for action buttons (e.g. copy message, regenerate) */
   actionButtons?: SelectorCandidate;
   /** Optional CSS selector or fallback list for active generation or thinking indicators */
@@ -669,6 +671,7 @@ export function validateCustomRecipe(raw: any): { valid: boolean; errors: string
     response: {
       container: normalizeSelectorCandidate(raw.response.container)!,
       textSelector: normalizeSelectorCandidate(raw.response.textSelector),
+      codeBlockSelector: normalizeSelectorCandidate(raw.response.codeBlockSelector),
       actionButtons: normalizeSelectorCandidate(raw.response.actionButtons),
       generatingIndicator: normalizeSelectorCandidate(raw.response.generatingIndicator),
       excludeSelectors: Array.isArray(raw.response.excludeSelectors) ? raw.response.excludeSelectors : [],

@@ -135,6 +135,25 @@ describe('Guarded media control resolution', () => {
     expect(() => find(locator, fixture({ scopeCount: 2 }))).toThrow('ambiguous');
     expect(() => find(locator, fixture({ disabled: true }))).toThrow('unavailable');
   });
+  it('waits for overlapping menu overlays to settle before selecting', async () => {
+    const context = fixture();
+    const original = context.document.querySelectorAll;
+    let scopeReads = 0;
+    context.document.querySelectorAll = (selector: string) => {
+      if (selector === '#active') return original('#options')[0].querySelectorAll().slice(0, 1);
+      if (selector === '#options' && ++scopeReads < 3) return [original('#options')[0], original('#options')[0]];
+      return original(selector);
+    };
+    const config = validateGeneration({ activationSteps: [], activeWhen: { selectors: '#active' }, settings: [{
+      key: 'length', label: 'Length', type: 'enum', default: 'short', options: [{
+        value: 'short', label: 'Short', steps: [{ action: 'click', target: { ...locator, index: 0 } }],
+        selectedWhen: { ...locator, index: 0, requiredAttributes: { 'aria-checked': 'true' } },
+      }],
+    }] });
+    const run = async <T>(script: string): Promise<T> => vm.runInNewContext(script, context);
+    await expect(applyMediaControls(config, { length: 'short' }, run)).resolves.toBeTypeOf('function');
+    expect(scopeReads).toBeGreaterThanOrEqual(3);
+  });
   it('allows multiple visible overlays only when checking that all menus have closed', () => {
     const context = fixture();
     const overlays = context.document.querySelectorAll('#options')[0].querySelectorAll();

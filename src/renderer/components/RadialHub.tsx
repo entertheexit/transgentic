@@ -98,7 +98,7 @@ const PROVIDERS_CONFIG: Array<{
       id: 'chatgpt',
       name: 'ChatGPT',
       providerCompany: 'OpenAI',
-      defaultModel: 'GPT-4o & Reasoning',
+      defaultModel: 'Current provider model',
       icon: Bot,
       accentColor: 'emerald',
       iconColor: 'text-emerald-400',
@@ -107,7 +107,7 @@ const PROVIDERS_CONFIG: Array<{
       id: 'claude',
       name: 'Claude',
       providerCompany: 'Anthropic',
-      defaultModel: 'Claude 3.5 Sonnet',
+      defaultModel: 'Current provider model',
       icon: Brain,
       accentColor: 'amber',
       iconColor: 'text-amber-400',
@@ -116,7 +116,7 @@ const PROVIDERS_CONFIG: Array<{
       id: 'gemini',
       name: 'Gemini',
       providerCompany: 'Google',
-      defaultModel: 'Gemini 2.0 Flash / Pro',
+      defaultModel: 'Current provider model',
       icon: Sparkles,
       accentColor: 'blue',
       iconColor: 'text-blue-400',
@@ -125,7 +125,7 @@ const PROVIDERS_CONFIG: Array<{
       id: 'grok',
       name: 'Grok',
       providerCompany: 'xAI',
-      defaultModel: 'Grok 3 & Vision',
+      defaultModel: 'Current provider model',
       icon: Cpu,
       accentColor: 'purple',
       iconColor: 'text-purple-400',
@@ -203,7 +203,8 @@ export const RadialHub: React.FC<RadialHubProps> = ({
   const routeLabel = routedProvider ? getProviderDisplayName(routedProvider, servicesManifest, providers) : 'No service';
   const activeRouteLabel = `${routeMode.charAt(0).toUpperCase() + routeMode.slice(1)} (${routeLabel})`;
   const routedTemporaryCapability = routedProvider ? providers[routedProvider]?.temporaryChat : undefined;
-  const temporaryChatSupported = Boolean(routedTemporaryCapability?.supported && routedTemporaryCapability.availability !== 'unavailable');
+  const temporaryChatSupported = routedTemporaryCapability?.supported === true;
+  const temporaryChatCanBePreferred = temporaryChatSupported && routedTemporaryCapability?.availability !== 'unavailable';
   const temporaryChat = isTemporaryChatPreferred(config, coreStatus.activeMode);
   const [latestAnswer, setLatestAnswer] = useState<QuickPromptAnswer | null>(() => {
     try {
@@ -234,9 +235,17 @@ export const RadialHub: React.FC<RadialHubProps> = ({
     }
     return true;
   })();
-  const temporaryChatLabel = !isModeServiceSelected || !temporaryChatSupported
-    ? 'Temporary Chat Unsupported'
-    : temporaryChat ? 'Temporary Chat Enabled' : 'Temporary Chat Disabled';
+  const temporaryChatLabel = !isModeServiceSelected
+    ? 'Select a service for Temporary Chat'
+    : !routedTemporaryCapability
+      ? 'Checking Temporary Chat'
+      : !temporaryChatSupported
+        ? 'Temporary Chat Unsupported'
+        : routedTemporaryCapability.availability === 'unavailable'
+          ? temporaryChat ? 'Temporary Chat Preferred · Unavailable' : 'Temporary Chat Unavailable'
+          : routedTemporaryCapability.availability === 'unknown'
+            ? temporaryChat ? 'Temporary Chat Preferred · Checking' : 'Temporary Chat Checking'
+            : temporaryChat ? 'Temporary Chat Enabled' : 'Temporary Chat Disabled';
 
   const handleCopySamplePrompt = (text: string, idx: number) => {
     soundFx.playClick();
@@ -577,12 +586,12 @@ export const RadialHub: React.FC<RadialHubProps> = ({
               <span>Gateway Active</span>
             </span>
             <button type="button"
-              onClick={() => { if (temporaryChatSupported && isModeServiceSelected) void onToggleTemporaryChatMode?.(routeMode, !temporaryChat); }}
-              disabled={!isModeServiceSelected || !temporaryChatSupported || !onToggleTemporaryChatMode}
+              onClick={() => { if (isModeServiceSelected && temporaryChatSupported && (temporaryChat || temporaryChatCanBePreferred)) void onToggleTemporaryChatMode?.(routeMode, !temporaryChat); }}
+              disabled={!isModeServiceSelected || !temporaryChatSupported || (!temporaryChat && !temporaryChatCanBePreferred) || !onToggleTemporaryChatMode}
               aria-label={`${temporaryChatLabel} for ${routeMode} mode`}
               aria-pressed={temporaryChat && isModeServiceSelected && temporaryChatSupported}
               className="flex items-center gap-1.5 whitespace-nowrap rounded px-1 text-slate-500 hover:bg-white/5 disabled:cursor-not-allowed"
-              title={!isModeServiceSelected || !temporaryChatSupported
+              title={!isModeServiceSelected || !temporaryChatSupported || (!temporaryChat && !temporaryChatCanBePreferred)
                 ? (routedTemporaryCapability?.reason || 'Temporary Chat is unavailable for the selected provider')
                 : temporaryChat
                   ? 'Temporary Chat is preferred for this mode. Click to turn it off for future requests.'

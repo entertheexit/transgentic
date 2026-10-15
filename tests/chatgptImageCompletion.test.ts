@@ -1,6 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import vm from 'node:vm';
 import { DomObserver } from '../src/main/webviews/domObserver.js';
+import { CustomRecipeAdapter } from '../src/main/webviews/customRecipeAdapter.js';
 import { BUILTIN_RECIPES } from '../src/shared/types/recipe.js';
 
 const dataUrl = 'data:image/png;base64,aW1hZ2U=';
@@ -64,5 +65,39 @@ describe('ChatGPT image-only completion detection', () => {
   });
   it('does not reuse an earlier gallery for a later text response', async () => {
     expect(await inspectGallery({ followingText: true })).toMatchObject({ mediaUrl: undefined, text: 'Here is your image.' });
+  });
+});
+
+describe('ChatGPT inline image composer', () => {
+  const enter = (CustomRecipeAdapter.prototype as any).dispatchPromptAfterImagePill;
+
+  it('keeps an exact unsent draft without typing it twice', async () => {
+    const insertText = vi.fn();
+    const adapter = {
+      webContents: { isDestroyed: () => false, insertText },
+      executeScript: vi.fn().mockResolvedValue('already-entered'),
+    };
+    expect(await enter.call(adapter, '[contenteditable="true"]', 'A purple circle')).toEqual({ success: true });
+    expect(insertText).not.toHaveBeenCalled();
+  });
+
+  it('inserts after the image pill and verifies both mode and prompt before success', async () => {
+    const insertText = vi.fn();
+    const executeScript = vi.fn().mockResolvedValueOnce('ready').mockResolvedValueOnce(true);
+    const adapter = { webContents: { isDestroyed: () => false, insertText }, executeScript };
+    expect(await enter.call(adapter, '[contenteditable="true"]', 'A purple circle')).toEqual({ success: true });
+    expect(insertText).toHaveBeenCalledExactlyOnceWith('A purple circle');
+    expect(executeScript.mock.calls[0][0]).toContain('range.setStartAfter(pill)');
+    expect(executeScript.mock.calls[1][0]).toContain('data-inline-selection-pill');
+  });
+
+  it('refuses to append to an unrelated draft', async () => {
+    const insertText = vi.fn();
+    const adapter = {
+      webContents: { isDestroyed: () => false, insertText },
+      executeScript: vi.fn().mockResolvedValue('occupied:12'),
+    };
+    expect(await enter.call(adapter, '[contenteditable="true"]', 'A purple circle')).toMatchObject({ success: false });
+    expect(insertText).not.toHaveBeenCalled();
   });
 });

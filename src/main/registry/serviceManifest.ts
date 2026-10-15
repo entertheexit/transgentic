@@ -34,7 +34,7 @@ export class ServiceManifestManager {
         hidden: false,
         url: "https://chatgpt.com",
         partition: "persist:chatgpt",
-        defaultModelId: "gpt-4o",
+        defaultModelId: "default",
         accentColor: "emerald",
         iconName: "Bot",
         theme: {
@@ -47,10 +47,7 @@ export class ServiceManifestManager {
           glowClass: "shadow-[0_0_15px_rgba(16,185,129,0.15)]",
         },
         models: [
-          { id: "gpt-4o", displayName: "GPT-4o (Omni & Multimodal)", enabled: true, discoveredAvailable: true, userEnabled: true, requiresTier: "Free/Plus", mode: "general", modes: ["general", "coding", "image"] },
-          { id: "o1", displayName: "o1 (Deep Reasoning)", enabled: true, discoveredAvailable: true, userEnabled: true, requiresTier: "Plus/Pro", mode: "general", modes: ["general", "coding"] },
-          { id: "o3-mini", displayName: "o3-mini (High Speed Reasoning)", enabled: true, discoveredAvailable: true, userEnabled: true, requiresTier: "Free/Plus", mode: "coding", modes: ["coding", "general"] },
-          { id: "gpt-4o-mini", displayName: "GPT-4o mini (Lightweight)", enabled: true, discoveredAvailable: true, userEnabled: true, requiresTier: "Free", mode: "general", modes: ["general", "coding"] },
+          { id: "default", displayName: "Current provider model", enabled: true, discoveredAvailable: true, userEnabled: true, modes: ["general", "coding", "image"] },
         ],
       },
       claude: {
@@ -61,7 +58,7 @@ export class ServiceManifestManager {
         hidden: false,
         url: "https://claude.ai",
         partition: "persist:claude",
-        defaultModelId: "claude-3-5-sonnet",
+        defaultModelId: "default",
         accentColor: "amber",
         iconName: "Brain",
         theme: {
@@ -74,9 +71,7 @@ export class ServiceManifestManager {
           glowClass: "shadow-[0_0_15px_rgba(245,158,11,0.15)]",
         },
         models: [
-          { id: "claude-3-5-sonnet", displayName: "Claude 3.5 Sonnet (Coding & Reasoning)", enabled: true, discoveredAvailable: true, userEnabled: true, requiresTier: "Free/Pro", mode: "coding", modes: ["general", "coding"] },
-          { id: "claude-3-opus", displayName: "Claude 3 Opus (High Intelligence)", enabled: true, discoveredAvailable: true, userEnabled: true, requiresTier: "Pro", mode: "general", modes: ["general", "coding"] },
-          { id: "claude-3-5-haiku", displayName: "Claude 3.5 Haiku (Lightning Fast)", enabled: true, discoveredAvailable: true, userEnabled: true, requiresTier: "Free/Pro", mode: "general", modes: ["general", "coding"] },
+          { id: "default", displayName: "Current provider model", enabled: true, discoveredAvailable: true, userEnabled: true, modes: ["general", "coding"] },
         ],
       },
       gemini: {
@@ -87,7 +82,7 @@ export class ServiceManifestManager {
         hidden: false,
         url: "https://gemini.google.com/app",
         partition: "persist:gemini",
-        defaultModelId: "gemini-2-0-flash",
+        defaultModelId: "default",
         accentColor: "blue",
         iconName: "Sparkles",
         theme: {
@@ -100,10 +95,7 @@ export class ServiceManifestManager {
           glowClass: "shadow-[0_0_15px_rgba(59,130,246,0.15)]",
         },
         models: [
-          { id: "gemini-2-0-flash", displayName: "Gemini 2.0 Flash (Next-Gen Multimodal)", enabled: true, discoveredAvailable: true, userEnabled: true, requiresTier: "Free/Advanced", mode: "general", modes: ["general", "coding", "image", "video", "music"] },
-          { id: "gemini-2-0-pro", displayName: "Gemini 2.0 Pro Experimental", enabled: true, discoveredAvailable: true, userEnabled: true, requiresTier: "Advanced", mode: "general", modes: ["general", "coding", "image", "video", "music"] },
-          { id: "gemini-1-5-flash", displayName: "Gemini 1.5 Flash (Fast)", enabled: true, discoveredAvailable: true, userEnabled: true, requiresTier: "Free", mode: "general", modes: ["general", "coding", "video", "music"] },
-          { id: "gemini-1-5-pro", displayName: "Gemini 1.5 Pro (2M Context)", enabled: true, discoveredAvailable: true, userEnabled: true, requiresTier: "Free/Advanced", mode: "general", modes: ["general", "coding", "video", "music"] },
+          { id: "default", displayName: "Current provider model", enabled: true, discoveredAvailable: true, userEnabled: true, modes: ["general", "coding", "image", "video", "music"] },
         ],
       },
       grok: {
@@ -114,7 +106,7 @@ export class ServiceManifestManager {
         hidden: false,
         url: "https://grok.com",
         partition: "persist:grok",
-        defaultModelId: "grok-3",
+        defaultModelId: "default",
         accentColor: "purple",
         iconName: "Cpu",
         theme: {
@@ -127,10 +119,7 @@ export class ServiceManifestManager {
           glowClass: "shadow-[0_0_15px_rgba(168,85,247,0.15)]",
         },
         models: [
-          { id: "grok-3", displayName: "Grok 3 (State-of-the-Art)", enabled: true, discoveredAvailable: true, userEnabled: true, requiresTier: "Premium", mode: "general", modes: ["general", "coding", "video"] },
-          { id: "grok-3-think", displayName: "Grok 3 Think / DeepSearch", enabled: true, discoveredAvailable: true, userEnabled: true, requiresTier: "Premium+", mode: "general", modes: ["general", "coding", "video"] },
-          { id: "grok-2", displayName: "Grok 2 (Speed & Coding)", enabled: true, discoveredAvailable: true, userEnabled: true, requiresTier: "Premium", mode: "coding", modes: ["general", "coding"] },
-          { id: "grok-2-vision", displayName: "Grok 2 Vision / Imagine", enabled: true, discoveredAvailable: true, userEnabled: true, requiresTier: "Premium", mode: "image", modes: ["image", "video", "general"] },
+          { id: "default", displayName: "Current provider model", enabled: true, discoveredAvailable: true, userEnabled: true, modes: ["general", "coding", "image", "video", "music"] },
         ],
       },
       localllm: {
@@ -682,9 +671,34 @@ export class ServiceManifestManager {
     }
     const model = service.models.find((m) => m.id === modelId);
     if (!model) {
+      // Built-in web model IDs are discovered from the active account, not shipped catalogs.
+      if (['chatgpt', 'claude', 'gemini', 'grok'].includes(providerId)) return true;
       return false;
     }
     return model.enabled !== false;
+  }
+
+  public static setDiscoveredWebModels(
+    providerId: ProviderId,
+    models: Array<{ id: string; displayName: string; requiresTier?: string }>
+  ): void {
+    if (!['chatgpt', 'claude', 'gemini', 'grok'].includes(providerId)) return;
+    const service = this.currentManifest.services[providerId];
+    if (!service || models.length === 0) return;
+    const previous = new Map((service.models || []).map(model => [model.id, model]));
+    service.models = [
+      ...(previous.get('default') ? [previous.get('default')!] : []),
+      ...models.filter(model => model.id !== 'default').map(model => ({
+        id: model.id,
+        displayName: model.displayName,
+        enabled: previous.get(model.id)?.enabled !== false,
+        discoveredAvailable: true,
+        userEnabled: previous.get(model.id)?.userEnabled !== false,
+        requiresTier: model.requiresTier,
+        modes: ['general', 'coding'] as Array<'general' | 'coding'>,
+      })),
+    ];
+    this.notify();
   }
 
   public static getEnabledProviders(): ProviderId[] {

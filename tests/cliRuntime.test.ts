@@ -135,6 +135,12 @@ describe('CLI structured protocols', () => {
       expect(args.join(' ')).not.toContain('dangerously');
     }
   });
+  it('grants Antigravity headless tools only for explicitly allowed agentic actions', () => {
+    const base = { prompt: 'Create a file', policy: { cwd: '/scratch', allowCommands: false, allowProjectEditing: false } };
+    expect(adapterArgs('cli_antigravity', base)).not.toContain('--dangerously-skip-permissions');
+    expect(adapterArgs('cli_antigravity', { ...base, policy: { ...base.policy, allowProjectEditing: true } }))
+      .toContain('--dangerously-skip-permissions');
+  });
   it.each(['cli_claude_code', 'cli_antigravity'] as const)('extracts only the final answer from %s', async id => {
     let event: (e: any) => void = () => {};
     const proc = { onEvent: (fn: any) => { event = fn; return () => {}; }, onFailure: () => () => {}, child: { stdin: { end: vi.fn() } } };

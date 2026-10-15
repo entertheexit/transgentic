@@ -229,6 +229,13 @@ describe('Custom Recipe Session Persistence & Startup Tests', () => {
     expect(ready).toHaveBeenCalled();
   });
 
+  it('retains an optional code-block wrapper selector when validating a recipe', () => {
+    const raw = structuredClone(BUILTIN_RECIPES.chatgpt);
+    raw.response.codeBlockSelector = '.code-block-wrapper';
+    const validated = validateCustomRecipe(raw);
+    expect(validated.recipe?.response.codeBlockSelector).toBe('.code-block-wrapper');
+  });
+
   it('clears attachment state after a pre-submit upload failure', async () => {
     const adapter = new CustomRecipeAdapter(BUILTIN_RECIPES.chatgpt);
     const debuggerApi = {
