@@ -28,13 +28,36 @@ export function findMediaControl(locator: MediaLocator, anyVisible = false): Ele
   return null;
 }
 
+/** Preserve resolver errors across Electron's otherwise generic script rejection. */
+export async function inspectMediaControl(
+  run: <T>(script: string) => Promise<T>,
+  target: MediaLocator,
+  click: boolean | 'pointerDown' = false,
+  anyVisible = false
+): Promise<boolean> {
+  let action = '';
+  if (click === 'pointerDown') {
+    action = '(el.closest("button,[role=button]") || el).dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, cancelable: true, button: 0, buttons: 1, pointerType: "mouse", isPrimary: true }));';
+  } else if (click) {
+    action = '(el.closest("button,[role=button],[role=option],[role=menuitemradio],[role=radio]") || el).click();';
+  }
+  const result = await run<boolean | { error: string }>(`(() => {
+    try {
+      const el = (${findMediaControl.toString()})(${JSON.stringify(target)}, ${anyVisible});
+      if (!el) return false;
+      ${action}
+      return true;
+    } catch (error) {
+      return { error: String(error.message || error) };
+    }
+  })()`);
+  if (typeof result !== 'boolean') throw new Error(result.error);
+  return result;
+}
+
 export async function applyMediaControls(config: RecipeGeneration, settings: MediaSettings, run: <T>(script: string) => Promise<T>, signal?: AbortSignal, escape?: () => void): Promise<() => Promise<void>> {
-  const inspect = async (target: MediaLocator, click: boolean | 'pointerDown' = false, anyVisible = false): Promise<boolean> => {
-    const action = click === 'pointerDown' ? '(el.closest("button,[role=button]") || el).dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, cancelable: true, button: 0, buttons: 1, pointerType: "mouse", isPrimary: true }));' : click ? '(el.closest("button,[role=button],[role=option],[role=menuitemradio],[role=radio]") || el).click();' : '';
-    const result = await run<boolean | { error: string }>(`(() => { try { const el = (${findMediaControl.toString()})(${JSON.stringify(target)}, ${anyVisible}); if (!el) return false; ${action} return true; } catch (error) { return { error: String(error.message || error) }; } })()`);
-    if (typeof result !== 'boolean') throw new Error(result.error);
-    return result;
-  };
+  const inspect = (target: MediaLocator, click: boolean | 'pointerDown' = false, anyVisible = false) =>
+    inspectMediaControl(run, target, click, anyVisible);
   const inspectStable = async (target: MediaLocator): Promise<boolean> => {
     const deadline = Date.now() + 5000;
     do {
@@ -90,6 +113,9 @@ export async function applyMediaControls(config: RecipeGeneration, settings: Med
     try { await wait(choice.selectedWhen); } finally { await execute(choice.closeSteps); }
   };
   try {
+    if (config.unavailableWhen && await inspect(config.unavailableWhen, false, true)) {
+      throw new Error('[MEDIA_UNAVAILABLE] Native media access requires an account or subscription change.');
+    }
     if (!await inspectStable(config.activeWhen)) {
       await execute(config.activationSteps);
       await wait(config.activeWhen);
@@ -114,6 +140,7 @@ export async function applyMediaControls(config: RecipeGeneration, settings: Med
     return async () => { try { await verify(); } catch (error: any) { throw new Error(`[MEDIA_SETTINGS_FAILED] ${error.message}`); } };
   } catch (error: any) {
     if (error?.name === 'AbortError') throw error;
+    if (error?.message?.includes('[MEDIA_UNAVAILABLE]')) throw error;
     throw new Error(`[MEDIA_SETTINGS_FAILED] ${error.message}`);
   }
 }

@@ -1,8 +1,20 @@
 import { describe, it, expect } from 'vitest';
-import { DomObserver, extractToolProtocolCode } from '../src/main/webviews/domObserver.js';
+import { DomObserver, extractToolProtocolCode, codeBlockMarkdown } from '../src/main/webviews/domObserver.js';
 import { ProviderId, TaskMode } from '../src/shared/types.js';
 
 describe('DomObserver Multi-Provider & Media Scraping Tests', () => {
+  it('preserves language labels and nested backticks in code fences', () => {
+    const block = { getAttribute: () => null, querySelector: () => null } as any;
+    const code = {
+      textContent: 'const sample = "```";',
+      getAttribute: (name: string) => name === 'class' ? 'language-typescript' : null,
+    } as any;
+    expect(codeBlockMarkdown(block, code)).toBe('\n````typescript\nconst sample = "```";\n````\n');
+    code.getAttribute = () => null;
+    block.getAttribute = (name: string) => name === 'aria-label' ? 'TypeScript code' : null;
+    expect(codeBlockMarkdown(block, code)).toContain('````typescript');
+  });
+
   it('preserves a lone literal transport code block without cleaning its code or disclaimer examples', () => {
     const text = 'TRANSGENTIC_TOOL_CALLS_V2\n[]\n# Heading\n```ts\nconst x = /\\d+/;\n```\nAI may make mistakes\n';
     const target = (outsideText: string, count = 1) => ({

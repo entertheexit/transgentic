@@ -258,7 +258,7 @@ describe('Actual provider answers with server-side reminders', () => {
     expect(adapter.executePrompt).not.toHaveBeenCalled();
   });
 
-  it.each(['text', 'empty', 'uncertain'])('never retries a submitted media request after a %s result', async kind => {
+  it.each(['text', 'empty', 'long', 'uncertain'])('never retries a submitted media request after a %s result', async kind => {
     configure(false, false, true);
     vi.mocked(DynamicRouter.getCandidateChain).mockReturnValue(['gemini', 'grok']);
     const mediaAdapter = new CustomRecipeAdapter(BUILTIN_RECIPES.gemini);
@@ -272,12 +272,19 @@ describe('Actual provider answers with server-side reminders', () => {
     const execute = vi.spyOn(mediaAdapter, 'executePrompt').mockImplementation(async (...args) => {
       args[8]?.();
       if (kind === 'uncertain') throw new Error('Lost provider response after submission');
-      return { text: kind === 'empty' ? '' : 'Here is a plan for creating your image.' };
+      return { text: kind === 'empty' ? '' : kind === 'long' ? 'x'.repeat(1_100) : 'Here is a plan for creating your image.' };
     });
     const result = await run('Create a square landscape illustration.', 'image');
     expect(result.isError).toBe(true);
     expect(result.structuredContent.status).toBe('failed');
     expect(result.content[0].text).toContain(kind === 'uncertain' ? 'WEBVIEW_SUBMISSION_UNCERTAIN' : 'MEDIA_NOT_GENERATED');
+    if (kind === 'text') expect(result.content[0].text).toContain('Provider reply (no media produced): "Here is a plan for creating your image."');
+    if (kind === 'empty') expect(result.content[0].text).not.toContain('Provider reply');
+    if (kind === 'long') {
+      expect(result.content[0].text).toContain('x'.repeat(1_000));
+      expect(result.content[0].text).not.toContain('x'.repeat(1_001));
+      expect(result.content[0].text).toContain('[truncated]');
+    }
     expect(execute).toHaveBeenCalledOnce();
     expect(globalSessionManager.getAdapter).not.toHaveBeenCalledWith('grok');
     expect(completion).not.toHaveBeenCalled();

@@ -5,8 +5,8 @@ import { CustomRecipe, normalizeSelectorList, toCombinedCssSelector, RecipeModes
 import { ProjectMetadata } from '../storage/projectManager.js';
 import type { StagedAttachment } from '../../shared/attachments.js';
 import { resolveMediaSettings, type MediaSettings, type MediaMode } from '../../shared/media.js';
-import { applyMediaControls, findMediaControl } from './mediaControls.js';
-import { DomObserver, type DomInspectionResult } from './domObserver.js';
+import { applyMediaControls } from './mediaControls.js';
+import { DomObserver, providerNoticeText, type DomInspectionResult } from './domObserver.js';
 
 /**
  * CustomRecipeAdapter
@@ -363,7 +363,7 @@ export class CustomRecipeAdapter extends BaseProviderAdapter {
     try {
       return await this.executeScript<{ isRateLimited: boolean; reason?: string }>(`
         (function() {
-          const bodyText = document.body ? (document.body.innerText || '') : '';
+          const bodyText = (${providerNoticeText.toString()})();
           const patterns = ${JSON.stringify(activePatterns)};
           for (const p of patterns) {
             if (bodyText.includes(p)) {
@@ -406,6 +406,33 @@ export class CustomRecipeAdapter extends BaseProviderAdapter {
       this.webContents = await globalSessionManager.ensureWebContents(this.providerId);
     }
 
+    const contents = this.webContents!;
+    const wasThrottled = contents.getBackgroundThrottling?.();
+    try {
+      // Active hidden requests still need provider timers, visibility events and
+      // media metadata. Restore the original idle policy on every exit path.
+      if (wasThrottled) contents.setBackgroundThrottling(false);
+      return await this.executePromptInView(prompt, mode, project, onChunk, abortSignal, attachments, mediaSettings, mediaModel, onSubmitted);
+    } finally {
+      try {
+        if (wasThrottled && !contents.isDestroyed()) contents.setBackgroundThrottling(true);
+      } catch { /* A closing view must not replace an already determined result. */ }
+    }
+  }
+
+  private async executePromptInView(
+    prompt: string,
+    mode: TaskMode,
+    project?: ProjectMetadata,
+    onChunk?: (chunk: string) => void,
+    abortSignal?: AbortSignal,
+    attachments: readonly StagedAttachment[] = [],
+    mediaSettings: MediaSettings = {},
+    mediaModel?: string,
+    onSubmitted?: () => void
+  ): Promise<ProviderAdapterResult> {
+    const contents = this.webContents;
+    if (!contents || contents.isDestroyed()) throw new Error('Provider browser view is unavailable.');
     if (this.temporaryChatRequired && !await this.verifyTemporaryChat()) {
       throw new Error('[TEMPORARY_CHAT_ENDED] The provider no longer confirms that this conversation is temporary. Start a new Temporary Chat.');
     }
@@ -430,9 +457,9 @@ export class CustomRecipeAdapter extends BaseProviderAdapter {
 
     if (targetUrl) {
       try {
-        const curUrl = this.webContents.getURL();
+        const curUrl = contents.getURL();
         if (!curUrl || curUrl === 'about:blank' || (modeConfig?.pageUrl && !curUrl.includes(modeConfig.pageUrl))) {
-          await this.webContents.loadURL(targetUrl);
+          await contents.loadURL(targetUrl);
           await new Promise((r) => setTimeout(r, 1500));
         }
       } catch {}
@@ -457,7 +484,7 @@ export class CustomRecipeAdapter extends BaseProviderAdapter {
             const redirectUrl = resetRule.redirectTo.startsWith('http')
               ? resetRule.redirectTo
               : new URL(resetRule.redirectTo, this.url).toString();
-            await this.webContents.loadURL(redirectUrl);
+            await contents.loadURL(redirectUrl);
             await new Promise((r) => setTimeout(r, 600));
             break;
           }
@@ -516,12 +543,9 @@ export class CustomRecipeAdapter extends BaseProviderAdapter {
       }
       const rawSubmit = modeConfig?.submitSelector || this.recipe.selectors.submitButton;
       const submitSelector = toCombinedCssSelector(rawSubmit);
-      if (verifyMedia && !await this.executeScript<boolean>(`!!(${findMediaControl.toString()})(${JSON.stringify({ selectors: rawSubmit })})`)) {
-        throw new Error('[MEDIA_SETTINGS_FAILED] The declared media submit control is unavailable.');
-      }
       onSubmitted?.(); // Persist uncertainty before the irreversible UI action.
       const submitResult = verifyMedia
-        ? await this.executeScript<{ success: boolean; error?: string }>(`(() => { const button = (${findMediaControl.toString()})(${JSON.stringify({ selectors: rawSubmit })}); if (!button) throw new Error('Media submit control disappeared.'); button.click(); return { success: true }; })()`)
+        ? await this.dispatchRealisticSubmit(submitSelector, inputSelector, undefined, true)
         : await this.dispatchRealisticSubmit(submitSelector, inputSelector);
       if (!submitResult?.success) throw new Error(`Failed to submit prompt to "${this.name}": ${submitResult?.error || 'No actionable submit control'}`);
       submitted = true;
@@ -596,6 +620,44 @@ export class CustomRecipeAdapter extends BaseProviderAdapter {
 
   private async attachFiles(upload: NonNullable<RecipeModes[keyof RecipeModes]>['inputAttachments'], attachments: readonly StagedAttachment[], abortSignal?: AbortSignal): Promise<void> {
     if (!upload || !this.webContents) throw new Error('Attachment upload controls are unavailable.');
+    // Providers can expose separate native inputs for documents and media. Wait
+    // for each completed batch before adding the next one to the same composer.
+    const batches = new Map<string, StagedAttachment[]>();
+    for (const attachment of attachments) {
+      const batch = batches.get(attachment.kind) ?? [];
+      batch.push(attachment);
+      batches.set(attachment.kind, batch);
+    }
+    // Keep a single batch when the declared native input accepts every file.
+    let acceptsCombinedBatch = false;
+    if (batches.size > 1 && upload.ready) {
+      const debuggerApi = this.webContents.debugger;
+      const attachedHere = !debuggerApi.isAttached();
+      try {
+        if (attachedHere) debuggerApi.attach('1.3');
+        acceptsCombinedBatch = Boolean((await this.findDeclaredFileInput(debuggerApi, upload.fileInput, attachments)).nodeId);
+      } finally {
+        if (attachedHere && debuggerApi.isAttached()) debuggerApi.detach();
+      }
+    }
+    if (batches.size > 1 && upload.ready && !acceptsCombinedBatch) {
+      let expectedCount = 0;
+      for (const batch of batches.values()) {
+        expectedCount += batch.length;
+        await this.attachFileBatch(upload, batch, abortSignal, expectedCount);
+      }
+      return;
+    }
+    await this.attachFileBatch(upload, attachments, abortSignal, attachments.length);
+  }
+
+  private async attachFileBatch(
+    upload: NonNullable<RecipeModes[keyof RecipeModes]>['inputAttachments'],
+    attachments: readonly StagedAttachment[],
+    abortSignal: AbortSignal | undefined,
+    expectedCount: number,
+  ): Promise<void> {
+    if (!upload || !this.webContents) throw new Error('Attachment upload controls are unavailable.');
     if (abortSignal?.aborted) { const error = new Error('Request cancelled.'); error.name = 'AbortError'; throw error; }
     const debuggerApi = this.webContents.debugger;
     const attachedHere = !debuggerApi.isAttached();
@@ -654,7 +716,7 @@ export class CustomRecipeAdapter extends BaseProviderAdapter {
           const style = getComputedStyle(element);
           return style.display !== 'none' && style.visibility !== 'hidden' && element.getClientRects().length > 0;
         });
-        return visible.length === ${attachments.length};
+        return visible.length === ${expectedCount};
       }
       return [...document.querySelectorAll(${JSON.stringify(selector)})]
         .some(input => input.files && input.files.length === ${attachments.length});
@@ -667,7 +729,7 @@ export class CustomRecipeAdapter extends BaseProviderAdapter {
       await new Promise(resolve => setTimeout(resolve, 150));
     }
     const readyCount = readySelector ? await this.executeScript<number>(`document.querySelectorAll(${JSON.stringify(readySelector)}).length`).catch(() => 0) : undefined;
-    throw new Error(`Provider "${this.name}" did not confirm attachment readiness before submission.${readyCount == null ? '' : ` Expected ${attachments.length} ready attachments, found ${readyCount}.`}`);
+    throw new Error(`Provider "${this.name}" did not confirm attachment readiness before submission.${readyCount == null ? '' : ` Expected ${expectedCount} ready attachments, found ${readyCount}.`}`);
   }
 
   private fileInputAccepts(accept: string | undefined, attachments: readonly StagedAttachment[]): boolean {

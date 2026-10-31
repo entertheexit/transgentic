@@ -1,5 +1,6 @@
 import { ProviderId, TaskMode } from '../../shared/types.js';
 import { CustomRecipe } from '../../shared/types/recipe.js';
+import { findMediaControl } from './mediaControls.js';
 
 export interface DomInspectionResult {
   isGenerating: boolean;
@@ -12,6 +13,48 @@ export interface DomInspectionResult {
   text: string;
   mediaUrl?: string;
   mediaType?: 'image' | 'video' | 'audio';
+  error?: string;
+  mediaUnavailableReason?: string;
+}
+
+/** Self-contained because the inspector serializes it into the provider page. */
+export function codeBlockMarkdown(block: Element, code: Element): string {
+  const text = (code.textContent || '').trimEnd();
+  const classHint = (code.getAttribute?.('class') || '').match(/(?:^|\s)(?:language|lang)-([^\s]+)/)?.[1];
+  const toolbar = block.cloneNode?.(true) as Element | undefined;
+  for (const element of toolbar?.querySelectorAll?.('pre, code, button, [role="button"], svg, [aria-hidden="true"]') || []) element.remove();
+  const toolbarHint = toolbar?.textContent?.trim() || '';
+  const hint = classHint || code.getAttribute?.('data-language') || block.getAttribute?.('data-language') ||
+    code.closest?.('pre')?.getAttribute?.('aria-label')?.match(/^(.+?) code$/i)?.[1] ||
+    block.getAttribute?.('aria-label')?.match(/^(.+?) code$/i)?.[1] ||
+    block.querySelector?.('[data-language]')?.getAttribute?.('data-language') || toolbarHint;
+  const language = /^[a-z0-9_+#.-]{1,32}$/i.test(hint) ? hint.toLowerCase() : '';
+  const backticks = text.match(/`+/g) || [];
+  const fence = '`'.repeat(Math.max(3, ...backticks.map(run => run.length + 1)));
+  return '\n' + fence + language + '\n' + text + '\n' + fence + '\n';
+}
+
+/** Exclude conversation content when interpreting account and security notices. */
+export function providerNoticeText(): string {
+  if (!document.body) return '';
+  if (!document.body.cloneNode) return document.body.innerText || '';
+  const root = document.body.cloneNode(true) as Element;
+  const originals = Array.from(document.body.querySelectorAll?.('*') || []);
+  const copies = Array.from(root.querySelectorAll('*'));
+  for (let index = 0; index < originals.length; index++) {
+    const style = getComputedStyle(originals[index]);
+    if (style.display === 'none' || style.visibility === 'hidden' || style.visibility === 'collapse') {
+      copies[index]?.remove();
+    }
+  }
+  for (const element of root.querySelectorAll(
+    'script, style, template, noscript, [data-message-author-role], [data-conversation-role], model-response, user-query, ' +
+    '.font-claude-message, .font-user-message, [data-testid="assistant-message"], ' +
+    '[data-testid="user-message"], [id^="response-"], .response-turn, ' +
+    '.response-content-markdown, .streamdown-chat-md, .markdown, .prose, ' +
+    '[data-composer-markdown], textarea, [contenteditable="true"], [hidden], [inert], [aria-hidden="true"]'
+  )) element.remove();
+  return root.textContent || '';
 }
 
 // A single transport code block preserves JSON escapes and bypasses UI-noise
@@ -39,21 +82,23 @@ export class DomObserver {
           const recipe = ${JSON.stringify(recipeConfig || null)};
           const excludedMediaUrls = new Set(${JSON.stringify(excludedMediaUrls)});
           const extractToolProtocolCode = ${extractToolProtocolCode.toString()};
+          const codeBlockMarkdown = ${codeBlockMarkdown.toString()};
           const selectorString = value => Array.isArray(value) ? value.join(', ') : (value || '');
           const bodyText = document.body ? (document.body.innerText || '') : '';
+          const noticeText = (${providerNoticeText.toString()})();
 
           // 1. Rate-Limit / Quota Exhaustion Detection
           const isRateLimited = 
-            bodyText.includes("You've reached your limit") ||
-            bodyText.includes("You have reached your limit") ||
-            bodyText.includes("Too many requests") ||
-            bodyText.includes("Rate limit exceeded") ||
-            bodyText.includes("Usage cap reached") ||
-            bodyText.includes("run out of Grok") ||
-            bodyText.includes("You have run out of Grok queries") ||
-            bodyText.includes("Please wait before sending more requests") ||
-            bodyText.includes("Please wait a few moments") ||
-            bodyText.includes("Capacity exceeded");
+            noticeText.includes("You've reached your limit") ||
+            noticeText.includes("You have reached your limit") ||
+            noticeText.includes("Too many requests") ||
+            noticeText.includes("Rate limit exceeded") ||
+            noticeText.includes("Usage cap reached") ||
+            noticeText.includes("run out of Grok") ||
+            noticeText.includes("You have run out of Grok queries") ||
+            noticeText.includes("Please wait before sending more requests") ||
+            noticeText.includes("Please wait a few moments") ||
+            noticeText.includes("Capacity exceeded");
 
           // 3. Helper to verify element visibility in DOM
           const isVisible = (el) => {
@@ -66,20 +111,14 @@ export class DomObserver {
             return !!(el.offsetWidth || el.offsetHeight || (typeof el.getClientRects === 'function' && el.getClientRects().length > 0));
           };
 
-          // Quoted prompts and assistant replies are not provider account notices.
-          let noticeText = bodyText;
-          if (document.body?.cloneNode) {
-            const noticeRoot = document.body.cloneNode(true);
-            for (const el of noticeRoot.querySelectorAll(
-              '[data-message-author-role], [data-conversation-role], model-response, user-query, ' +
-              '.font-claude-message, .font-user-message, [data-testid="assistant-message"], ' +
-              '[data-testid="user-message"], [id^="response-"], .response-turn, ' +
-              '.response-content-markdown, .streamdown-chat-md, .markdown, .prose, ' +
-              '[data-composer-markdown], textarea, [contenteditable="true"], [hidden], [aria-hidden="true"]'
-            )) el.remove();
-            noticeText = noticeRoot.textContent || '';
+          const unavailableWhen = recipe?.response?.modes?.[${JSON.stringify(mode)}]?.generation?.unavailableWhen;
+          if (unavailableWhen && (${findMediaControl.toString()})(unavailableWhen, true)) {
+            return { isGenerating: false, isThinking: false, isMediaRendering: false,
+              hasActionButtons: false, isRateLimited: false, isSecurityWarning: false, text: '',
+              mediaUnavailableReason: 'Native media access requires an account or subscription change.' };
           }
 
+          // Quoted prompts and assistant replies are not provider account notices.
           // 2. Security, CAPTCHA, Reauthentication & Account Warning Detection
           let isSecurityWarning = false;
           let securityWarningReason = undefined;
@@ -230,10 +269,7 @@ export class DomObserver {
               if (clone && clone.querySelectorAll) {
                 const preserveCodeFence = (block, code) => {
                   const fenced = document.createElement('span');
-                  const newline = String.fromCharCode(10);
-                  const fence = String.fromCharCode(96).repeat(3);
-                  fenced.textContent = newline + fence + newline +
-                    (code.textContent || '').trimEnd() + newline + fence + newline;
+                  fenced.textContent = codeBlockMarkdown(block, code);
                   block.replaceWith(fenced);
                 };
                 if (recipe?.response?.codeBlockSelector) {

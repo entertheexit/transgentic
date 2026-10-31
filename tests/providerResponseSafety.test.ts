@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import vm from 'node:vm';
-import { DomObserver } from '../src/main/webviews/domObserver.js';
+import { DomObserver, providerNoticeText } from '../src/main/webviews/domObserver.js';
 import { BaseProviderAdapter } from '../src/main/webviews/adapterBase.js';
 
 afterEach(() => vi.useRealTimers());
@@ -113,6 +113,15 @@ describe('Provider response visibility', () => {
 
 describe('Provider intervention while polling', () => {
   const idle = { text: '', isGenerating: false, isThinking: false, isMediaRendering: false, isRateLimited: false, isSecurityWarning: false, hasActionButtons: false };
+  it('surfaces native media access blockers on the first polling tick', async () => {
+    vi.useFakeTimers();
+    const executeScript = vi.fn().mockResolvedValue({ ...idle, mediaUnavailableReason: 'Subscription required' });
+    const pending = BaseProviderAdapter.prototype.pollGeneration.call({ providerId: 'grok', name: 'Grok', executeScript } as any, { mode: 'video' });
+    const assertion = expect(pending).rejects.toThrow('[MEDIA_UNAVAILABLE]');
+    await vi.advanceTimersByTimeAsync(1100);
+    await assertion;
+    expect(executeScript).toHaveBeenCalledOnce();
+  });
   it.each(['chatgpt', 'claude', 'grok', 'gemini'])('%s surfaces verification immediately rather than waiting for a timeout', async providerId => {
     vi.useFakeTimers();
     const executeScript = vi.fn().mockResolvedValue({ ...idle, isSecurityWarning: true, securityWarningReason: 'Sign in again' });
@@ -134,6 +143,23 @@ describe('Provider intervention while polling', () => {
 });
 
 describe('Provider notices versus conversation text', () => {
+  it('excludes hydration scripts and CSS-hidden quota notices', () => {
+    let text = 'Visible content Rate limit exceeded hidden quota';
+    const script = { remove: () => { text = text.replace('Rate limit exceeded ', ''); } };
+    const hidden = { remove: () => { text = text.replace('hidden quota', ''); } };
+    const result = vm.runInNewContext(`(${providerNoticeText.toString()})()`, {
+      document: { body: {
+        querySelectorAll: () => [{ hidden: false }, { hidden: true }],
+        cloneNode: () => ({
+          get textContent() { return text; },
+          querySelectorAll: (selector: string) => selector === '*' ? [script, hidden] : selector.includes('script') ? [script] : [],
+        }),
+      } },
+      getComputedStyle: (element: any) => ({ display: element.hidden ? 'none' : 'block', visibility: 'visible' }),
+    });
+    expect(result.trim()).toBe('Visible content');
+  });
+
   async function notices(reply: string, notice: string, hiddenChallenge = false) {
     return vm.runInNewContext(DomObserver.getInspectionScript('claude', 'general'), {
       document: {
@@ -151,6 +177,10 @@ describe('Provider notices versus conversation text', () => {
   }
   it('does not classify quoted verification or sign-in text as a provider notice', async () => {
     expect(await notices('Security check: explain why sites say Verify you are human or Session expired.', '', true)).toMatchObject({ isSecurityWarning: false });
+  });
+  it('ignores quoted quota wording but preserves actual provider quota notices', async () => {
+    expect(await notices('Explain Rate limit exceeded and Too many requests.', '')).toMatchObject({ isRateLimited: false });
+    expect(await notices('Ordinary reply', 'Rate limit exceeded')).toMatchObject({ isRateLimited: true });
   });
   it.each(['Verify you are human', 'Session expired', 'Your account is restricted'])('detects an actual UI notice: %s', async notice => {
     expect(await notices('Ordinary reply', notice)).toMatchObject({ isSecurityWarning: true });

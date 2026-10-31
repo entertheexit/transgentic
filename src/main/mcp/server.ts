@@ -1903,7 +1903,14 @@ export class TransgenticMcpServer {
           }
 
           if (['image', 'video', 'music'].includes(effectiveMode)) {
-            if (!savedMediaRelPath) throw new Error('[MEDIA_NOT_GENERATED] media_not_generated: The provider replied without a usable media artifact.');
+            if (!savedMediaRelPath) {
+              const providerReply = cleanAdapterText.trim();
+              const replyExcerpt = providerReply.slice(0, 1_000);
+              const detail = replyExcerpt
+                ? `\nProvider reply (no media produced): ${JSON.stringify(replyExcerpt)}${providerReply.length > replyExcerpt.length ? ' [truncated]' : ''}`
+                : '';
+              throw new Error(`[MEDIA_NOT_GENERATED] media_not_generated: The provider replied without a usable media artifact.${detail}`);
+            }
             try { await validateMediaArtifact(savedMediaRelPath, effectiveMode as MediaMode); } catch (error: any) { throw new Error(`[MEDIA_NOT_GENERATED] media_not_generated: ${error.message}`); }
           }
           globalRateLimiter.markSuccess(providerId);
@@ -1948,7 +1955,7 @@ export class TransgenticMcpServer {
           AccountRegistryManager.markRateLimited(providerId, activeAccount.id, 3600);
           globalRateLimiter.markRateLimited(providerId);
           globalSessionManager.updateProviderState(providerId, 'rate_limited');
-        } else if (candidateErr.message?.includes('[TEMPORARY_CHAT_') || /MEDIA_NOT_GENERATED|MEDIA_SETTINGS_/.test(candidateErr.message || '')) {
+        } else if (candidateErr.message?.includes('[TEMPORARY_CHAT_') || /MEDIA_NOT_GENERATED|MEDIA_SETTINGS_|MEDIA_UNAVAILABLE/.test(candidateErr.message || '')) {
           AccountRegistryManager.markReady(providerId, activeAccount.id);
           globalSessionManager.updateProviderState(providerId, 'ready');
         } else {

@@ -68,6 +68,13 @@ describe('Declarative media recipe contracts', () => {
     g.activationSteps = [{ action: 'javascript', code: 'alert(1)' }]; expect(() => validateGeneration(g)).toThrow();
     g.activationSteps = []; g.code = 'alert(1)'; expect(validateGeneration(g)).not.toHaveProperty('code');
   });
+  it('validates declarative account-unavailability locators without exposing them as settings', () => {
+    const g: any = structuredClone(recipe.response.modes.image!.generation!);
+    g.unavailableWhen = { role: 'dialog', name: 'Subscription required', nameMatch: 'contains' };
+    expect(validateGeneration(g).unavailableWhen).toEqual(g.unavailableWhen);
+    g.unavailableWhen = { javascript: 'untrusted()' };
+    expect(() => validateGeneration(g)).toThrow('Invalid generation controls');
+  });
   it('snapshots desktop inheritance and explicit override flags independently', () => {
     const caps = [mediaCapability(recipe, 'image')!, mediaCapability(BUILTIN_RECIPES.grok, 'image')!];
     const choices = { 'gemini:image': { values: { aspect_ratio: '3:4' }, overrides: [] }, 'grok:image': { values: { aspect_ratio: '16:9', quality: 'quality_2' }, overrides: ['aspect_ratio'] } };
