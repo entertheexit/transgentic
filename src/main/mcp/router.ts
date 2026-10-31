@@ -368,6 +368,13 @@ export class DynamicRouter {
     explicitModel?: string,
     pipeline: 'main' | 'co' = 'main'
   ): string | null {
+    // WebView callers can explicitly retain the native selection even when a
+    // custom recipe's named catalog does not contain a synthetic default entry.
+    const service = ServiceManifestManager.getManifest().services[providerId];
+    const isWebView = service?.providerType === 'webview' ||
+      ['chatgpt', 'claude', 'gemini', 'grok'].includes(providerId);
+    if (explicitModel === 'default' && isWebView) return 'default';
+
     const supportsModelRouting = ServiceManifestManager.supportsModelRouting(providerId);
 
     // 1. If explicit model requested by caller and enabled

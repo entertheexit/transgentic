@@ -68,8 +68,6 @@ export class ModelScraperEngine {
     }
   }
 
-  // Built-in sites change their picker labels frequently. Discover only choices visible to
-  // the current account; never advertise a catalog inferred from API or CLI model names.
   private static readonly pickerTriggers: Record<string, string> = {
     chatgpt: '[data-testid="model-selector-button"], button[aria-label*="model" i]',
     claude: 'button[aria-label*="model" i], [data-testid="model-selector"]',
@@ -77,9 +75,56 @@ export class ModelScraperEngine {
     grok: 'button[aria-label*="model" i]',
   };
 
-  private static readonly pickerItems = '[role="menuitemradio"], [role="option"], [role="menuitem"], mat-option';
-
-  private static readonly geminiModelItems = '[role="menuitem"][data-mode-id]';
+  /** Discovery and selection must use the same menu ownership and label contract. */
+  private static pickerScript(providerId: string): string {
+    return `
+      const provider = ${JSON.stringify(providerId)};
+      const triggerSelector = ${JSON.stringify(this.pickerTriggers[providerId])};
+      const itemSelector = provider === 'gemini'
+        ? '[role="menuitem"][data-mode-id]'
+        : '[role="menuitemradio"], [role="option"][data-model-id]';
+      const normalize = value => String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+      const visible = element => {
+        const style = getComputedStyle(element);
+        return style.display !== 'none' && style.visibility !== 'hidden' &&
+          !element.closest?.('[hidden], [inert], [aria-hidden="true"]') && element.getClientRects().length > 0;
+      };
+      const getTrigger = () => {
+        const triggers = Array.from(document.querySelectorAll(triggerSelector)).filter(visible)
+          .filter(element => !element.closest?.('[role="menu"], [role="listbox"]'));
+        return triggers.length === 1 ? triggers[0] : null;
+      };
+      const getMenu = trigger => {
+        const controlled = trigger.getAttribute('aria-controls');
+        if (controlled) {
+          const menu = document.getElementById(controlled);
+          return menu && visible(menu) ? menu : null;
+        }
+        const menus = Array.from(document.querySelectorAll('[role="menu"], [role="listbox"]')).filter(visible);
+        return menus.length === 1 ? menus[0] : null;
+      };
+      const labelFor = item => {
+        const label = provider === 'gemini' ? item.querySelector('.label')
+          : provider === 'claude' ? item.querySelector('[data-model-name], .truncate') : null;
+        return (label?.textContent || item.getAttribute('aria-label') ||
+          item.firstElementChild?.textContent || item.textContent || '').trim().split('\\n')[0].trim();
+      };
+      const disabled = item => item.matches('[aria-disabled="true"], [disabled], [data-disabled]') ||
+        (provider === 'grok' && /Requires SuperGrok/i.test(item.textContent || ''));
+      const choices = trigger => {
+        const menu = getMenu(trigger);
+        return menu ? Array.from(menu.querySelectorAll(itemSelector)).filter(visible).map(item => {
+          const displayName = labelFor(item);
+          const id = item.getAttribute('data-model-id') || displayName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+          return { item, id, displayName };
+        }).filter(choice => choice.id && choice.displayName) : [];
+      };
+      const closeOpened = trigger => {
+        if (provider === 'gemini') trigger.click();
+        else document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      };
+    `;
+  }
 
   private static async scrapeBuiltIn(
     providerId: string, webContents: WebContents
@@ -87,42 +132,26 @@ export class ModelScraperEngine {
     try {
       const result = await webContents.executeJavaScript(`
         (async function() {
-          const triggerSelector = ${JSON.stringify(this.pickerTriggers[providerId])};
-          const itemSelector = ${JSON.stringify(providerId === 'gemini' ? this.geminiModelItems : this.pickerItems)};
-          const provider = ${JSON.stringify(providerId)};
-          const visible = element => {
-            const style = getComputedStyle(element);
-            return style.display !== 'none' && style.visibility !== 'hidden' && element.getClientRects().length > 0;
-          };
-          const choices = () => Array.from(document.querySelectorAll(itemSelector))
-            .filter(item => visible(item) && !item.matches('[aria-disabled="true"], [disabled], [data-disabled="true"]'))
-            .map(item => {
-              const displayName = (provider === 'gemini'
-                ? item.querySelector('.label')?.textContent
-                : item.getAttribute('aria-label') || item.textContent || '').trim().split('\\n')[0].trim();
-              const id = item.getAttribute('data-model-id') || displayName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-              return { id, displayName };
-            }).filter(item => item.id && item.displayName);
-          let trigger = Array.from(document.querySelectorAll(triggerSelector)).find(visible);
+          ${this.pickerScript(providerId)}
+          let trigger = getTrigger();
           for (let i = 0; i < 50 && !trigger; i++) {
             await new Promise(resolve => setTimeout(resolve, 100));
-            trigger = Array.from(document.querySelectorAll(triggerSelector)).find(visible);
+            trigger = getTrigger();
           }
           if (!trigger) return [];
-          let opened = false;
-          if (trigger.getAttribute('aria-expanded') !== 'true') {
-            trigger.click(); opened = true;
+          const opened = trigger.getAttribute('aria-expanded') !== 'true';
+          try {
+            if (opened) trigger.click();
+            let found = choices(trigger);
+            for (let i = 0; i < 30 && !found.length; i++) {
+              await new Promise(resolve => setTimeout(resolve, 100));
+              found = choices(trigger);
+            }
+            return Array.from(new Map(found.filter(choice => !disabled(choice.item)).map(({ id, displayName }) =>
+              [id, { id, displayName }])).values());
+          } finally {
+            if (opened) closeOpened(trigger);
           }
-          let found = choices();
-          for (let i = 0; i < 30 && !found.length; i++) {
-            await new Promise(resolve => setTimeout(resolve, 100));
-            found = choices();
-          }
-          if (opened) {
-            if (provider === 'gemini') trigger.click();
-            else document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
-          }
-          return Array.from(new Map(found.map(item => [item.id, item])).values());
         })()
       `, true);
       return Array.isArray(result) ? result : [];
@@ -137,66 +166,41 @@ export class ModelScraperEngine {
     try {
       return Boolean(await webContents.executeJavaScript(`
         (async function() {
-          const triggerSelector = ${JSON.stringify(this.pickerTriggers[providerId])};
-          const itemSelector = ${JSON.stringify(providerId === 'gemini' ? this.geminiModelItems : this.pickerItems)};
-          const provider = ${JSON.stringify(providerId)};
+          ${this.pickerScript(providerId)}
           const target = ${JSON.stringify(targetModelId)};
-          const normalize = value => String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
-          const visible = element => {
-            const style = getComputedStyle(element);
-            return style.display !== 'none' && style.visibility !== 'hidden' && element.getClientRects().length > 0;
-          };
-          const trigger = Array.from(document.querySelectorAll(triggerSelector)).find(visible);
+          const trigger = getTrigger();
           if (!trigger) return false;
-          const active = label => {
-            const current = trigger.getAttribute('aria-label') || trigger.textContent || '';
-            return normalize(current) === normalize(label) || normalize(current).endsWith(normalize(label));
-          };
-          const find = () => Array.from(document.querySelectorAll(itemSelector)).filter(visible).filter(item => {
-            const label = (provider === 'gemini'
-              ? item.querySelector('.label')?.textContent
-              : item.getAttribute('aria-label') || item.textContent || '').trim().split('\\n')[0].trim();
-            const id = item.getAttribute('data-model-id') || label.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-            return id === target || normalize(label) === normalize(target);
-          });
-          if (active(target)) return true;
-          let opened = false;
-          if (trigger.getAttribute('aria-expanded') !== 'true') {
-            trigger.click(); opened = true;
-          }
-          let matches = find();
-          for (let i = 0; i < 12 && !matches.length; i++) {
-            await new Promise(resolve => setTimeout(resolve, 100));
-            matches = find();
-          }
-          if (matches.length !== 1 || matches[0].matches('[aria-disabled="true"], [disabled], [data-disabled="true"]')) {
-            if (opened) document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
-            return false;
-          }
-          const item = matches[0];
-          if (provider === 'gemini' && item.classList.contains('selected')) {
+          const matches = () => choices(trigger).filter(choice =>
+            choice.id === target || normalize(choice.displayName) === normalize(target));
+          const selected = choice => choice.item.getAttribute('aria-checked') === 'true' ||
+            choice.item.getAttribute('aria-selected') === 'true' || choice.item.classList.contains('selected');
+          const opened = trigger.getAttribute('aria-expanded') !== 'true';
+          try {
             if (opened) trigger.click();
-            return true;
-          }
-          const label = (provider === 'gemini'
-            ? item.querySelector('.label')?.textContent
-            : item.getAttribute('aria-label') || item.textContent || '').trim().split('\\n')[0].trim();
-          item.click();
-          for (let i = 0; i < 20; i++) {
-            if (provider === 'gemini') {
+            let found = matches();
+            for (let i = 0; i < 20 && !found.length; i++) {
+              await new Promise(resolve => setTimeout(resolve, 100));
+              found = matches();
+            }
+            if (found.length !== 1 || disabled(found[0].item)) return false;
+            if (selected(found[0])) return true;
+            found[0].item.click();
+            for (let i = 0; i < 20; i++) {
+              const current = trigger.getAttribute('aria-label') || trigger.textContent || '';
+              if (normalize(current) === normalize(found[0].displayName) ||
+                normalize(current).endsWith(normalize(found[0].displayName))) return true;
               if (trigger.getAttribute('aria-expanded') !== 'true') trigger.click();
-              const selected = find().filter(candidate => candidate.classList.contains('selected'));
-              if (selected.length === 1) {
-                trigger.click();
+              const verified = matches();
+              if (verified.length === 1 && selected(verified[0])) {
+                if (trigger.getAttribute('aria-expanded') === 'true') closeOpened(trigger);
                 return true;
               }
-            } else if (active(label) || item.getAttribute('aria-checked') === 'true' || item.getAttribute('aria-selected') === 'true') {
-              return true;
+              await new Promise(resolve => setTimeout(resolve, 100));
             }
-            await new Promise(resolve => setTimeout(resolve, 100));
+            return false;
+          } finally {
+            if (opened && trigger.getAttribute('aria-expanded') === 'true') closeOpened(trigger);
           }
-          if (provider === 'gemini' && trigger.getAttribute('aria-expanded') === 'true') trigger.click();
-          return false;
         })()
       `, true));
     } catch {

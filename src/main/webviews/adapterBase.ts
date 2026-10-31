@@ -188,6 +188,16 @@ export abstract class BaseProviderAdapter {
       // the matching composer is hidden or has not mounted yet.
       if (focused && this.webContents && typeof this.webContents.insertText === 'function') {
         await this.webContents.insertText(text);
+        const inserted = await this.executeScript<boolean>(`(function() {
+          const el = ${InputDispatcher.getInputTargetScript(effectiveSelector)};
+          if (!el) return false;
+          const value = el.tagName === 'INPUT' || el.tagName === 'TEXTAREA'
+            ? el.value : el.innerText || el.textContent || '';
+          return value.replace(/\\r\\n/g, '\\n') === ${JSON.stringify(text)}.replace(/\\r\\n/g, '\\n');
+        })()`);
+        // Replacing trusted native input a second time can discard the provider's
+        // editor state or an inline mode chip. Use DOM insertion only as fallback.
+        if (inserted) return { success: true };
       }
     } catch {}
 
@@ -203,17 +213,76 @@ export abstract class BaseProviderAdapter {
   protected async dispatchRealisticSubmit(
     buttonSelector: string,
     inputSelector?: string,
-    options?: GhostCursorOptions
-  ): Promise<{ success: boolean; error?: string }> {
+    options?: GhostCursorOptions,
+    requireButton = false
+  ): Promise<{ success: boolean; error?: string; method?: string }> {
     const effectiveButton = await this.getEffectiveSelector('submitButton', buttonSelector);
     const effectiveInput = inputSelector ? await this.getEffectiveSelector('inputPrompt', inputSelector) : undefined;
-    const script = InputDispatcher.getSubmitScript(effectiveButton, effectiveInput);
+    if (this.webContents && typeof this.webContents.sendInputEvent === 'function') {
+      type SubmitTarget = { x?: number; y?: number; ambiguous?: boolean; offscreen?: boolean; obscured?: boolean };
+      let target: SubmitTarget | null;
+      const targetDeadline = Date.now() + 2_000;
+      do {
+        target = await this.executeScript<SubmitTarget | null>(
+          InputDispatcher.getSubmitTargetScript(effectiveButton, effectiveInput)
+        );
+        // Closing provider menus can retain a pointer-intercepting backdrop
+        // during their exit animation. Wait without clicking through it.
+        if (!target?.obscured && !target?.offscreen) break;
+        if (Date.now() >= targetDeadline) break;
+        await new Promise(resolve => setTimeout(resolve, 50));
+      } while (true);
+      if (target?.ambiguous) return { success: false, error: 'Multiple declared submit controls are actionable.' };
+      if (target?.obscured) return { success: false, error: 'The declared submit control is covered by another provider control.' };
+      if (target?.offscreen) return { success: false, error: 'The declared submit control is outside the provider viewport.' };
+      if (Number.isFinite(target?.x) && Number.isFinite(target?.y)) {
+        const debuggerApi = this.webContents.debugger;
+        if (debuggerApi && typeof debuggerApi.sendCommand === 'function') {
+          let attachedHere = false;
+          let pressed = false;
+          try {
+            if (!debuggerApi.isAttached()) {
+              debuggerApi.attach('1.3');
+              attachedHere = true;
+            }
+            const position = { x: target!.x!, y: target!.y!, button: 'left', clickCount: 1 };
+            await debuggerApi.sendCommand('Input.dispatchMouseEvent', { type: 'mouseMoved', ...position, buttons: 0 });
+            pressed = true;
+            // sendInputEvent requires a focused BrowserWindow. Protocol input is
+            // trusted by the provider without focusing hidden execution windows.
+            await debuggerApi.sendCommand('Input.dispatchMouseEvent', { type: 'mousePressed', ...position, buttons: 1 });
+            await debuggerApi.sendCommand('Input.dispatchMouseEvent', { type: 'mouseReleased', ...position, buttons: 0 });
+            return { success: true, method: 'trusted_button_click' };
+          } catch {
+            throw new Error(pressed
+              ? '[WEBVIEW_SUBMISSION_UNCERTAIN] Trusted submission was attempted but could not be confirmed.'
+              : '[WEBVIEW_INPUT_UNAVAILABLE] Trusted browser input is unavailable. The prompt was not submitted.');
+          } finally {
+            try {
+              if (attachedHere && debuggerApi.isAttached()) debuggerApi.detach();
+            } catch { /* A closing view must not change the submission outcome. */ }
+          }
+        }
+        try {
+          const position = { x: target!.x!, y: target!.y!, button: 'left' as const, clickCount: 1 };
+          this.webContents.sendInputEvent({ type: 'mouseDown', ...position });
+          this.webContents.sendInputEvent({ type: 'mouseUp', ...position });
+          return { success: true, method: 'native_button_click' };
+        } catch {
+          // A native event may already have reached the provider. Never follow it
+          // with a DOM click or Enter fallback that could submit twice.
+          throw new Error('[WEBVIEW_SUBMISSION_UNCERTAIN] Native submission was attempted but could not be confirmed.');
+        }
+      }
+      if (requireButton) return { success: false, error: 'The declared media submit control is unavailable.' };
+    }
+    const script = InputDispatcher.getSubmitScript(effectiveButton, effectiveInput, requireButton);
     const res = await this.executeScript<{ success: boolean; error?: string; method?: string }>(script);
 
     // CRITICAL IDEMPOTENCY GUARD:
     // If DOM button click or DOM Enter key succeeded, DO NOT dispatch native Return!
     // Native Return is strictly an emergency fallback ONLY if DOM dispatch completely failed.
-    if (!res || !res.success) {
+    if ((!res || !res.success) && !requireButton) {
       try {
         const focused = effectiveInput && await this.executeScript<boolean>(`(function() {
           const el = ${InputDispatcher.getInputTargetScript(effectiveInput)};
@@ -300,6 +369,12 @@ export abstract class BaseProviderAdapter {
     let stableTicks = 0;
     const inspectScript = DomObserver.getInspectionScript(this.providerId, mode, (this as any).recipe, options.excludedMediaUrls);
     const checkProviderState = (inspection: DomInspectionResult) => {
+      if (inspection.error) {
+        throw new Error(`[DOM_INSPECTION_FAILED] ${this.name}: ${inspection.error}`);
+      }
+      if (inspection.mediaUnavailableReason) {
+        throw new Error(`[MEDIA_UNAVAILABLE] ${this.name}: ${inspection.mediaUnavailableReason}`);
+      }
       if (inspection.isSecurityWarning) {
         throw new Error(`[PROVIDER_ACTION_REQUIRED] ${this.name}: ${inspection.securityWarningReason || 'Provider verification or sign-in is required.'}`);
       }

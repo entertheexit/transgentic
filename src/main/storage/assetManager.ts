@@ -248,6 +248,9 @@ export class AssetManager {
             hostname: parsed.hostname,
             port: parsed.port || (parsed.protocol === 'https:' ? 443 : 80),
             path: parsed.pathname + parsed.search,
+            // Authenticated media responses can exceed Node's default 16 KiB
+            // header limit. Keep a finite bound while accepting these responses.
+            maxHeaderSize: 64 * 1024,
             headers,
           };
           client.get(options, (res) => {

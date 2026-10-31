@@ -5,6 +5,11 @@ import { ServiceManifestManager } from '../src/main/registry/serviceManifest.js'
 const TEST_WEBVIEW_ID = 'webview_test_service' as any;
 
 describe('DynamicRouter Model Routing', () => {
+  it('keeps an explicit current-model request instead of a custom mode default', () => {
+    expect(DynamicRouter.resolveTargetModel(TEST_WEBVIEW_ID, 'coding', 'default')).toBe('default');
+    expect(DynamicRouter.resolveTargetModel(TEST_WEBVIEW_ID, 'general', 'default')).toBe('default');
+  });
+
   beforeEach(() => {
     DynamicRouter.resetRoutes();
     const manifest = ServiceManifestManager.getManifest();

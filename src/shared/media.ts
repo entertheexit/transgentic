@@ -37,6 +37,7 @@ export interface MediaSetting {
 export interface RecipeGeneration {
   activationSteps: MediaStep[];
   activeWhen: MediaLocator;
+  unavailableWhen?: MediaLocator;
   settings: MediaSetting[];
   models?: string[];
   nativeDefaults?: Record<string, MediaValue>;
@@ -145,5 +146,5 @@ export function validateGeneration(raw: unknown): RecipeGeneration {
   });
   if (raw.models !== undefined && (!Array.isArray(raw.models) || !raw.models.length || !raw.models.every(m => typeof m === 'string'))) return fail();
   const nativeDefaults = raw.nativeDefaults === undefined ? undefined : normalizeMediaPreferences({ settings: raw.nativeDefaults }).settings;
-  return { activationSteps: steps(raw.activationSteps), activeWhen: locator(raw.activeWhen), settings, ...(raw.models ? { models: raw.models as string[] } : {}), ...(nativeDefaults ? { nativeDefaults } : {}) };
+  return { activationSteps: steps(raw.activationSteps), activeWhen: locator(raw.activeWhen), ...(raw.unavailableWhen ? { unavailableWhen: locator(raw.unavailableWhen) } : {}), settings, ...(raw.models ? { models: raw.models as string[] } : {}), ...(nativeDefaults ? { nativeDefaults } : {}) };
 }

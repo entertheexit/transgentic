@@ -43,7 +43,7 @@ For ChatGPT, Claude, Gemini, Grok, and each configured integration:
 
 ## 3. Web-service mode matrix
 
-Apply this matrix to every configured web service. Mark unsupported modes with evidence; do not claim support merely because a recipe contains an output selector.
+Apply this matrix to every configured web service. ChatGPT video and music are excluded from this health check; do not submit those tests. Mark unsupported modes with evidence; do not claim support merely because a recipe contains an output selector.
 
 | Mode/path | Minimum verification |
 | --- | --- |

@@ -3,7 +3,7 @@ import type { CustomRecipe } from '../types/recipe.js';
 
 export const BUILTIN_RECIPES: Record<'chatgpt' | 'claude' | 'gemini' | 'grok', CustomRecipe> = {
   "chatgpt": {
-    "version": "1.2.3",
+    "version": "1.2.4",
     "id": "chatgpt",
     "title": "OpenAI ChatGPT",
     "domainMatch": "chatgpt.com",
@@ -101,7 +101,7 @@ export const BUILTIN_RECIPES: Record<'chatgpt' | 'claude' | 'gemini' | 'grok', C
               "document"
             ],
             "multiple": true,
-            "ready": "[data-composer-attachments] [role=\"button\"]:has(button[aria-label^=\"Remove \"]):not(:has([role=\"progressbar\"]))",
+            "ready": "[data-composer-attachments]:not(:has([role=\"progressbar\"])) button[aria-label^=\"Remove \"]:not(:disabled)",
             "cleanup": "[data-composer-attachments] button[aria-label^=\"Remove \"]"
           }
         },
@@ -118,7 +118,7 @@ export const BUILTIN_RECIPES: Record<'chatgpt' | 'claude' | 'gemini' | 'grok', C
               "image"
             ],
             "multiple": true,
-            "ready": "[data-composer-attachments] [role=\"button\"]:has(button[aria-label^=\"Remove \"]):not(:has([role=\"progressbar\"]))",
+            "ready": "[data-composer-attachments]:not(:has([role=\"progressbar\"])) button[aria-label^=\"Remove \"]:not(:disabled)",
             "cleanup": "[data-composer-attachments] button[aria-label^=\"Remove \"]"
           },
           "generation": {
@@ -264,7 +264,7 @@ export const BUILTIN_RECIPES: Record<'chatgpt' | 'claude' | 'gemini' | 'grok', C
     }
   },
   "gemini": {
-    "version": "1.1.3",
+    "version": "1.1.6",
     "id": "gemini",
     "title": "Google Gemini",
     "domainMatch": "gemini.google.com",
@@ -337,8 +337,8 @@ export const BUILTIN_RECIPES: Record<'chatgpt' | 'claude' | 'gemini' | 'grok', C
           "mediaKind": "text",
           "inputAttachments": {
             "fileInput": [
-              "uploader > input[type=\"file\"]",
-              "input[type=\"file\"]"
+              "images-files-uploader[data-test-id=\"uploader-images-files-button-advanced\"] > input[type=\"file\"]",
+              "uploader > input[type=\"file\"]"
             ],
             "acceptedKinds": [
               "image",
@@ -357,8 +357,8 @@ export const BUILTIN_RECIPES: Record<'chatgpt' | 'claude' | 'gemini' | 'grok', C
                 }
               }
             ],
-            "ready": "uploader-file-preview:has(button[aria-label=\"close attachment\"]):not(:has([role=\"progressbar\"]))",
-            "cleanup": "uploader-file-preview button[aria-label=\"close attachment\"]"
+            "ready": "uploader-file-preview:has(button[aria-label^=\"close \"]):not(:has([role=\"progressbar\"]))",
+            "cleanup": "uploader-file-preview button[aria-label^=\"close \"]"
           }
         },
         "image": {
@@ -368,8 +368,8 @@ export const BUILTIN_RECIPES: Record<'chatgpt' | 'claude' | 'gemini' | 'grok', C
           "mediaKind": "image",
           "inputAttachments": {
             "fileInput": [
-              "uploader > input[type=\"file\"]",
-              "input[type=\"file\"]"
+              "images-files-uploader[data-test-id=\"uploader-images-files-button-advanced\"] > input[type=\"file\"]",
+              "uploader > input[type=\"file\"]"
             ],
             "acceptedKinds": [
               "image"
@@ -383,8 +383,8 @@ export const BUILTIN_RECIPES: Record<'chatgpt' | 'claude' | 'gemini' | 'grok', C
                 }
               }
             ],
-            "ready": "uploader-file-preview:has(button[aria-label=\"close attachment\"]):not(:has([role=\"progressbar\"]))",
-            "cleanup": "uploader-file-preview button[aria-label=\"close attachment\"]"
+            "ready": "uploader-file-preview:has(button[aria-label^=\"close \"]):not(:has([role=\"progressbar\"]))",
+            "cleanup": "uploader-file-preview button[aria-label^=\"close \"]"
           },
           "generation": {
             "activationSteps": [
@@ -923,8 +923,8 @@ export const BUILTIN_RECIPES: Record<'chatgpt' | 'claude' | 'gemini' | 'grok', C
           "mediaKind": "video",
           "inputAttachments": {
             "fileInput": [
-              "uploader > input[type=\"file\"]",
-              "input[type=\"file\"]"
+              "images-files-uploader[data-test-id=\"uploader-images-files-button-advanced\"] > input[type=\"file\"]",
+              "uploader > input[type=\"file\"]"
             ],
             "acceptedKinds": [
               "image",
@@ -939,8 +939,8 @@ export const BUILTIN_RECIPES: Record<'chatgpt' | 'claude' | 'gemini' | 'grok', C
                 }
               }
             ],
-            "ready": "uploader-file-preview:has(button[aria-label=\"close attachment\"]):not(:has([role=\"progressbar\"]))",
-            "cleanup": "uploader-file-preview button[aria-label=\"close attachment\"]"
+            "ready": "uploader-file-preview:has(button[aria-label^=\"close \"]):not(:has([role=\"progressbar\"]))",
+            "cleanup": "uploader-file-preview button[aria-label^=\"close \"]"
           },
           "generation": {
             "activationSteps": [
@@ -4396,7 +4396,7 @@ export const BUILTIN_RECIPES: Record<'chatgpt' | 'claude' | 'gemini' | 'grok', C
     "modeSchemaVersion": 2
   },
   "grok": {
-    "version": "1.1.4",
+    "version": "1.1.5",
     "id": "grok",
     "modeSchemaVersion": 2,
     "title": "xAI Grok",
@@ -4904,7 +4904,12 @@ export const BUILTIN_RECIPES: Record<'chatgpt' | 'claude' | 'gemini' | 'grok', C
                   }
                 ]
               }
-            ]
+            ],
+            "unavailableWhen": {
+              "role": "dialog",
+              "name": "Unlock your creativity with Imagine",
+              "nameMatch": "contains"
+            }
           }
         },
         "video": {
@@ -5540,7 +5545,12 @@ export const BUILTIN_RECIPES: Record<'chatgpt' | 'claude' | 'gemini' | 'grok', C
                   }
                 ]
               }
-            ]
+            ],
+            "unavailableWhen": {
+              "role": "dialog",
+              "name": "Unlock your creativity with Imagine",
+              "nameMatch": "contains"
+            }
           }
         }
       }

@@ -4,6 +4,37 @@
  * rather than simple direct .value DOM overwrites.
  */
 export class InputDispatcher {
+  /** Resolve a unique declared button before any irreversible native input. */
+  public static getSubmitTargetScript(selector: string, inputSelector?: string): string {
+    return `(function() {
+      let candidates = Array.from(document.querySelectorAll(${JSON.stringify(selector)})).filter(el => {
+        if (el.disabled || el.hasAttribute('disabled') || el.getAttribute('aria-disabled') === 'true') return false;
+        if (el.closest('[hidden], [inert], [aria-hidden="true"], header, nav, aside')) return false;
+        const style = getComputedStyle(el);
+        const rect = el.getBoundingClientRect();
+        return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
+      });
+      const input = ${inputSelector ? this.getInputTargetScript(inputSelector) : 'null'};
+      for (let root = input?.parentElement; root && root !== document.body; root = root.parentElement) {
+        const local = candidates.filter(button => root.contains(button));
+        if (local.length) { candidates = local; break; }
+      }
+      const exact = candidates.filter(button => /^(Send|Send message|Send prompt|ส่ง|ส่งข้อความ|ส่งพรอมต์)$/i.test(button.getAttribute('aria-label') || ''));
+      if (exact.length === 1) candidates = exact;
+      if (candidates.length > 1) return { ambiguous: true };
+      if (!candidates.length) return null;
+      candidates[0].scrollIntoView?.({ block: 'nearest', inline: 'nearest', behavior: 'instant' });
+      const rect = candidates[0].getBoundingClientRect();
+      const x = Math.round(rect.x + rect.width / 2);
+      const y = Math.round(rect.y + rect.height / 2);
+      if ((typeof innerWidth === 'number' && (x < 0 || x >= innerWidth)) ||
+          (typeof innerHeight === 'number' && (y < 0 || y >= innerHeight))) return { offscreen: true };
+      const hit = document.elementFromPoint?.(x, y);
+      if (hit && hit !== candidates[0] && !candidates[0].contains(hit)) return { obscured: true };
+      return { x, y };
+    })()`;
+  }
+
   /** Use the same rendered composer for native focus, text insertion, and Enter. */
   public static getInputTargetScript(selector: string): string {
     return `(function() {
@@ -144,7 +175,7 @@ export class InputDispatcher {
   /**
    * Generates JavaScript code to click a button or dispatch keyboard Enter to submit a prompt.
    */
-  public static getSubmitScript(buttonSelector: string, inputSelector?: string): string {
+  public static getSubmitScript(buttonSelector: string, inputSelector?: string, requireButton = false): string {
     return `
       (async function() {
         try {
@@ -210,6 +241,8 @@ export class InputDispatcher {
             } catch(e) {}
             return { success: true, method: 'button_click' };
           }
+
+          if (${requireButton}) return { success: false, error: 'The declared media submit control is unavailable.' };
 
           // 2. Fallback: Dispatch keyboard Enter on input element ONLY if button was NOT clicked
           if (${JSON.stringify(inputSelector || '')}) {

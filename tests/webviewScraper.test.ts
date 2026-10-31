@@ -10,11 +10,18 @@ vi.mock('../src/main/registry/recipeManager.js', () => ({
 vi.mock('../src/main/registry/modelRegistry.js', () => ({ ModelRegistryManager: {} }));
 
 function webview(document: any = {}) {
+  const menu = { getClientRects: () => [1], querySelectorAll: (selector: string) => document.querySelectorAll?.(selector) || [] };
+  const page = {
+    ...document,
+    getElementById: document.getElementById || (() => menu),
+    querySelectorAll: (selector: string) => selector === '[role="menu"], [role="listbox"]'
+      ? [menu] : document.querySelectorAll?.(selector) || [],
+  };
   return {
     isDestroyed: () => false,
     executeJavaScript: vi.fn(async (script: string) =>
       runInNewContext(script, {
-        document, setTimeout: (fn: () => void) => fn(),
+        document: page, setTimeout: (fn: () => void) => fn(),
         getComputedStyle: () => ({ display: 'block', visibility: 'visible' }),
         KeyboardEvent: class { constructor(_type: string, _options: unknown) {} },
       })),
@@ -22,6 +29,31 @@ function webview(document: any = {}) {
 }
 
 describe('Built-in web model controls', () => {
+  it('scopes choices to the controlled menu and excludes submenu and effort controls', async () => {
+    const item = (role: string, label: string) => ({
+      textContent: label + ' Description',
+      firstElementChild: { textContent: label },
+      querySelector: () => ({ textContent: label }),
+      getAttribute: (name: string) => name === 'role' ? role : null,
+      getClientRects: () => [1], matches: () => false,
+    });
+    const entries = [item('menuitemradio', 'Model A'), item('menuitem', 'Effort'), item('menuitem', 'More models')];
+    const trigger = {
+      getAttribute: (name: string) => name === 'aria-controls' ? 'models' : 'true',
+      getClientRects: () => [1],
+    };
+    const menu = {
+      getClientRects: () => [1],
+      querySelectorAll: (selector: string) => entries.filter(entry => selector.includes('[role="' + entry.getAttribute('role') + '"]')),
+    };
+    const view = webview({
+      getElementById: (id: string) => id === 'models' ? menu : null,
+      querySelectorAll: (selector: string) => selector.includes('button[aria-label')
+        ? [trigger] : [item('menuitemradio', 'Unrelated'), ...entries],
+    });
+    expect(await ModelScraperEngine.discoverModels('claude', view)).toEqual([{ id: 'model-a', displayName: 'Model A' }]);
+  });
+
   it('does not invent a catalog when the picker is unavailable', async () => {
     const view = webview({ querySelectorAll: () => [] });
     expect(await ModelScraperEngine.discoverModels('gemini', view)).toEqual([]);

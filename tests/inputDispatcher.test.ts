@@ -147,6 +147,85 @@ describe('InputDispatcher', () => {
     expect(sendInputEvent).not.toHaveBeenCalled();
   });
 
+  it('submits once using native input without a second DOM click', async () => {
+    const executeScript = vi.fn().mockResolvedValue({ x: 100, y: 80 });
+    const sendInputEvent = vi.fn();
+    const adapter = {
+      getEffectiveSelector: async (_landmark: string, selector: string) => selector,
+      executeScript, webContents: { sendInputEvent },
+    };
+    const result = await (BaseProviderAdapter.prototype as any).dispatchRealisticSubmit.call(adapter, 'button.send', '.editor');
+    expect(result).toMatchObject({ success: true, method: 'native_button_click' });
+    expect(sendInputEvent.mock.calls.map(call => call[0].type)).toEqual(['mouseDown', 'mouseUp']);
+    expect(executeScript).toHaveBeenCalledOnce();
+  });
+
+  it.each([false, true])('uses trusted protocol input in hidden views and preserves existing debugger ownership (%s)', async attached => {
+    let isAttached = attached;
+    const debuggerApi = {
+      isAttached: () => isAttached,
+      attach: vi.fn(() => { isAttached = true; }),
+      detach: vi.fn(() => { isAttached = false; }),
+      sendCommand: vi.fn().mockResolvedValue({}),
+    };
+    const adapter = {
+      getEffectiveSelector: async (_landmark: string, selector: string) => selector,
+      executeScript: vi.fn().mockResolvedValue({ x: 100, y: 80 }),
+      webContents: { debugger: debuggerApi, sendInputEvent: vi.fn() },
+    };
+    const result = await (BaseProviderAdapter.prototype as any).dispatchRealisticSubmit.call(adapter, 'button.send', '.editor');
+    expect(result).toMatchObject({ success: true, method: 'trusted_button_click' });
+    expect(debuggerApi.sendCommand.mock.calls.map(call => call[1].type)).toEqual(['mouseMoved', 'mousePressed', 'mouseReleased']);
+    expect(debuggerApi.detach).toHaveBeenCalledTimes(attached ? 0 : 1);
+    expect(debuggerApi.attach).toHaveBeenCalledTimes(attached ? 0 : 1);
+    expect(adapter.webContents.sendInputEvent).not.toHaveBeenCalled();
+    expect(adapter.executeScript).toHaveBeenCalledOnce();
+  });
+
+  it('never retries a partially dispatched trusted click', async () => {
+    const debuggerApi = {
+      isAttached: () => true,
+      attach: vi.fn(), detach: vi.fn(),
+      sendCommand: vi.fn().mockResolvedValueOnce({}).mockResolvedValueOnce({}).mockRejectedValueOnce(new Error('view gone')),
+    };
+    const adapter = {
+      getEffectiveSelector: async (_landmark: string, selector: string) => selector,
+      executeScript: vi.fn().mockResolvedValue({ x: 100, y: 80 }),
+      webContents: { debugger: debuggerApi, sendInputEvent: vi.fn() },
+    };
+    await expect((BaseProviderAdapter.prototype as any).dispatchRealisticSubmit.call(adapter, 'button.send', '.editor'))
+      .rejects.toThrow('[WEBVIEW_SUBMISSION_UNCERTAIN]');
+    expect(debuggerApi.sendCommand).toHaveBeenCalledTimes(3);
+    expect(adapter.webContents.sendInputEvent).not.toHaveBeenCalled();
+    expect(adapter.executeScript).toHaveBeenCalledOnce();
+  });
+
+  it('does not retry when native submission throws after the first event', async () => {
+    const sendInputEvent = vi.fn().mockImplementationOnce(() => {}).mockImplementationOnce(() => { throw new Error('view gone'); });
+    const adapter = {
+      getEffectiveSelector: async (_landmark: string, selector: string) => selector,
+      executeScript: vi.fn().mockResolvedValue({ x: 100, y: 80 }), webContents: { sendInputEvent },
+    };
+    await expect((BaseProviderAdapter.prototype as any).dispatchRealisticSubmit.call(adapter, 'button.send', '.editor'))
+      .rejects.toThrow('[WEBVIEW_SUBMISSION_UNCERTAIN]');
+    expect(sendInputEvent).toHaveBeenCalledTimes(2);
+    expect(adapter.executeScript).toHaveBeenCalledOnce();
+  });
+
+  it('does not fall back to Enter when a media submit button is unavailable', async () => {
+    const sendInputEvent = vi.fn();
+    const adapter = {
+      getEffectiveSelector: async (_landmark: string, selector: string) => selector,
+      executeScript: vi.fn().mockResolvedValue(null), webContents: { sendInputEvent },
+    };
+    const result = await (BaseProviderAdapter.prototype as any).dispatchRealisticSubmit.call(
+      adapter, 'button.send', '.editor', undefined, true
+    );
+    expect(result.success).toBe(false);
+    expect(sendInputEvent).not.toHaveBeenCalled();
+    expect(adapter.executeScript).toHaveBeenCalledOnce();
+  });
+
   it('clicks a later visible send button exactly once and never dispatches Enter', async () => {
     const browser = browserFixture();
     const editor = browser.element(true);
@@ -177,4 +256,85 @@ describe('InputDispatcher', () => {
     expect(response.success).toBe(false);
     expect(hidden.dispatchEvent).not.toHaveBeenCalled();
   });
+});
+
+it('scrolls the unique submit control into the provider viewport before resolving input coordinates', () => {
+  let scrolled = false;
+  const button = {
+    disabled: false,
+    hasAttribute: () => false,
+    getAttribute: () => 'Send',
+    closest: () => null,
+    scrollIntoView: () => { scrolled = true; },
+    getBoundingClientRect: () => ({ x: 20, y: scrolled ? 40 : 900, width: 100, height: 40 }),
+  };
+  const result = runInNewContext(InputDispatcher.getSubmitTargetScript('button'), {
+    document: { querySelectorAll: () => [button] },
+    getComputedStyle: () => ({ display: 'block', visibility: 'visible' }),
+    innerWidth: 1024, innerHeight: 768,
+  });
+  expect(scrolled).toBe(true);
+  expect(result).toEqual({ x: 70, y: 60 });
+});
+
+it('rejects a submit target that remains outside the viewport after scrolling', () => {
+  const button = {
+    disabled: false, hasAttribute: () => false, getAttribute: () => 'Send', closest: () => null,
+    getBoundingClientRect: () => ({ x: 20, y: 900, width: 100, height: 40 }),
+  };
+  expect(runInNewContext(InputDispatcher.getSubmitTargetScript('button'), {
+    document: { querySelectorAll: () => [button] },
+    getComputedStyle: () => ({ display: 'block', visibility: 'visible' }),
+    innerWidth: 1024, innerHeight: 768,
+  })).toEqual({ offscreen: true });
+});
+
+it('does not send trusted input through an overlay covering the submit button', () => {
+  const button = {
+    disabled: false, hasAttribute: () => false, getAttribute: () => 'Send', closest: () => null,
+    getBoundingClientRect: () => ({ x: 20, y: 40, width: 100, height: 40 }),
+    contains: () => false,
+  };
+  expect(runInNewContext(InputDispatcher.getSubmitTargetScript('button'), {
+    document: { querySelectorAll: () => [button], elementFromPoint: () => ({}) },
+    getComputedStyle: () => ({ display: 'block', visibility: 'visible' }),
+    innerWidth: 1024, innerHeight: 768,
+  })).toEqual({ obscured: true });
+});
+
+it('waits for a closing provider backdrop before sending exactly one click', async () => {
+  vi.useFakeTimers();
+  try {
+    const executeScript = vi.fn().mockResolvedValueOnce({ obscured: true }).mockResolvedValue({ x: 100, y: 80 });
+    const sendInputEvent = vi.fn();
+    const adapter = {
+      getEffectiveSelector: async (_landmark: string, selector: string) => selector,
+      executeScript, webContents: { sendInputEvent },
+    };
+    const pending = (BaseProviderAdapter.prototype as any).dispatchRealisticSubmit.call(adapter, 'button.send', '.editor');
+    await vi.runAllTimersAsync();
+    await expect(pending).resolves.toMatchObject({ success: true });
+    expect(executeScript).toHaveBeenCalledTimes(2);
+    expect(sendInputEvent.mock.calls.map(call => call[0].type)).toEqual(['mouseDown', 'mouseUp']);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it('fails without dispatch when a provider overlay stays open', async () => {
+  vi.useFakeTimers();
+  try {
+    const sendInputEvent = vi.fn();
+    const adapter = {
+      getEffectiveSelector: async (_landmark: string, selector: string) => selector,
+      executeScript: vi.fn().mockResolvedValue({ obscured: true }),
+      webContents: { sendInputEvent },
+    };
+    const pending = (BaseProviderAdapter.prototype as any).dispatchRealisticSubmit.call(adapter, 'button.send', '.editor');
+    await vi.runAllTimersAsync();
+    await expect(pending).resolves.toMatchObject({ success: false, error: expect.stringContaining('covered') });
+    expect(sendInputEvent).not.toHaveBeenCalled();
+  } finally {
+    vi.useRealTimers();
+  }
 });
