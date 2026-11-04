@@ -779,6 +779,10 @@ export const RadialHub: React.FC<RadialHubProps> = ({
                           Checking authentication...
                         </span>
                       </>
+                    ) : provider.state === 'rate_limited' && id.startsWith('cli_') ? (
+                      <span className="text-[10px] text-amber-400 font-mono">
+                        Quota exhausted{provider.rateLimitedUntil ? ` • Resets ${new Date(provider.rateLimitedUntil).toLocaleString()}` : ' • Reset time unavailable'}
+                      </span>
                     ) : isAuthed ? (
                       <>
                         <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />

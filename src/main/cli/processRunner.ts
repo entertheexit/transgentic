@@ -5,7 +5,10 @@ import fs from 'node:fs';
 // Return fixed messages, never native log contents: diagnostics may contain
 // credentials, request text, or project data.
 export function cliDiagnosticMessage(text: string): string | undefined {
-  if (/individual quota reached|quota (?:has been )?exhausted|insufficient_quota/i.test(text)) return 'CLI provider quota exhausted. Wait for the account quota to reset or select another model/account in the native CLI.';
+  if (/individual quota reached|quota (?:has been )?exhausted|insufficient_quota/i.test(text)) {
+    const reset = text.match(/resets? in\s+((?:\d+h)?(?:\d+m)?(?:\d+s)?)/i)?.[1];
+    return `CLI provider quota exhausted.${reset ? ` Resets in ${reset}.` : ' Wait for the account quota to reset or select another model/account in the native CLI.'}`;
+  }
   if (/authentication required|not logged in|not signed in|invalid_grant|login required/i.test(text)) return 'CLI authentication required. Sign in using its native CLI, then recheck.';
   if (/sandbox_init.*operation not permitted/i.test(text)) return 'CLI permission sandbox could not start. Restart Transgentic outside a nested process sandbox.';
   if (/failed to initialize thread persistence.*operation not permitted/i.test(text)) return 'CLI could not initialize native thread storage under the permission sandbox. Check CLI compatibility.';
