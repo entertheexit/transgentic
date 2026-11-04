@@ -26,8 +26,8 @@ export interface CliWorkspace {
 export interface CliConfig { services: Partial<Record<CliProviderId, CliServiceConfig>>; workspaces: CliWorkspace[] }
 export interface CliRequestOptions { workspaceId?: string; allowProjectEditing?: boolean; allowCommands?: boolean }
 export interface CliStatus {
-  provider: CliProviderId; state: 'not_checked' | 'missing' | 'incompatible' | 'available' | 'ready' | 'busy' | 'authentication_required' | 'error';
-  executablePath?: string; version?: string; message?: string; checkedAt?: number;
+  provider: CliProviderId; state: 'not_checked' | 'missing' | 'incompatible' | 'available' | 'ready' | 'busy' | 'authentication_required' | 'quota_exhausted' | 'error';
+  executablePath?: string; version?: string; message?: string; checkedAt?: number; resetAt?: number;
 }
 export interface CliModelOption { id: string; name: string }
 export interface CliModelDiscovery {
@@ -49,4 +49,11 @@ export function builtInCliServices(): Record<string, ServiceManifestEntry> {
     models: [{ id: 'default', displayName: 'CLI default', enabled: true, userEnabled: true,
       discoveredAvailable: false, modes: ['general', 'coding'] }],
   } satisfies ServiceManifestEntry]));
+}
+
+export function cliQuotaStatus(message: string, now = Date.now()): Partial<CliStatus> | undefined {
+  if (!/individual quota reached|quota (?:has been )?exhausted|insufficient_quota/i.test(message)) return undefined;
+  const duration = message.match(/resets? in\s+(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?/i);
+  const seconds = duration ? Number(duration[1] || 0) * 3600 + Number(duration[2] || 0) * 60 + Number(duration[3] || 0) : 0;
+  return { state: 'quota_exhausted', message: 'Quota exhausted', resetAt: seconds > 0 ? now + seconds * 1000 : undefined };
 }

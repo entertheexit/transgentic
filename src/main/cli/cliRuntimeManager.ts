@@ -5,7 +5,7 @@ import crypto from 'node:crypto';
 import { execFile, execFileSync } from 'node:child_process';
 import { promisify } from 'node:util';
 import { app } from 'electron';
-import { CLI_IDS, CLI_DEFINITIONS, defaultCliService, isCliProvider, type CliConfig, type CliModelDiscovery, type CliModelOption, type CliProviderId, type CliRequestOptions, type CliState, type CliStatus, type CliServiceConfig } from '../../shared/cli.js';
+import { cliQuotaStatus, CLI_IDS, CLI_DEFINITIONS, defaultCliService, isCliProvider, type CliConfig, type CliModelDiscovery, type CliModelOption, type CliProviderId, type CliRequestOptions, type CliState, type CliStatus, type CliServiceConfig } from '../../shared/cli.js';
 import { cliEnvironment, resolvePolicy, sandboxAvailable, sandboxInvocation, validatedMacUserKeychainPaths } from './executionPolicy.js';
 import { CliProcess } from './processRunner.js';
 import { adapterArgs, executeAdapter, type CliResult } from './adapters.js';
@@ -137,8 +137,8 @@ export class CliRuntimeManager {
     return Object.fromEntries(CLI_IDS.map(id => {
       const s = this.statuses[id];
       return [id, { id, name: CLI_DEFINITIONS[id].name, url: CLI_DEFINITIONS[id].docs, partition: '',
-        state: s?.state === 'busy' ? 'busy' as const : s?.state === 'ready' ? 'ready' as const : 'disconnected' as const,
-        isAuthenticated: s?.state === 'ready' || s?.state === 'busy', rateLimitCount: 0, cliStatus: s?.state || 'not_checked', message: s?.message }];
+        state: s?.state === 'busy' ? 'busy' as const : s?.state === 'quota_exhausted' ? 'rate_limited' as const : s?.state === 'ready' ? 'ready' as const : 'disconnected' as const,
+        isAuthenticated: s?.state === 'ready' || s?.state === 'busy' || s?.state === 'quota_exhausted', rateLimitedUntil: s?.resetAt, rateLimitCount: 0, cliStatus: s?.state || 'not_checked', message: s?.message }];
     }));
   }
   async probe(id: CliProviderId): Promise<CliStatus> {
@@ -305,12 +305,12 @@ export class CliRuntimeManager {
           if (!result.text.trim()) throw new Error('CLI returned no answer.');
           if (result.permissionDenied) throw new Error('CLI could not perform an operation under the configured permissions. Review the activity and permission settings.');
           if (result.sessionId) this.sessions.set(key, { id: result.sessionId, lastUsed: Date.now() });
-          this.setStatus(id, { state: 'ready', message: undefined });
+          this.setStatus(id, { state: 'ready', message: undefined, resetAt: undefined });
           return { ...result, wasNewChat: !previous };
         } catch (error) {
           const err = error as Error & { noFallback?: boolean };
           if (mayHaveSideEffects) { err.noFallback = true; err.message += ' Project actions may already have occurred. Inspect the workspace before retrying; Transgentic will not replay this request on a fallback.'; }
-          this.setStatus(id, { state: err.name === 'AbortError' ? 'available' : /authentication required|not logged in/i.test(err.message) ? 'authentication_required' : 'error', message: err.name === 'AbortError' ? 'Request stopped.' : err.message });
+          this.setStatus(id, cliQuotaStatus(err.message) || { state: err.name === 'AbortError' ? 'available' : /authentication required|not logged in/i.test(err.message) ? 'authentication_required' : 'error', message: err.name === 'AbortError' ? 'Request stopped.' : err.message, resetAt: undefined });
           throw err;
         } finally { if (proc) { proc.stop(); await proc.closed; } fs.rmSync(scratch, { recursive: true, force: true }); }
       };
