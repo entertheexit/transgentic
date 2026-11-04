@@ -22,24 +22,37 @@ function renderStatus(capability?: TemporaryChatCapability, preferred = false): 
 
 describe('Hub Temporary Chat status', () => {
   it('does not call an unknown capability unsupported', () => {
-    expect(renderStatus()).toContain('Checking Temporary Chat');
-    expect(renderStatus()).not.toContain('Temporary Chat Unsupported');
+    expect(renderStatus()).toContain('Status unavailable');
+    expect(renderStatus()).not.toContain('Temporary Chat unsupported');
   });
 
   it('shows declared support as unavailable while preserving an enabled preference switch', () => {
     const html = renderStatus({ supported: true, availability: 'unavailable', reason: 'Sign in required' }, true);
-    expect(html).toContain('Temporary Chat Preferred · Unavailable');
-    expect(html).toContain('aria-pressed="true"');
-    expect(html).not.toMatch(/aria-label="Temporary Chat Preferred · Unavailable[^\"]*" disabled/);
+    expect(html).toContain('Sign in required');
+    expect(html).toContain('>Normal</button>');
+    expect(html).not.toMatch(/aria-label="Unavailable[^\"]*" disabled/);
   });
 
   it('reserves unsupported for a provider that explicitly lacks native support', () => {
-    expect(renderStatus({ supported: false, availability: 'unavailable' })).toContain('Temporary Chat Unsupported');
+    expect(renderStatus({ supported: false, availability: 'unavailable' })).toContain('Temporary Chat unsupported');
   });
 
   it('allows a supported pending capability to be preferred for verification at request time', () => {
     const html = renderStatus({ supported: true, availability: 'unknown' });
-    expect(html).toContain('Temporary Chat Checking');
-    expect(html).not.toMatch(/aria-label="Temporary Chat Checking[^\"]*" disabled/);
+    expect(html).toContain('Verified when starting');
+    expect(html).not.toMatch(/aria-label="Verified when starting[^\"]*" disabled/);
   });
+});
+
+it('renders all declared personalization options with accessible selected state', () => {
+  const html = renderStatus({ supported: true, availability: 'unknown', variants: ['personalized', 'unpersonalized'] }, true);
+  expect(html).toContain('Temporary · Personalized');
+  expect(html).toContain('Temporary · Unpersonalized');
+  expect(html).toMatch(/aria-pressed="true"[^>]*>Temporary · Personalized/);
+  expect(html).not.toContain('Checking…');
+});
+
+it('distinguishes an active check from an idle unknown capability', () => {
+  expect(renderStatus({ supported: true, availability: 'unknown', checking: true })).toContain('Checking…');
+  expect(renderStatus({ supported: true, availability: 'unknown', checkFailed: true })).toContain('Couldn’t verify');
 });

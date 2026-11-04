@@ -1,3 +1,4 @@
+import { resolveChatMode, validateChatMode, normalizeRouteMode, type ChatModeSelection } from '../../shared/types.js';
 import { MediaJobStore } from '../media/jobs.js';
 import { createMediaRouter } from '../media/router.js';
 import { mediaCapability, normalizeMediaPreferences, resolveMediaSettings, type MediaPreferences, type MediaSettings, type MediaMode } from '../../shared/media.js';
@@ -103,6 +104,7 @@ function completionLogTranscript(messages: unknown): string {
 }
 
 export class TransgenticMcpServer {
+  private conversationSelections = new Map<string, { selection: ChatModeSelection; generation: string }>();
   private app: express.Application;
   private httpServer: http.Server | null = null;
   private port: number = 58420;
@@ -330,7 +332,7 @@ export class TransgenticMcpServer {
         if (!supported) throw lastError || new Error('No configured provider supports this media request.');
       },
       execute: (request, signal, progress, session) => this.orchestratePrompt(request.prompt, request.mode, request.provider, request.project_name, request.model, signal, request.thread_id, request.new_thread, false, true,
-        { profile: 'plain', sessionId: session, isLoopback: true, transport: 'api', onMediaState: progress, reportProgress: message => progress({ progress: message }) }, request.files, undefined, request.temporary_chat, request),
+        { profile: 'plain', sessionId: session, isLoopback: true, transport: 'api', onMediaState: progress, reportProgress: message => progress({ progress: message }) }, request.files, undefined, request.temporary_chat, request, request.chat_mode),
     }));
 
     // OpenAI-compatible provider surface. This path deliberately bypasses the
@@ -947,6 +949,7 @@ export class TransgenticMcpServer {
       new_thread: { type: 'boolean', default: false, description: 'If true, forces creation of a brand new chat thread.' },
       newThread: { type: 'boolean', default: false, description: 'Alias for new_thread.' },
       temporary_chat: { type: 'boolean', description: 'Require or explicitly disable provider-native Temporary Chat. If omitted, the selected task-mode preference applies.' },
+      chat_mode: { type: 'string', enum: ['normal', 'temporary', 'temporary-personalized', 'temporary-unpersonalized'], description: 'Native chat history and personalization mode; exact modes require verification.' },
       temporaryChat: { type: 'boolean', description: 'Alias for temporary_chat.' },
       project_name: { type: 'string', description: 'Optional workspace/project grouping name.' },
       projectName: { type: 'string', description: 'Alias for project_name.' },
@@ -1228,6 +1231,7 @@ export class TransgenticMcpServer {
     const threadId = args.thread_id || args.threadId;
     const newThread = Boolean(args.new_thread ?? args.newThread ?? false);
     const temporaryChat = args.temporary_chat ?? args.temporaryChat;
+    const chatSelection = validateChatMode(args.chat_mode, temporaryChat);
     if (temporaryChat !== undefined && typeof temporaryChat !== 'boolean') throw new Error('temporary_chat must be a boolean.');
 
     let mode: AcceptedTaskMode = defaultMode || 'general';
@@ -1272,7 +1276,7 @@ export class TransgenticMcpServer {
     if (name === 'edit_video') { mode = 'video'; isStrictExplicitMode = true; attachmentRequirement = 'image-or-video'; }
     if (attachmentRequirement && (!Array.isArray(args.files) || args.files.length === 0)) throw new Error(`${name} requires at least one attachment.`);
 
-    return await this.orchestratePrompt(prompt, mode, provider, projectName, requestedModel, abortSignal, threadId, newThread, undefined, isStrictExplicitMode, caller, args.files, attachmentRequirement, temporaryChat, normalizeMediaPreferences({ settings: args.settings, provider_settings: args.provider_settings }));
+    return await this.orchestratePrompt(prompt, mode, provider, projectName, requestedModel, abortSignal, threadId, newThread, undefined, isStrictExplicitMode, caller, args.files, attachmentRequirement, temporaryChat, normalizeMediaPreferences({ settings: args.settings, provider_settings: args.provider_settings }), chatSelection);
   }
 
   private async executePipelineCandidateChain(params: {
@@ -1302,6 +1306,7 @@ export class TransgenticMcpServer {
     requestEnvelope?: NormalizedRequestEnvelope;
     temporaryChat: boolean;
     chatPolicy: ChatPolicy;
+    chatSelection?: ChatModeSelection;
     onMediaState?: CallerContext['onMediaState'];
   }): Promise<{
     text: string;
@@ -1360,7 +1365,9 @@ export class TransgenticMcpServer {
     for (let i = 0; i < candidateProviders.length; i++) {
       const providerId = candidateProviders[i];
       throwIfCancelled(reqAbortController?.signal || abortSignal);
-      const supportsTemporary = this.providerSupportsTemporaryChat(providerId);
+      const candidateAdapter = globalSessionManager.getAdapter(providerId);
+      const selectedMode = resolveChatMode(undefined, effectiveMode, providerId, params.chatSelection, temporaryChat);
+      const supportsTemporary = candidateAdapter instanceof CustomRecipeAdapter && candidateAdapter.supportsChatMode(selectedMode);
       const observedAvailability = globalSessionManager.getStatus(providerId)?.temporaryChat;
       const unavailable = observedAvailability?.availability === 'unavailable';
       const candidateTemporaryChat = temporaryChat && supportsTemporary && !unavailable;
@@ -1716,6 +1723,7 @@ export class TransgenticMcpServer {
             );
             const temporary = await globalSessionManager.ensureTemporaryConversation({
               key: temporarySessionKey,
+              selection: selectedMode,
               providerId,
               accountId: activeAccount.id,
               partitionKey: activeAccount.partitionKey,
@@ -2063,7 +2071,7 @@ export class TransgenticMcpServer {
       wasRolledOver,
       contextReset,
       temporaryChat: successfulTemporaryChat,
-      chatExecution: { policy: chatPolicy, actualMode: successfulTemporaryChat ? 'temporary' : 'normal', verified: successfulTemporaryChat, ...(successfulFallbackReason ? { fallbackReason: successfulFallbackReason } : {}) },
+      chatExecution: { requestedSelection: params.chatSelection, actualSelection: successfulTemporaryChat ? resolveChatMode(undefined, effectiveMode, successfulProvider, params.chatSelection, true) : 'normal', policy: chatPolicy, actualMode: successfulTemporaryChat ? 'temporary' : 'normal', verified: successfulTemporaryChat, ...(successfulFallbackReason ? { fallbackReason: successfulFallbackReason } : {}) },
       ...(successfulTemporaryChat
         ? { temporarySessionKey: JSON.stringify([`${effectiveThreadId}_${successfulAccount.id}`, successfulProvider, successfulAccount.id, pipeline]) }
         : {}),
@@ -2085,7 +2093,8 @@ export class TransgenticMcpServer {
     rawFiles?: unknown,
     attachmentRequirement?: 'image-only' | 'image-or-video',
     temporaryChat?: boolean,
-    mediaPreferences?: MediaPreferences
+    mediaPreferences?: MediaPreferences,
+    chatSelection?: ChatModeSelection
   ): Promise<any> {
     const startTime = Date.now();
     this.requestCounter++;
@@ -2168,10 +2177,16 @@ export class TransgenticMcpServer {
         effectiveThreadId = JSON.stringify([effectiveThreadId, caller.cliRequest.workspaceId, caller.cliRequest.allowCommands, caller.cliRequest.allowProjectEditing]);
       }
 
-      resolvedChatPolicy = temporaryChat === true ? 'require-temporary'
-        : temporaryChat === false ? 'normal'
-          : isTemporaryChatPreferred(this.config || undefined, effectiveMode) ? 'prefer-temporary' : 'normal';
+      const preferenceProvider = forcedProvider || candidateProviders[0] || '';
+      const explicitChatSelection = chatSelection !== undefined || temporaryChat !== undefined || this.config?.chatModes?.[normalizeRouteMode(effectiveMode)]?.[preferenceProvider] !== undefined;
+      chatSelection = resolveChatMode(this.config || undefined, effectiveMode, preferenceProvider, chatSelection, temporaryChat);
+      resolvedChatPolicy = chatSelection === 'normal' ? 'normal' : chatSelection === 'temporary' && !explicitChatSelection ? 'prefer-temporary' : 'require-temporary';
       resolvedTemporaryChat = resolvedChatPolicy !== 'normal';
+      const previousSelection = this.conversationSelections.get(effectiveThreadId);
+      const generation = previousSelection?.selection === chatSelection ? previousSelection.generation : crypto.randomUUID();
+      this.conversationSelections.set(effectiveThreadId, { selection: chatSelection, generation });
+      if (this.conversationSelections.size > 1024) this.conversationSelections.delete(this.conversationSelections.keys().next().value!);
+      effectiveThreadId = JSON.stringify([effectiveThreadId, chatSelection, generation]);
 
       ({ maskedText, replacementsCount } = globalBlindingEngine.blind(rawPrompt, contextId, { persist: !resolvedTemporaryChat }));
 
@@ -2370,9 +2385,10 @@ export class TransgenticMcpServer {
             bypassedWebviewDispatch,
             forcedProvider,
             requestEnvelope,
-          onMediaState: caller?.onMediaState,
+            onMediaState: caller?.onMediaState,
             temporaryChat: resolvedTemporaryChat,
             chatPolicy: resolvedChatPolicy,
+            chatSelection,
           }),
           () => this.executePipelineCandidateChain({
             candidateProviders: coCandidates,
@@ -2399,9 +2415,10 @@ export class TransgenticMcpServer {
             bypassedWebviewDispatch,
             forcedProvider,
             requestEnvelope,
-          onMediaState: caller?.onMediaState,
+            onMediaState: caller?.onMediaState,
             temporaryChat: resolvedTemporaryChat,
             chatPolicy: resolvedChatPolicy,
+            chatSelection,
           }),
           mainCandidates[0] || 'chatgpt',
           coCandidates[0] || 'claude'
@@ -2466,6 +2483,7 @@ export class TransgenticMcpServer {
           onMediaState: caller?.onMediaState,
           temporaryChat: resolvedTemporaryChat,
           chatPolicy: resolvedChatPolicy,
+          chatSelection,
         });
 
         finalResponseWithLocalPath = pipelineResult.finalResponseWithLocalPath;
@@ -2509,6 +2527,8 @@ export class TransgenticMcpServer {
       log.modelUsed = executionResult.modelUsed;
       log.executionBranches = executionBranches;
       log.chatExecution = executionBranches.length === 1 ? executionBranches[0] : {
+        requestedSelection: chatSelection,
+        actualSelection: executionBranches.every(branch => branch.verified && branch.actualSelection === chatSelection) ? chatSelection : undefined,
         policy: resolvedChatPolicy,
         actualMode: executionBranches.every(branch => branch.actualMode === 'temporary') ? 'temporary' : 'normal',
         verified: executionBranches.length > 0 && executionBranches.every(branch => branch.verified),

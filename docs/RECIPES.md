@@ -234,3 +234,39 @@ Selector repair can attempt the following when a provider interface changes and 
 2. **History Snapshot**: Archives the pre-repair recipe to `Recipes/History/<id>.v<version>_<timestamp>.json`.
 3. **Local LLM DOM Repair**: Transgentic sends a DOM snapshot to your configured Local LLM (Ollama, LM Studio) to identify the updated element selectors.
 4. **Live Hot-Reload**: Writes the repaired recipe to `Recipes/Healed/<id>.json`, bumps the version (`1.0.1`), and reloads the active Electron webview adapter in memory without restarting the application. Repair can fail or select the wrong element; inspect the result before relying on it.
+
+## Temporary Chat personalization
+
+`temporaryChat` retains its native activation steps, positive `activeWhen` and
+`inactiveWhen` locators, and optional conversation continuation contract. Recipes
+may additionally declare `variants.personalized` and `variants.unpersonalized`.
+Each variant requires `activationSteps` (ordered click targets) and `activeWhen`
+(positive evidence of the selected personalization). An optional `continuationWhen`
+locator can declare the native marker that replaces the picker after submission.
+It is accepted only after the variant was verified in the same browser view and
+remains bound to its conversation path; a URL alone cannot establish the mode.
+Use exact accessible names,
+including description alternatives where necessary. Never match `Personalized`
+with a substring search: that also matches `Unpersonalized`.
+
+Home and Settings expose only declared modes and remember choices per task mode
+and provider. Existing ChatGPT preferences migrate from true to Personalized and
+false to Normal. Other providers retain their generic Temporary Chat preference.
+Personalization changes the provider's use of memory, plugins, and custom
+instructions; Transgentic Recall, local logging, and Library storage keep their
+existing behavior.
+
+Desktop IPC accepts `chatMode`; MCP tools, completion requests, and media jobs
+accept `chat_mode`: `normal`, `temporary`, `temporary-personalized`, or
+`temporary-unpersonalized`. `temporary_chat` remains supported: false selects
+Normal, and true requires Temporary Chat (Personalized on ChatGPT). Contradictory
+fields are rejected. Exact personalization selections never fall back to another
+history or personalization mode. Execution metadata reports `requestedSelection`
+and `actualSelection` alongside the compatible normal/temporary classification.
+
+The selected mode is captured before queueing. Mode changes isolate conversation
+history, and exact personalization must be verified again before uploads, prompt
+entry, submission, and continuation. A temporary URL alone does not prove the
+selected personalization. Missing or ambiguous controls stop execution. Idle
+availability displays “Verified when starting”; an active provider probe is
+bounded to eight seconds and exposes retry/open-provider recovery on failure.

@@ -1,3 +1,5 @@
+import { resolveChatMode } from '../../shared/types.js';
+import { ChatModeControl } from './ChatModeControl.js';
 import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -203,9 +205,7 @@ export const RadialHub: React.FC<RadialHubProps> = ({
   const routeLabel = routedProvider ? getProviderDisplayName(routedProvider, servicesManifest, providers) : 'No service';
   const activeRouteLabel = `${routeMode.charAt(0).toUpperCase() + routeMode.slice(1)} (${routeLabel})`;
   const routedTemporaryCapability = routedProvider ? providers[routedProvider]?.temporaryChat : undefined;
-  const temporaryChatSupported = routedTemporaryCapability?.supported === true;
-  const temporaryChatCanBePreferred = temporaryChatSupported && routedTemporaryCapability?.availability !== 'unavailable';
-  const temporaryChat = isTemporaryChatPreferred(config, coreStatus.activeMode);
+  const temporaryChat = resolveChatMode(config, coreStatus.activeMode, routedProvider || '') !== 'normal';
   const [latestAnswer, setLatestAnswer] = useState<QuickPromptAnswer | null>(() => {
     try {
       const saved = localStorage.getItem('transgentic_latest_quick_answer');
@@ -235,17 +235,6 @@ export const RadialHub: React.FC<RadialHubProps> = ({
     }
     return true;
   })();
-  const temporaryChatLabel = !isModeServiceSelected
-    ? 'Select a service for Temporary Chat'
-    : !routedTemporaryCapability
-      ? 'Checking Temporary Chat'
-      : !temporaryChatSupported
-        ? 'Temporary Chat Unsupported'
-        : routedTemporaryCapability.availability === 'unavailable'
-          ? temporaryChat ? 'Temporary Chat Preferred · Unavailable' : 'Temporary Chat Unavailable'
-          : routedTemporaryCapability.availability === 'unknown'
-            ? temporaryChat ? 'Temporary Chat Preferred · Checking' : 'Temporary Chat Checking'
-            : temporaryChat ? 'Temporary Chat Enabled' : 'Temporary Chat Disabled';
 
   const handleCopySamplePrompt = (text: string, idx: number) => {
     soundFx.playClick();
@@ -585,22 +574,8 @@ export const RadialHub: React.FC<RadialHubProps> = ({
               <span className="w-1.5 h-1.5 rounded-full bg-cyan-400/80" />
               <span>Gateway Active</span>
             </span>
-            <button type="button"
-              onClick={() => { if (isModeServiceSelected && temporaryChatSupported && (temporaryChat || temporaryChatCanBePreferred)) void onToggleTemporaryChatMode?.(routeMode, !temporaryChat); }}
-              disabled={!isModeServiceSelected || !temporaryChatSupported || (!temporaryChat && !temporaryChatCanBePreferred) || !onToggleTemporaryChatMode}
-              aria-label={`${temporaryChatLabel} for ${routeMode} mode`}
-              aria-pressed={temporaryChat && isModeServiceSelected && temporaryChatSupported}
-              className="flex items-center gap-1.5 whitespace-nowrap rounded px-1 text-slate-500 hover:bg-white/5 disabled:cursor-not-allowed"
-              title={!isModeServiceSelected || !temporaryChatSupported || (!temporaryChat && !temporaryChatCanBePreferred)
-                ? (routedTemporaryCapability?.reason || 'Temporary Chat is unavailable for the selected provider')
-                : temporaryChat
-                  ? 'Temporary Chat is preferred for this mode. Click to turn it off for future requests.'
-                  : 'Click to prefer Temporary Chat for future requests in this mode.'}
-            >
-              <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${temporaryChat && isModeServiceSelected && temporaryChatSupported
-                ? `bg-indigo-400 ${coreStatus.state === 'processing' ? 'animate-ping' : ''}` : 'bg-slate-600'}`} />
-              <span>{temporaryChatLabel}</span>
-            </button>
+            <ChatModeControl config={config!} mode={routeMode} provider={routedProvider}
+              capability={routedTemporaryCapability} onOpenProvider={() => routedProvider && onProviderClick(routedProvider)} />
           </div>
           <div className="flex shrink-0 items-center gap-1.5">
             <span className="text-slate-300 font-medium">

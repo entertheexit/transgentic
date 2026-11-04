@@ -1,3 +1,4 @@
+import { ChatModeControl } from './ChatModeControl.js';
 import { CliServicesSettings, setCachedCliState } from './CliServicesSettings.js';
 import { loadCliState } from '../utils/cliStateLoader.js';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -1123,7 +1124,7 @@ http_headers = { "Authorization" = "Bearer ${clientToken || 'YOUR_TOKEN'}" }`;
                   </span>
                 </label>
               </div>
-              <div className="grid grid-cols-5 gap-1.5 pt-1">
+              <div className="grid grid-cols-1 gap-2 pt-1 sm:grid-cols-2">
                 {[
                   { mode: 'general' as RouteMode, label: 'General', icon: Sparkles },
                   { mode: 'coding' as RouteMode, label: 'Coding', icon: Code2 },
@@ -1187,10 +1188,10 @@ http_headers = { "Authorization" = "Bearer ${clientToken || 'YOUR_TOKEN'}" }`;
               <div className="p-2 rounded-xl bg-indigo-500/10 border border-indigo-500/30 text-indigo-300"><Shield className="w-4 h-4" /></div>
               <div>
                 <span className="text-xs font-bold text-slate-100 uppercase tracking-wide">Temporary Chat</span>
-                <p className="text-[10px] text-slate-400">Applies to new conversations in each mode. Supported providers use native Temporary Chat; unsupported providers use normal chat. Transgentic saves conversation logs locally, and generated files save to your Library.</p>
+                <p className="text-[10px] text-slate-400">Applies to new conversations in each mode. Selections are saved per mode and provider. Personalized and Unpersonalized control provider memory, plugins, and custom instructions; Transgentic Recall follows its existing settings. Transgentic saves conversation logs locally, and generated files save to your Library.</p>
               </div>
             </div>
-            <div className="grid grid-cols-5 gap-1.5 pt-1">
+            <div className="grid grid-cols-1 gap-2 pt-1 sm:grid-cols-2">
               {([
                 { mode: 'general' as RouteMode, label: 'General', icon: Sparkles },
                 { mode: 'coding' as RouteMode, label: 'Coding', icon: Code2 },
@@ -1198,13 +1199,13 @@ http_headers = { "Authorization" = "Bearer ${clientToken || 'YOUR_TOKEN'}" }`;
                 { mode: 'video' as RouteMode, label: 'Video', icon: Video },
                 { mode: 'music' as RouteMode, label: 'Music', icon: Music },
               ]).map(({ mode, label, icon: Icon }) => {
-                const enabled = config.temporaryChat?.[mode] ?? DEFAULT_TEMPORARY_CHAT[mode];
-                return <button key={mode} type="button" aria-pressed={enabled} onClick={() => { soundFx.playClick(); void onToggleTemporaryChatMode?.(mode, !enabled); }}
-                  className={`flex flex-col items-center justify-center p-2 rounded-xl border transition-all ${enabled ? 'bg-indigo-500/20 border-indigo-500/50 text-indigo-200' : 'bg-black/30 border-white/5 text-slate-400 hover:text-slate-200'}`}
-                  title={`Temporary Chat preference for ${label} mode`}>
-                  <Icon className="w-3.5 h-3.5 mb-1" /><span className="text-[10px] font-mono font-semibold">{label}</span>
-                  <span className="text-[8.5px] font-mono mt-0.5">{enabled ? 'ON' : 'OFF'}</span>
-                </button>;
+                const provider = config.routes?.main?.[mode]?.defaultService || selectedProvider;
+                return <div key={mode} className="min-w-0 rounded-xl border border-white/10 p-2">
+                  <span className="text-xs text-slate-300">{label}</span>
+                  <ChatModeControl config={config} mode={mode} provider={provider}
+                    capability={providers[provider]?.temporaryChat}
+                    onOpenProvider={() => void window.transgenticApi?.openProviderWindow(provider)} />
+                </div>;
               })}
             </div>
           </div>
@@ -1232,7 +1233,7 @@ http_headers = { "Authorization" = "Bearer ${clientToken || 'YOUR_TOKEN'}" }`;
               </div>
             </div>
 
-            <div className="grid grid-cols-5 gap-1.5 pt-1">
+            <div className="grid grid-cols-1 gap-2 pt-1 sm:grid-cols-2">
               {[
                 { mode: 'general' as RouteMode, label: 'General', icon: Sparkles },
                 { mode: 'coding' as RouteMode, label: 'Coding', icon: Code2 },
@@ -1399,7 +1400,7 @@ http_headers = { "Authorization" = "Bearer ${clientToken || 'YOUR_TOKEN'}" }`;
                 </span>
               </div>
 
-              <div className="grid grid-cols-5 gap-1.5 pt-1">
+              <div className="grid grid-cols-1 gap-2 pt-1 sm:grid-cols-2">
                 {[
                   { mode: 'general' as RouteMode, label: 'General', icon: Sparkles },
                   { mode: 'coding' as RouteMode, label: 'Coding', icon: Code2 },

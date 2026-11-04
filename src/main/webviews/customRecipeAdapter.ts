@@ -24,6 +24,7 @@ export class CustomRecipeAdapter extends BaseProviderAdapter {
     if (this.webContents !== webContents) {
       this.temporaryVerifiedView = null;
       this.temporaryConversationPath = null;
+      this.personalizationVerifiedView = null;
     }
     super.setWebContents(webContents);
   }
@@ -31,6 +32,7 @@ export class CustomRecipeAdapter extends BaseProviderAdapter {
   public override detach(): void {
     this.temporaryVerifiedView = null;
     this.temporaryConversationPath = null;
+    this.personalizationVerifiedView = null;
     super.detach();
   }
 
@@ -68,6 +70,16 @@ export class CustomRecipeAdapter extends BaseProviderAdapter {
     return this.recipe.url || `https://${this.recipe.domainMatch}`;
   }
 
+  private personalizationVerifiedView: import('electron').WebContents | null = null;
+  private temporarySelection: import('../../shared/types.js').ChatModeSelection = 'temporary';
+
+  public supportsChatMode(selection: import('../../shared/types.js').ChatModeSelection): boolean {
+    if (selection === 'normal') return true;
+    if (!this.supportsTemporaryChat()) return false;
+    const variant = selection === 'temporary-personalized' ? 'personalized' : selection === 'temporary-unpersonalized' ? 'unpersonalized' : undefined;
+    return !variant || Boolean(this.recipe.temporaryChat?.variants?.[variant]);
+  }
+
   public supportsTemporaryChat(): boolean {
     const config = this.recipe.temporaryChat;
     return Boolean(config?.enabled && config.activationSteps?.length && config.activeWhen && config.inactiveWhen);
@@ -79,6 +91,7 @@ export class CustomRecipeAdapter extends BaseProviderAdapter {
     if (!required) {
       this.temporaryVerifiedView = null;
       this.temporaryConversationPath = null;
+      this.personalizationVerifiedView = null;
     }
   }
 
@@ -90,10 +103,35 @@ export class CustomRecipeAdapter extends BaseProviderAdapter {
   }
 
   public async verifyTemporaryChat(): Promise<boolean> {
+    const variant = this.temporarySelection === 'temporary-personalized' ? 'personalized' : this.temporarySelection === 'temporary-unpersonalized' ? 'unpersonalized' : undefined;
+    if (variant) {
+      const declaration = this.recipe.temporaryChat?.variants?.[variant];
+      if (!declaration || !this.webContents || this.webContents.isDestroyed()) return false;
+      if (await this.locatorExists(declaration.activeWhen)) {
+        this.personalizationVerifiedView = this.webContents;
+      } else {
+        // ChatGPT freezes personalization after submission and replaces the picker
+        // with Save chat. Require prior variant proof and native continuation UI;
+        // the bound view and conversation path are still checked below.
+        if (this.personalizationVerifiedView !== this.webContents || !declaration.continuationWhen || !await this.locatorExists(declaration.continuationWhen)) return false;
+        const opposite = this.recipe.temporaryChat?.variants?.[variant === 'personalized' ? 'unpersonalized' : 'personalized'];
+        if (opposite && await this.locatorExists(opposite.activeWhen)) return false;
+      }
+    }
     const locator = this.recipe.temporaryChat?.activeWhen;
     if (!this.webContents || this.webContents.isDestroyed()) return false;
     if (!this.temporaryConversationPath && locator && await this.locatorExists(locator)) {
       this.temporaryVerifiedView = this.webContents;
+      const continuation = this.recipe.temporaryChat?.continuation;
+      if (variant && continuation) {
+        try {
+          const current = new URL(this.webContents.getURL());
+          if (current.pathname.startsWith(continuation.pathPrefix)) {
+            if (current.origin !== new URL(this.url).origin || current.searchParams.getAll(continuation.queryParam).length !== 1 || current.searchParams.get(continuation.queryParam) !== continuation.queryValue) return false;
+            this.temporaryConversationPath = current.pathname;
+          }
+        } catch { return false; }
+      }
       return true;
     }
     // Some providers remove the native toggle once the first message is sent.
@@ -123,7 +161,20 @@ export class CustomRecipeAdapter extends BaseProviderAdapter {
     return { availability: 'unknown', reason: 'Temporary Chat will be verified when a new conversation starts.' };
   }
 
-  public async activateTemporaryChat(abortSignal?: AbortSignal): Promise<void> {
+  public async activateTemporaryChat(abortSignal?: AbortSignal, selection: import('../../shared/types.js').ChatModeSelection = 'temporary'): Promise<void> {
+    if (!this.supportsChatMode(selection)) throw new Error('[TEMPORARY_CHAT_UNSUPPORTED] The recipe cannot verify the requested personalization.');
+    this.temporarySelection = 'temporary';
+    const variantName = selection === 'temporary-personalized' ? 'personalized' : selection === 'temporary-unpersonalized' ? 'unpersonalized' : undefined;
+    const verifySelection = async () => {
+      if (variantName) {
+        const variant = this.recipe.temporaryChat!.variants![variantName]!;
+        if (!await this.locatorExists(variant.activeWhen)) {
+          for (const step of variant.activationSteps) await this.executeClickStep(step, abortSignal);
+        }
+        this.temporarySelection = selection;
+        if (!await this.verifyTemporaryChat()) throw new Error('[TEMPORARY_CHAT_VERIFICATION_FAILED] Could not verify requested personalization. Open the provider and retry.');
+      }
+    };
     const config = this.recipe.temporaryChat;
     if (!this.supportsTemporaryChat() || !config?.activeWhen || !config.inactiveWhen || !config.activationSteps?.length) {
       throw new Error('[TEMPORARY_CHAT_UNSUPPORTED] This provider recipe does not support Temporary Chat.');
@@ -132,12 +183,14 @@ export class CustomRecipeAdapter extends BaseProviderAdapter {
     try {
       this.temporaryVerifiedView = null;
       this.temporaryConversationPath = null;
+      this.personalizationVerifiedView = null;
       if (!this.webContents || this.webContents.isDestroyed()) throw new Error('[TEMPORARY_CHAT_ENDED] Temporary Chat browser view is unavailable.');
       const target = this.recipe.newChatUrl || this.url;
       await this.loadNewChatPage(target);
       await this.waitForPageReady(6_000);
       if (!await this.checkAuthStatus()) throw new Error('[TEMPORARY_CHAT_LOGIN_REQUIRED] Sign in before starting Temporary Chat.');
       if (await this.verifyTemporaryChat()) {
+        await verifySelection();
         this.temporaryChatRequired = true;
         return;
       }
@@ -153,6 +206,7 @@ export class CustomRecipeAdapter extends BaseProviderAdapter {
       while (Date.now() < deadline) {
         if (abortSignal?.aborted) throw Object.assign(new Error('Request cancelled.'), { name: 'AbortError' });
         if (await this.verifyTemporaryChat()) {
+          await verifySelection();
           this.temporaryChatRequired = true;
           return;
         }
@@ -187,7 +241,7 @@ export class CustomRecipeAdapter extends BaseProviderAdapter {
         const selectors = Array.isArray(locator.selectors) ? locator.selectors : locator.selectors ? [locator.selectors] : [];
         const candidates = selectors.flatMap(selector => { try { return Array.from(document.querySelectorAll(selector)); } catch { return []; } });
         if (!selectors.length) candidates.push(...Array.from(document.querySelectorAll(locator.role === 'button' ? 'button,[role="button"]' : locator.role === 'heading' ? 'h1,h2,h3,h4,h5,h6,[role="heading"]' : '[role]')));
-        return candidates.some(el => (!locator.role || normalize(implicitRole(el)) === normalize(locator.role)) && (!names.length || accessibleNames(el).some(nameMatches)) && visible(el));
+        return [...new Set(candidates)].filter(el => (!locator.role || normalize(implicitRole(el)) === normalize(locator.role)) && (!names.length || accessibleNames(el).some(nameMatches)) && visible(el)).length === 1;
       })()
     `).catch(() => false);
   }

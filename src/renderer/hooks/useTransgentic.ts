@@ -940,10 +940,10 @@ export function useTransgentic() {
     return next;
   }, [api, config.temporaryChat]);
 
-  const executePrompt = useCallback(async (prompt: string, mode?: TaskMode, preferredProvider?: ProviderId, model?: string, cliRequest?: import('../../shared/cli.js').CliRequestOptions, files?: AttachmentInput[], temporaryChat?: boolean, mediaPreferences?: import('../../shared/media.js').MediaPreferences) => {
+  const executePrompt = useCallback(async (prompt: string, mode?: TaskMode, preferredProvider?: ProviderId, model?: string, cliRequest?: import('../../shared/cli.js').CliRequestOptions, files?: AttachmentInput[], temporaryChat?: boolean, mediaPreferences?: import('../../shared/media.js').MediaPreferences, chatMode?: import('../../shared/types.js').ChatModeSelection) => {
     if (api?.executePrompt) {
       try {
-        return await api.executePrompt(prompt, mode, preferredProvider, model, cliRequest, files, temporaryChat, mediaPreferences);
+        return await api.executePrompt(prompt, mode, preferredProvider, model, cliRequest, files, temporaryChat, mediaPreferences, chatMode);
       } finally {
         const sessions = await api.getTemporaryChatSessions?.().catch(() => []);
         if (sessions) setTemporaryChatSessions(sessions);

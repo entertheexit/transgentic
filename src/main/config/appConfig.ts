@@ -89,6 +89,7 @@ export interface AppConfig {
   recall?: RecallConfig;
   agentHaltGuard?: AgentHaltGuardConfig | boolean;
   temporaryChat?: TemporaryChatModeConfig;
+  chatModes?: import('../../shared/types.js').ChatModePreferences;
   localLLM: LocalLLMConfig;
   healing: HealingConfig;
   interMessageCooldownMs?: number;

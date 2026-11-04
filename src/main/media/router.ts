@@ -1,3 +1,4 @@
+import { validateChatMode, type ChatModeSelection } from '../../shared/types.js';
 import express from 'express';
 import crypto from 'node:crypto';
 import type { MediaCapability, MediaMode, MediaPreferences } from '../../shared/media.js';
@@ -10,16 +11,17 @@ import type { MediaJobStore, JobProgress } from './jobs.js';
 
 export interface MediaRequest extends MediaPreferences {
   mode: MediaMode; prompt: string; provider?: string; model?: string;
-  files?: unknown; thread_id?: string; new_thread?: boolean; temporary_chat?: boolean; project_name?: string;
+  files?: unknown; thread_id?: string; new_thread?: boolean; temporary_chat?: boolean; chat_mode?: ChatModeSelection; project_name?: string;
 }
 export function parseMediaRequest(body: unknown): MediaRequest {
   if (!body || typeof body !== 'object' || Array.isArray(body)) throw new Error('A media request object is required.');
   const b = body as Record<string, unknown>;
-  const allowed = new Set(['mode', 'prompt', 'provider', 'model', 'settings', 'provider_settings', 'files', 'thread_id', 'new_thread', 'temporary_chat', 'project_name']);
+  const allowed = new Set(['mode', 'prompt', 'provider', 'model', 'settings', 'provider_settings', 'files', 'thread_id', 'new_thread', 'temporary_chat', 'chat_mode', 'project_name']);
   if (Object.keys(b).some(k => !allowed.has(k))) throw new Error('Unknown media request field.');
   if (!['image', 'video', 'music'].includes(String(b.mode)) || typeof b.prompt !== 'string' || !b.prompt.trim() || b.prompt.length > 200000) throw new Error('Valid mode and nonempty prompt (at most 200000 characters) are required.');
   for (const k of ['provider', 'model', 'thread_id', 'project_name']) if (b[k] !== undefined && (typeof b[k] !== 'string' || !b[k] || (b[k] as string).length > 256)) throw new Error(`Invalid ${k}.`);
   for (const k of ['new_thread', 'temporary_chat']) if (b[k] !== undefined && typeof b[k] !== 'boolean') throw new Error(`Invalid ${k}.`);
+  validateChatMode(b.chat_mode, b.temporary_chat);
   return { ...b, ...normalizeMediaPreferences(b) } as MediaRequest;
 }
 export function canonicalMediaIdentity(request: Omit<MediaRequest, 'files'>, attachments: string) {

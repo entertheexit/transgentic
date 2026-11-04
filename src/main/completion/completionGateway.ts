@@ -1,3 +1,4 @@
+import { resolveChatMode, validateChatMode, normalizeRouteMode, type ChatModeSelection } from '../../shared/types.js';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import { isCliProvider, CLI_DEFINITIONS } from '../../shared/cli.js';
@@ -152,6 +153,7 @@ function validateRequest(input: any): CompletionRequest {
   for (const message of input.messages) if (!message || !roles.has(message.role)) throw new Error('One or more messages have an invalid role.');
   if (input.n !== undefined && input.n !== 1) throw new Error('Transgentic supports n=1.');
   if (input.tools !== undefined && !Array.isArray(input.tools)) throw new Error('tools must be an array.');
+  validateChatMode(input.chat_mode, input.temporary_chat);
   if (input.temporary_chat !== undefined && typeof input.temporary_chat !== 'boolean') throw new Error('temporary_chat must be a boolean.');
   if (input.conversation_id !== undefined && (typeof input.conversation_id !== 'string' || !/^[A-Za-z0-9_.:-]{1,128}$/.test(input.conversation_id))) throw new Error('conversation_id must be a 1–128 character identifier using letters, digits, underscore, dot, colon, or dash.');
   if (input.new_thread !== undefined && typeof input.new_thread !== 'boolean') throw new Error('new_thread must be a boolean.');
@@ -200,7 +202,7 @@ function messagesWithoutBinaryParts(messages: CompletionMessage[]): CompletionMe
 }
 
 export class CompletionGateway {
-  private retained = new Map<string, { provider: ProviderId; accountId: string; partitionKey: string; model: string; mode: 'normal' | 'temporary' }>();
+  private retained = new Map<string, { provider: ProviderId; accountId: string; partitionKey: string; model: string; selection?: ChatModeSelection; mode: 'normal' | 'temporary' }>();
   private retainedLocks = new Map<string, Promise<void>>();
   constructor(private getConfig: () => TransgenticConfig | null, private getPort: () => number) {}
 
@@ -255,9 +257,9 @@ export class CompletionGateway {
     // earlier request. A settings change must affect the next request, not one
     // that is already queued.
     const target = this.resolveTarget(request.model);
-    const policy: ChatPolicy = request.temporary_chat === true ? 'require-temporary'
-      : request.temporary_chat === false ? 'normal'
-        : isTemporaryChatPreferred(this.getConfig() || undefined, target.mode) ? 'prefer-temporary' : 'normal';
+    const explicitChatSelection = request.chat_mode !== undefined || request.temporary_chat !== undefined || this.getConfig()?.chatModes?.[normalizeRouteMode(target.mode)]?.[target.candidates[0] || ''] !== undefined;
+    request.chat_mode = resolveChatMode(this.getConfig() || undefined, target.mode, target.candidates[0] || '', request.chat_mode, request.temporary_chat);
+    const policy: ChatPolicy = request.chat_mode === 'normal' ? 'normal' : request.chat_mode === 'temporary' && !explicitChatSelection ? 'prefer-temporary' : 'require-temporary';
     const retainedKey = request.conversation_id ? JSON.stringify([caller?.principal || 'authenticated', request.conversation_id]) : undefined;
     if (!retainedKey) return this.completeUnlocked(request, signal, caller, target, policy);
     const previous = this.retainedLocks.get(retainedKey);
@@ -313,7 +315,7 @@ export class CompletionGateway {
     if (previousBinding && !request.new_thread) eligibleCandidates = eligibleCandidates.filter(provider => provider === previousBinding.provider);
     if (policy === 'require-temporary') eligibleCandidates = eligibleCandidates.filter(provider => {
       const adapter = globalSessionManager.getAdapter(provider);
-      return adapter instanceof CustomRecipeAdapter && adapter.supportsTemporaryChat() && globalSessionManager.getStatus(provider)?.temporaryChat?.availability !== 'unavailable';
+      return adapter instanceof CustomRecipeAdapter && adapter.supportsChatMode(resolveChatMode(undefined, mode, provider, request.chat_mode, request.temporary_chat)) && globalSessionManager.getStatus(provider)?.temporaryChat?.availability !== 'unavailable';
     });
     if (!eligibleCandidates.length) { await staged.cleanup();
       throw new Error(policy === 'require-temporary' ? '[TEMPORARY_CHAT_UNSUPPORTED] No eligible provider can verify native Temporary Chat.'
@@ -354,16 +356,23 @@ export class CompletionGateway {
       let attemptedStatus: ChatExecutionStatus | undefined;
       try {
         const adapter = globalSessionManager.getAdapter(provider);
-        const capable = adapter instanceof CustomRecipeAdapter && adapter.supportsTemporaryChat();
+        const selection = resolveChatMode(undefined, mode, provider, request.chat_mode, request.temporary_chat);
+        const capable = adapter instanceof CustomRecipeAdapter && adapter.supportsChatMode(selection);
         const unavailable = globalSessionManager.getStatus(provider)?.temporaryChat?.availability === 'unavailable';
         const actualMode = policy !== 'normal' && capable && !unavailable ? 'temporary' : 'normal';
-        const modeChanged = Boolean(previousBinding && !request.new_thread && previousBinding.mode !== actualMode);
+        const modeChanged = Boolean(previousBinding && !request.new_thread && (previousBinding.mode !== actualMode || previousBinding.selection !== (actualMode === 'temporary' ? selection : 'normal')));
         const fallbackReason = policy !== 'normal' && actualMode === 'normal'
           ? unavailable ? globalSessionManager.getStatus(provider)?.temporaryChat?.reason || 'Native Temporary Chat is unavailable for this account.'
             : `${provider} does not support native Temporary Chat.` : undefined;
-        const status: ChatExecutionStatus = { policy, actualMode, verified: actualMode === 'temporary', ...(fallbackReason ? { fallbackReason } : {}) };
+        const status: ChatExecutionStatus = { requestedSelection: selection, actualSelection: actualMode === 'temporary' ? selection : 'normal', policy, actualMode, verified: actualMode === 'temporary', ...(fallbackReason ? { fallbackReason } : {}) };
         attemptedStatus = status;
-        if (modeChanged && retainedKey) globalSessionManager.endTemporaryConversation(`api:${retainedKey}`);
+        if (modeChanged && retainedKey) {
+          if (request.messages.some(message => message.role === 'tool' || message.tool_calls?.length)) throw new Error('[CONVERSATION_MODE_CHANGED] Start a new tool conversation after changing chat mode.');
+          const latestUserMessage = [...request.messages].reverse().find(message => message.role === 'user');
+          if (!latestUserMessage) throw new Error('[CONVERSATION_MODE_CHANGED] A fresh user message is required after changing chat mode.');
+          request = { ...request, messages: [latestUserMessage] };
+          globalSessionManager.archiveManagedConversation(`api:${retainedKey}`);
+        }
         const primary = await this.dispatch(provider, mode, request, signal, undefined, attachments, status, { retainedKey, previousBinding: request.new_thread ? undefined : previousBinding, modeChanged, caller });
         primary.chatExecution = status;
         if (request.conversation_id) primary.conversationId = request.conversation_id;
@@ -375,11 +384,11 @@ export class CompletionGateway {
         const reviewer = Array.from(new Set(reviewers)).find(candidate => candidate !== primary.provider && this.isEligible(candidate));
         if (!reviewer) return primary;
         const reviewerAdapter = globalSessionManager.getAdapter(reviewer);
-        const reviewerCapable = reviewerAdapter instanceof CustomRecipeAdapter && reviewerAdapter.supportsTemporaryChat();
+        const reviewerCapable = reviewerAdapter instanceof CustomRecipeAdapter && reviewerAdapter.supportsChatMode(selection);
         const reviewerUnavailable = globalSessionManager.getStatus(reviewer)?.temporaryChat?.availability === 'unavailable';
         const reviewerTemporary = policy !== 'normal' && reviewerCapable && !reviewerUnavailable;
         if (policy === 'require-temporary' && !reviewerTemporary) return primary;
-        const reviewerStatus: ChatExecutionStatus = { policy, actualMode: reviewerTemporary ? 'temporary' : 'normal', verified: reviewerTemporary,
+        const reviewerStatus: ChatExecutionStatus = { requestedSelection: selection, actualSelection: reviewerTemporary ? selection : 'normal', policy, actualMode: reviewerTemporary ? 'temporary' : 'normal', verified: reviewerTemporary,
           ...(policy !== 'normal' && !reviewerTemporary ? { fallbackReason: reviewerUnavailable
             ? globalSessionManager.getStatus(reviewer)?.temporaryChat?.reason || 'Native Temporary Chat is unavailable for the reviewer account.'
             : `${reviewer} does not support native Temporary Chat.` } : {}) };
@@ -395,7 +404,7 @@ export class CompletionGateway {
             ],
           }, signal, undefined, attachments, reviewerStatus);
           review.executionBranches = [status, reviewerStatus];
-          review.chatExecution = { policy, actualMode: status.actualMode === 'temporary' && reviewerStatus.actualMode === 'temporary' ? 'temporary' : 'normal',
+          review.chatExecution = { requestedSelection: selection, actualSelection: selection, policy, actualMode: status.actualMode === 'temporary' && reviewerStatus.actualMode === 'temporary' ? 'temporary' : 'normal',
             verified: status.verified && reviewerStatus.verified,
             ...(status.fallbackReason || reviewerStatus.fallbackReason ? { fallbackReason: status.fallbackReason || reviewerStatus.fallbackReason } : {}) };
           return review;
@@ -448,7 +457,7 @@ export class CompletionGateway {
   }
 
   private async dispatch(provider: ProviderId, mode: TaskMode, request: CompletionRequest, signal?: AbortSignal, requestedModel?: string, attachments: readonly StagedAttachment[] = [], status?: ChatExecutionStatus,
-    session?: { retainedKey?: string; previousBinding?: { provider: ProviderId; accountId: string; partitionKey: string; model: string; mode: 'normal' | 'temporary' }; modeChanged?: boolean; caller?: { principal?: string } }): Promise<CompletionResult> {
+    session?: { retainedKey?: string; previousBinding?: { provider: ProviderId; accountId: string; partitionKey: string; model: string; selection?: ChatModeSelection; mode: 'normal' | 'temporary' }; modeChanged?: boolean; caller?: { principal?: string } }): Promise<CompletionResult> {
     if (this.isWebViewProvider(provider)) {
       return this.dispatchWebView(provider, mode, request, signal, requestedModel, attachments, status || { policy: 'normal', actualMode: 'normal', verified: false }, session);
     }
@@ -480,7 +489,7 @@ export class CompletionGateway {
     const model = requestedModel || (provider === 'localllm'
       ? config?.localLLM?.selectedModel || 'default'
       : DynamicRouter.resolveTargetModel(provider, mode, undefined, 'main') || service?.defaultModelId || 'default');
-    const { temporary_chat: _temporaryChat, conversation_id: _conversationId, new_thread: _newThread, ...upstreamRequest } = request;
+    const { chat_mode: _chatMode, temporary_chat: _temporaryChat, conversation_id: _conversationId, new_thread: _newThread, ...upstreamRequest } = request;
     const body: Record<string, unknown> = { ...upstreamRequest, model, stream: false };
     const response = await fetch(endpoint, {
       method: 'POST', signal,
@@ -500,7 +509,7 @@ export class CompletionGateway {
 
   private async dispatchWebView(provider: ProviderId, mode: TaskMode, request: CompletionRequest, signal: AbortSignal | undefined, requestedModel: string | undefined,
     attachments: readonly StagedAttachment[], status: ChatExecutionStatus,
-    session?: { retainedKey?: string; previousBinding?: { provider: ProviderId; accountId: string; partitionKey: string; model: string; mode: 'normal' | 'temporary' }; modeChanged?: boolean; caller?: { principal?: string } }): Promise<CompletionResult> {
+    session?: { retainedKey?: string; previousBinding?: { provider: ProviderId; accountId: string; partitionKey: string; model: string; selection?: ChatModeSelection; mode: 'normal' | 'temporary' }; modeChanged?: boolean; caller?: { principal?: string } }): Promise<CompletionResult> {
     const account = AccountRegistryManager.getActiveAccount(provider);
     if (!account) throw new Error(`[CONVERSATION_LOGIN_REQUIRED] No active account is configured for ${provider}.`);
     const retainedKey = session?.retainedKey;
@@ -516,7 +525,7 @@ export class CompletionGateway {
       return await AccountQueueManager.runTask(account.id, submissionId, async () => {
         if (signal?.aborted) throw Object.assign(new Error('Request cancelled.'), { name: 'AbortError' });
         const handle = temporary
-          ? await globalSessionManager.ensureTemporaryConversation({ key, providerId: provider, accountId: account.id, partitionKey: account.partitionKey, forceNew, abortSignal: signal })
+          ? await globalSessionManager.ensureTemporaryConversation({ key, providerId: provider, accountId: account.id, partitionKey: account.partitionKey, forceNew, selection: status.actualSelection, abortSignal: signal })
           : await globalSessionManager.ensureNormalConversation({ key, providerId: provider, accountId: account.id, partitionKey: account.partitionKey, forceNew, abortSignal: signal });
         const targetModel = requestedModel || DynamicRouter.resolveTargetModel(provider, mode, undefined, 'main') || undefined;
         if (targetModel) await ModelScraperEngine.selectRequestedModel(provider, targetModel, handle.webContents);
@@ -552,7 +561,7 @@ export class CompletionGateway {
         if (requiredTool && !message.tool_calls?.some(call => call.function.name === requiredTool)) {
           throw new Error('[WEBVIEW_SUBMISSION_UNCERTAIN] The provider did not return the requested tool call.');
         }
-        if (retainedKey) this.retained.set(retainedKey, { provider, accountId: account.id, partitionKey: account.partitionKey, model: request.model, mode: temporary ? 'temporary' : 'normal' });
+        if (retainedKey) this.retained.set(retainedKey, { provider, accountId: account.id, partitionKey: account.partitionKey, model: request.model, selection: status.actualSelection, mode: temporary ? 'temporary' : 'normal' });
         return { message, finishReason: message.tool_calls?.length ? 'tool_calls' as const : 'stop' as const,
           provider, model: targetModel || provider, chatExecution: status,
           ...(request.conversation_id ? { conversationId: request.conversation_id } : {}) };

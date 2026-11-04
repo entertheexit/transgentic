@@ -28,6 +28,7 @@ describe('WebView completion conversation ownership', () => {
     vi.spyOn(globalSessionManager, 'ensureNormalConversation').mockResolvedValue(handle);
     vi.spyOn(globalSessionManager, 'ensureTemporaryConversation').mockResolvedValue(handle);
     vi.spyOn(globalSessionManager, 'endTemporaryConversation').mockReturnValue(true);
+    vi.spyOn(globalSessionManager, 'archiveManagedConversation').mockImplementation(() => {});
     vi.spyOn(AccountRegistryManager, 'getActiveAccount').mockReturnValue({ id: 'account', partitionKey: 'persist:account', status: 'ready' } as any);
     vi.spyOn(DynamicRouter, 'resolveTargetModel').mockReturnValue(undefined);
     gateway = new CompletionGateway(() => ({ temporaryChat: { ...DEFAULT_TEMPORARY_CHAT } } as any), () => 58420);
@@ -101,7 +102,7 @@ describe('WebView completion conversation ownership', () => {
     expect(next.contextReset).toBe(true);
     expect(next.chatExecution).toMatchObject({ policy: 'normal', actualMode: 'normal' });
     expect(vi.mocked(globalSessionManager.ensureNormalConversation).mock.calls.at(-1)?.[0].forceNew).toBe(true);
-    expect(globalSessionManager.endTemporaryConversation).toHaveBeenCalledWith(expect.stringContaining('mode-thread'));
+    expect(globalSessionManager.archiveManagedConversation).toHaveBeenCalledWith(expect.stringContaining('mode-thread'));
   });
 
   it('keeps another live conversation when the preference changes during an active request', async () => {
@@ -122,7 +123,7 @@ describe('WebView completion conversation ownership', () => {
     expect(globalSessionManager.endTemporaryConversation).not.toHaveBeenCalled();
     finishFirst();
     const [firstResult, secondResult] = await Promise.all([first, second]);
-    expect(firstResult.chatExecution).toMatchObject({ policy: 'prefer-temporary', actualMode: 'temporary' });
+    expect(firstResult.chatExecution).toMatchObject({ policy: 'require-temporary', actualMode: 'temporary' });
     expect(secondResult.chatExecution).toMatchObject({ policy: 'normal', actualMode: 'normal' });
     expect(vi.mocked(globalSessionManager.ensureTemporaryConversation).mock.calls[0][0].key).toContain('agent-one');
     expect(vi.mocked(globalSessionManager.ensureNormalConversation).mock.calls[0][0].key).toContain('agent-two');
@@ -153,7 +154,7 @@ describe('WebView completion conversation ownership', () => {
     const secondResult = await second;
     expect(secondResult.chatExecution).toMatchObject({ policy: 'normal', actualMode: 'normal' });
     expect(secondResult.contextReset).toBe(true);
-    expect(globalSessionManager.endTemporaryConversation).toHaveBeenCalledWith(expect.stringContaining('same-agent'));
+    expect(globalSessionManager.archiveManagedConversation).toHaveBeenCalledWith(expect.stringContaining('same-agent'));
   });
 
   it('does not resend after a response or tool envelope becomes uncertain', async () => {
@@ -217,4 +218,35 @@ describe('WebView completion conversation ownership', () => {
     })).rejects.toThrow('WEBVIEW_SUBMISSION_UNCERTAIN');
     expect(executePrompt).toHaveBeenCalledOnce();
   });
+  it('passes the exact unpersonalized selection into managed browser creation', async () => {
+    const result = await gateway.complete({ model: 'transgentic/provider/chatgpt', chat_mode: 'temporary-unpersonalized', messages: [{ role: 'user', content: 'sentinel' }] });
+    expect(globalSessionManager.ensureTemporaryConversation).toHaveBeenCalledWith(expect.objectContaining({ selection: 'temporary-unpersonalized' }));
+    expect(result.chatExecution).toMatchObject({ policy: 'require-temporary', requestedSelection: 'temporary-unpersonalized', actualSelection: 'temporary-unpersonalized', verified: true });
+  });
+
+  it('rejects exact personalization on generic providers without submitting', async () => {
+    await expect(gateway.complete({ model: 'transgentic/provider/grok', chat_mode: 'temporary-unpersonalized', messages: [{ role: 'user', content: 'sentinel' }] })).rejects.toThrow('TEMPORARY_CHAT_UNSUPPORTED');
+    expect(executePrompt).not.toHaveBeenCalled();
+  });
+
+  it('rejects contradictory chat API fields before dispatch', async () => {
+    await expect(gateway.complete({ model: 'transgentic/provider/chatgpt', chat_mode: 'normal', temporary_chat: true, messages: [{ role: 'user', content: 'sentinel' }] })).rejects.toThrow('conflicts');
+    expect(executePrompt).not.toHaveBeenCalled();
+  });
+
+  it('explicit Normal overrides an enabled legacy preference', async () => {
+    const result = await gateway.complete({ model: 'transgentic/provider/chatgpt', chat_mode: 'normal', messages: [{ role: 'user', content: 'sentinel' }] });
+    expect(result.chatExecution).toMatchObject({ policy: 'normal', actualSelection: 'normal' });
+    expect(globalSessionManager.ensureTemporaryConversation).not.toHaveBeenCalled();
+  });
+
+  it('starts a fresh retained conversation when personalization changes', async () => {
+    await gateway.complete({ model: 'transgentic/provider/chatgpt', conversation_id: 'variant-switch', chat_mode: 'temporary-personalized', messages: [{ role: 'user', content: 'first' }] });
+    vi.spyOn(globalSessionManager, 'getManagedConversation').mockReturnValue(handle);
+    const result = await gateway.complete({ model: 'transgentic/provider/chatgpt', conversation_id: 'variant-switch', chat_mode: 'temporary-unpersonalized', messages: [{ role: 'user', content: 'second' }] });
+    expect(vi.mocked(globalSessionManager.ensureTemporaryConversation).mock.calls[1][0]).toMatchObject({ forceNew: true, selection: 'temporary-unpersonalized' });
+    expect(result.contextReset).toBe(true);
+    expect(executePrompt.mock.calls[1][0]).not.toContain('first');
+  });
+
 });

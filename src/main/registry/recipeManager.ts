@@ -223,6 +223,9 @@ export class RecipeManager {
 
     const withBundledTemporaryChat = (recipe: CustomRecipe): CustomRecipe => {
       const bundled = (BUILTIN_RECIPES as Record<string, CustomRecipe>)[cleanId];
+      if (recipe.id === cleanId && cleanId === 'chatgpt' && recipe.temporaryChat?.enabled && !recipe.temporaryChat.variants && bundled?.temporaryChat?.variants) {
+        return { ...recipe, temporaryChat: { ...recipe.temporaryChat, variants: bundled.temporaryChat.variants } };
+      }
       if (recipe.id !== cleanId || !bundled?.temporaryChat || recipe.temporaryChat !== undefined) return recipe;
       // Older personalized built-in overrides may predate the native privacy contract.
       // Inherit the current bundled declaration without changing the saved override.
