@@ -38,6 +38,7 @@ let completion: ReturnType<typeof vi.spyOn>;
 
 function configure(balancedMode = true, localMicroTask = false, doubleAgent = false) {
   config = {
+    temporaryChat: { general: false, coding: false, image: false, video: false, music: false },
     balancedMode,
     doubleAgent: { enabled: doubleAgent, includeLocalLlm: true },
     localLLM: {

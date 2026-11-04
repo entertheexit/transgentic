@@ -4,9 +4,12 @@ import type { CustomRecipe } from './types/recipe.js';
 import type { AttachmentKind } from './attachments.js';
 
 export type ProviderId = 'chatgpt' | 'claude' | 'gemini' | 'grok' | 'localllm' | (string & {});
+export type ChatModeSelection = 'normal' | 'temporary' | 'temporary-personalized' | 'temporary-unpersonalized';
 export type ChatMode = 'normal' | 'temporary';
 export type ChatPolicy = 'normal' | 'prefer-temporary' | 'require-temporary';
 export interface ChatExecutionStatus {
+  requestedSelection?: ChatModeSelection;
+  actualSelection?: ChatModeSelection;
   policy: ChatPolicy;
   actualMode?: ChatMode;
   verified: boolean;
@@ -15,12 +18,17 @@ export interface ChatExecutionStatus {
 export type TemporaryChatState = 'preparing' | 'verified' | 'unverified' | 'ended';
 
 export interface TemporaryChatCapability {
+  variants?: Array<'personalized' | 'unpersonalized'>;
+  checking?: boolean;
+  checkedAt?: number;
+  checkFailed?: boolean;
   supported: boolean;
   availability: 'unknown' | 'available' | 'unavailable';
   reason?: string;
 }
 
 export interface TemporaryChatSessionInfo {
+  selection?: ChatModeSelection;
   key: string;
   mode?: ChatMode;
   providerId: ProviderId;
@@ -407,6 +415,7 @@ export interface TransgenticConfig {
   recall?: RecallConfig;
   agentHaltGuard?: AgentHaltGuardConfig | boolean;
   temporaryChat?: TemporaryChatModeConfig;
+  chatModes?: ChatModePreferences;
   localLLM?: LocalLLMConfig;
   healing?: HealingConfig;
 }
@@ -546,7 +555,7 @@ export interface IpcApi {
   reloadProvider: (providerId: ProviderId) => Promise<void>;
   openProviderWindow: (providerId: ProviderId, partitionKey?: string) => Promise<void>;
   openSystemBrowser: (providerId: ProviderId) => Promise<void>;
-  executePrompt: (prompt: string, mode?: TaskMode, preferredProvider?: ProviderId, model?: string, cliRequest?: import('./cli.js').CliRequestOptions, files?: import('./attachments.js').AttachmentInput[], temporaryChat?: boolean, mediaPreferences?: import('./media.js').MediaPreferences) => Promise<any>;
+  executePrompt: (prompt: string, mode?: TaskMode, preferredProvider?: ProviderId, model?: string, cliRequest?: import('./cli.js').CliRequestOptions, files?: import('./attachments.js').AttachmentInput[], temporaryChat?: boolean, mediaPreferences?: import('./media.js').MediaPreferences, chatMode?: ChatModeSelection) => Promise<any>;
   getMediaConfiguration: (mode: TaskMode) => Promise<import('./media.js').MediaCapability[]>;
   getThreadSessions: () => Promise<any[]>;
   clearThreadSessions: (params?: { providerId?: ProviderId; threadId?: string; scope?: 'quick_prompt' | 'all' }) => Promise<{ success: boolean; sessions: any[] }>;
@@ -603,4 +612,44 @@ export interface IpcApi {
   onHealingUpdated?: (callback: (status: any) => void) => () => void;
   onConfigUpdated?: (callback: (config: TransgenticConfig) => void) => () => void;
   onRouteMatrixUpdated?: (callback: (matrix: RouteMatrix) => void) => () => void;
+}
+
+export const CHAT_MODE_SELECTIONS = ['normal', 'temporary', 'temporary-personalized', 'temporary-unpersonalized'] as const;
+export type ChatModePreferences = Partial<Record<RouteMode, Record<string, ChatModeSelection>>>;
+
+export function validateChatMode(value: unknown, legacy?: unknown): ChatModeSelection | undefined {
+  if (legacy !== undefined && typeof legacy !== 'boolean') throw new Error('temporary_chat must be a boolean.');
+  if (value === undefined) return undefined;
+  if (!(CHAT_MODE_SELECTIONS as readonly unknown[]).includes(value)) throw new Error('Invalid chat_mode.');
+  if (legacy !== undefined && legacy !== (value !== 'normal')) throw new Error('chat_mode conflicts with temporary_chat.');
+  return value as ChatModeSelection;
+}
+
+export function resolveChatMode(config: Pick<TransgenticConfig, 'temporaryChat' | 'chatModes'> | undefined, mode: TaskMode, provider: string,
+  requested?: ChatModeSelection, legacy?: boolean): ChatModeSelection {
+  validateChatMode(requested, legacy);
+  const selection = requested ?? (legacy === undefined ? config?.chatModes?.[normalizeRouteMode(mode)]?.[provider] : undefined);
+  if (selection) return validateChatMode(selection)!;
+  const enabled = legacy ?? isTemporaryChatPreferred(config, mode);
+  return !enabled ? 'normal' : provider === 'chatgpt' ? 'temporary-personalized' : 'temporary';
+}
+
+/** Normalize saved preferences and migrate the historical ChatGPT boolean once. */
+export function normalizeChatModePreferences(input: unknown, legacy?: Partial<TemporaryChatModeConfig>): ChatModePreferences {
+  const result: ChatModePreferences = {};
+  const saved = input && typeof input === 'object' && !Array.isArray(input) ? input as Record<string, unknown> : {};
+  for (const mode of TASK_MODES) {
+    const entries = saved[mode];
+    const providers: Record<string, ChatModeSelection> = {};
+    if (entries && typeof entries === 'object' && !Array.isArray(entries)) {
+      for (const [provider, value] of Object.entries(entries)) {
+        if (provider && provider !== '__proto__' && provider !== 'constructor' && (CHAT_MODE_SELECTIONS as readonly unknown[]).includes(value)) {
+          providers[provider] = value as ChatModeSelection;
+        }
+      }
+    }
+    if (!providers.chatgpt) providers.chatgpt = normalizeTemporaryChatConfig(legacy)[mode] ? 'temporary-personalized' : 'normal';
+    result[mode] = providers;
+  }
+  return result;
 }

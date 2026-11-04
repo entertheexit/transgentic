@@ -33,6 +33,7 @@ export interface CompletionRequest {
   stop?: string | string[];
   user?: string;
   temporary_chat?: boolean;
+  chat_mode?: import('./types.js').ChatModeSelection;
   conversation_id?: string;
   new_thread?: boolean;
 }

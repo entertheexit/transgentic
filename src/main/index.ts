@@ -34,6 +34,7 @@ import {
   MODE_SCHEMA_VERSION,
   DEFAULT_TEMPORARY_CHAT,
   normalizeTemporaryChatConfig,
+  normalizeChatModePreferences,
   AgentHaltGuardConfig,
   doubleAgentConfig,
   HealingConfig,
@@ -208,6 +209,7 @@ function loadPersistedConfig(): TransgenticConfig {
         parsed.agentHaltGuard = normalizeModeFlags(parsed.agentHaltGuard);
       }
       parsed.temporaryChat = normalizeTemporaryChatConfig(parsed.temporaryChat);
+      parsed.chatModes = normalizeChatModePreferences(parsed.chatModes, parsed.temporaryChat);
       // Non-destructively preserve localLLM configuration (does not wipe endpoints/models on enabled: false)
       if (!parsed.localLLM) {
         parsed.localLLM = defaults.localLLM;
@@ -943,6 +945,7 @@ function setupIpcHandlers() {
   ipcMain.handle('update-config', (_, newCfg: Partial<TransgenticConfig>) => {
     if (newCfg.cli !== undefined) throw new Error('Use the CLI settings controls to change CLI permissions.');
     currentConfig = { ...currentConfig, ...newCfg,
+      ...(newCfg.chatModes ? { chatModes: normalizeChatModePreferences(newCfg.chatModes, currentConfig.temporaryChat) } : {}),
       ...(newCfg.temporaryChat ? { temporaryChat: normalizeTemporaryChatConfig({ ...currentConfig.temporaryChat, ...newCfg.temporaryChat }) } : {}) };
     if (newCfg.assetsDir) {
       globalAssetManager.setAssetsDirectory(newCfg.assetsDir);
@@ -1432,7 +1435,7 @@ function setupIpcHandlers() {
     return globalMcpServer.getDesktopMediaConfiguration(mode);
   });
 
-  ipcMain.handle('execute-prompt', async (event, { prompt, mode, provider, model, cliRequest, files, temporaryChat, mediaPreferences }: { prompt: string; mode?: TaskMode; provider?: ProviderId; model?: string; cliRequest?: unknown; files?: AttachmentInput[]; temporaryChat?: boolean; mediaPreferences?: import('../shared/media.js').MediaPreferences }) => {
+  ipcMain.handle('execute-prompt', async (event, { prompt, mode, provider, model, cliRequest, files, temporaryChat, mediaPreferences, chatMode }: { prompt: string; mode?: TaskMode; provider?: ProviderId; model?: string; cliRequest?: unknown; files?: AttachmentInput[]; temporaryChat?: boolean; mediaPreferences?: import('../shared/media.js').MediaPreferences; chatMode?: import('../shared/types.js').ChatModeSelection }) => {
     if (event.sender !== globalWindowManager.getMainWindow()?.webContents || event.senderFrame !== event.sender.mainFrame) throw new Error('Desktop prompts are available only in the main window.');
     const result = await globalMcpServer.orchestratePrompt(
       prompt,
@@ -1449,7 +1452,8 @@ function setupIpcHandlers() {
       files,
       undefined,
       temporaryChat,
-      mediaPreferences
+      mediaPreferences,
+      chatMode
     );
     if (result.isError) throw new Error(result.content?.[0]?.text || 'Request failed');
     return result;

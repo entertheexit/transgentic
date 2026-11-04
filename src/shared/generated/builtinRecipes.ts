@@ -3,7 +3,7 @@ import type { CustomRecipe } from '../types/recipe.js';
 
 export const BUILTIN_RECIPES: Record<'chatgpt' | 'claude' | 'gemini' | 'grok', CustomRecipe> = {
   "chatgpt": {
-    "version": "1.2.4",
+    "version": "1.3.0",
     "id": "chatgpt",
     "title": "OpenAI ChatGPT",
     "domainMatch": "chatgpt.com",
@@ -66,6 +66,74 @@ export const BUILTIN_RECIPES: Record<'chatgpt' | 'claude' | 'gemini' | 'grok', C
         "queryParam": "temporary-chat",
         "queryValue": "true",
         "provisionalPathPrefix": "/c/local-chatgpt%3A"
+      },
+      "variants": {
+        "personalized": {
+          "activationSteps": [
+            {
+              "action": "click",
+              "target": {
+                "role": "button",
+                "name": [
+                  "Personalized",
+                  "Unpersonalized"
+                ]
+              }
+            },
+            {
+              "action": "click",
+              "target": {
+                "selectors": "[role=\"menuitem\"], [role=\"menuitemradio\"], [role=\"menuitemcheckbox\"], [role=\"option\"]",
+                "name": [
+                  "Personalized",
+                  "Personalized This chat can reference memory, plugins, and custom instructions",
+                  "PersonalizedThis chat can reference memory, plugins, and custom instructions"
+                ]
+              }
+            }
+          ],
+          "activeWhen": {
+            "role": "button",
+            "name": "Personalized"
+          },
+          "continuationWhen": {
+            "role": "button",
+            "name": "Save chat"
+          }
+        },
+        "unpersonalized": {
+          "activationSteps": [
+            {
+              "action": "click",
+              "target": {
+                "role": "button",
+                "name": [
+                  "Personalized",
+                  "Unpersonalized"
+                ]
+              }
+            },
+            {
+              "action": "click",
+              "target": {
+                "selectors": "[role=\"menuitem\"], [role=\"menuitemradio\"], [role=\"menuitemcheckbox\"], [role=\"option\"]",
+                "name": [
+                  "Unpersonalized",
+                  "Unpersonalized This chat will ignore memory, plugins, and custom instructions",
+                  "UnpersonalizedThis chat will ignore memory, plugins, and custom instructions"
+                ]
+              }
+            }
+          ],
+          "activeWhen": {
+            "role": "button",
+            "name": "Unpersonalized"
+          },
+          "continuationWhen": {
+            "role": "button",
+            "name": "Save chat"
+          }
+        }
       }
     },
     "createdAt": "2026-01-01T00:00:00.000Z",

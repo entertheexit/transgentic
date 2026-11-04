@@ -1,3 +1,4 @@
+import { boundedTemporaryChatProbe } from './temporaryChatProbe.js';
 import { isCliProvider } from '../../shared/cli.js';
 import path from 'path';
 import fs from 'fs';
@@ -47,6 +48,7 @@ export interface TemporaryConversationHandle {
 
 export class SessionManager {
   private adapters: Map<ProviderId, BaseProviderAdapter> = new Map();
+  private statusProbeGenerations = new Map<ProviderId, number>();
   public sessions: Map<ProviderId, Session> = new Map();
   private partitionSessions: Map<string, Session> = new Map();
   private statuses: Map<ProviderId, ProviderStatus> = new Map();
@@ -459,7 +461,11 @@ export class SessionManager {
         rateLimitedUntil: isRateLimited ? (activeAcc?.rateLimitedUntil || (Date.now() + remaining * 1000)) : undefined,
         rateLimitCount: rateMetrics.rateLimitCount,
         temporaryChat: {
+          checking: status.temporaryChat?.checking,
+          checkedAt: status.temporaryChat?.checkedAt,
+          checkFailed: status.temporaryChat?.checkFailed,
           supported: adapter instanceof CustomRecipeAdapter && adapter.supportsTemporaryChat(),
+          variants: adapter instanceof CustomRecipeAdapter ? Object.keys(adapter.recipe.temporaryChat?.variants || {}) as Array<'personalized' | 'unpersonalized'> : [],
           availability: adapter instanceof CustomRecipeAdapter && adapter.supportsTemporaryChat()
             ? (status.temporaryChat?.availability || 'unknown')
             : 'unavailable',
@@ -471,6 +477,9 @@ export class SessionManager {
   }
 
   public async refreshProviderStatus(id: ProviderId): Promise<ProviderStatus> {
+    const probeGeneration = (this.statusProbeGenerations.get(id) || 0) + 1;
+    this.statusProbeGenerations.set(id, probeGeneration);
+    const initialAccountId = AccountRegistryManager.getActiveAccount(id)?.id;
     const adapter = this.adapters.get(id);
     let current = this.statuses.get(id);
     const manifestService = ServiceManifestManager.getManifest().services[id];
@@ -653,17 +662,29 @@ export class SessionManager {
 
       if (webContents && !webContents.isDestroyed()) {
         try {
-          isDomAuth = await adapter!.checkAuthStatus();
-          const rateStatus = await adapter!.checkRateLimit();
-          isRateLimited = rateStatus.isRateLimited;
           if (adapter instanceof CustomRecipeAdapter && adapter.supportsTemporaryChat()) {
-            const availability = await adapter.inspectTemporaryChatAvailability();
+            const accountAtStart = initialAccountId;
+            current.temporaryChat = { supported: true, availability: 'unknown', checking: true,
+              variants: Object.keys(adapter.recipe.temporaryChat?.variants || {}) as Array<'personalized' | 'unpersonalized'> };
+            this.notifyStatusChange();
+            const observed = await boundedTemporaryChatProbe(() => adapter.inspectTemporaryChatAvailability());
+            if (this.statusProbeGenerations.get(id) !== probeGeneration || this.adapters.get(id) !== adapter || adapter.getWebContents() !== webContents || AccountRegistryManager.getActiveAccount(id)?.id !== accountAtStart) {
+              return this.getStatus(id)!;
+            }
+            const availability = observed || { availability: 'unknown' as const, reason: 'Could not verify Temporary Chat. Open the provider and retry.' };
             current.temporaryChat = {
               supported: true,
+              variants: Object.keys(adapter.recipe.temporaryChat?.variants || {}) as Array<'personalized' | 'unpersonalized'>,
+              checkedAt: Date.now(),
+              checkFailed: availability.availability === 'unknown',
               availability: availability.availability,
               ...(availability.reason ? { reason: availability.reason } : {}),
             };
+            this.notifyStatusChange();
           }
+          isDomAuth = await boundedTemporaryChatProbe(() => adapter!.checkAuthStatus()) ?? null;
+          const rateStatus = await boundedTemporaryChatProbe(() => adapter!.checkRateLimit());
+          isRateLimited = rateStatus?.isRateLimited || false;
         } catch {
           isDomAuth = null;
         }
@@ -671,6 +692,7 @@ export class SessionManager {
         // Availability observed in a previous view may belong to another account or session.
         current.temporaryChat = {
           supported: true,
+          variants: Object.keys(adapter.recipe.temporaryChat?.variants || {}) as Array<'personalized' | 'unpersonalized'>,
           availability: 'unknown',
           reason: 'Temporary Chat will be checked when the provider view opens.',
         };
@@ -747,6 +769,7 @@ export class SessionManager {
   }
 
   public async ensureTemporaryConversation(params: {
+    selection?: import('../../shared/types.js').ChatModeSelection;
     key: string;
     providerId: ProviderId;
     accountId: string;
@@ -755,7 +778,7 @@ export class SessionManager {
     abortSignal?: AbortSignal;
   }): Promise<TemporaryConversationHandle> {
     const existing = this.temporaryConversations.get(params.key);
-    if (existing && !params.forceNew) {
+    if (existing && !params.forceNew && existing.selection === params.selection) {
       if (existing.providerId !== params.providerId || existing.accountId !== params.accountId || existing.partitionKey !== params.partitionKey) {
         throw new Error('[TEMPORARY_CHAT_ENDED] Temporary Chat belongs to a different provider or account. Start a new Temporary Chat.');
       }
@@ -802,6 +825,7 @@ export class SessionManager {
     const entry: TemporaryConversationEntry = {
       key: params.key,
       mode: 'temporary',
+      selection: params.selection,
       providerId: params.providerId,
       accountId: params.accountId,
       partitionKey: params.partitionKey,
@@ -816,18 +840,18 @@ export class SessionManager {
     };
     this.temporaryConversations.set(params.key, entry);
     win.on('closed', () => {
-      const current = this.temporaryConversations.get(params.key);
+      const current = this.temporaryConversations.get(entry.key);
       if (current === entry) {
         entry.state = 'ended';
         adapter.detach();
-        this.temporaryConversations.delete(params.key);
-        globalThreadManager.removeTemporarySessionByKey(params.key);
+        this.temporaryConversations.delete(entry.key);
+        globalThreadManager.removeTemporarySessionByKey(entry.key);
         this.notifyTemporaryConversationEnded(entry);
         this.notifyTemporaryConversations();
       }
     });
     try {
-      await adapter.activateTemporaryChat(params.abortSignal);
+      await adapter.activateTemporaryChat(params.abortSignal, params.selection);
       entry.state = 'verified';
       entry.lastActiveAt = Date.now();
       this.notifyTemporaryConversations();
@@ -848,6 +872,18 @@ export class SessionManager {
     const entry = this.temporaryConversations.get(key);
     return entry ? this.toTemporaryConversationHandle(entry) : undefined;
   }
+  /** Preserve a previous mode's browser view while a retained client starts fresh. */
+  public archiveManagedConversation(key: string): void {
+    const map = this.temporaryConversations.has(key) ? this.temporaryConversations : this.normalConversations;
+    const entry = map.get(key);
+    if (!entry) return;
+    map.delete(key);
+    entry.key = `${key}:previous:${crypto.randomUUID()}`;
+    if (entry.mode === 'normal') this.normalConversations.set(entry.key, entry as NormalConversationEntry);
+    else this.temporaryConversations.set(entry.key, entry);
+    this.notifyTemporaryConversations();
+  }
+
   public getManagedConversation(key: string): TemporaryConversationHandle | undefined {
     const entry = this.temporaryConversations.get(key) || this.normalConversations.get(key);
     return entry ? this.toTemporaryConversationHandle(entry) : undefined;
@@ -942,12 +978,12 @@ export class SessionManager {
     win.webContents.on('dom-ready', () => { win.webContents.executeJavaScript(SessionProfileManager.getPreloadCompatibilityScript(), true).catch(() => {}); });
     adapter.setWebContents(win.webContents);
     const now = Date.now();
-    const entry: NormalConversationEntry = { key: params.key, mode: 'normal', providerId: params.providerId, accountId: params.accountId,
+    const entry: NormalConversationEntry = { key: params.key, mode: 'normal', selection: 'normal', providerId: params.providerId, accountId: params.accountId,
       partitionKey: params.partitionKey, sessionId: crypto.randomUUID(), generation: ++this.temporaryGeneration, state: 'preparing',
       recipeVersion: source.recipe.version, createdAt: now, lastActiveAt: now, window: win, adapter };
     this.normalConversations.set(params.key, entry);
-    win.on('closed', () => { if (this.normalConversations.get(params.key) === entry) {
-      this.normalConversations.delete(params.key); adapter.detach(); entry.state = 'ended'; this.notifyTemporaryConversations();
+    win.on('closed', () => { if (this.normalConversations.get(entry.key) === entry) {
+      this.normalConversations.delete(entry.key); adapter.detach(); entry.state = 'ended'; this.notifyTemporaryConversations();
     }});
     try {
       await adapter.navigateToNewChat({ forceReload: true });

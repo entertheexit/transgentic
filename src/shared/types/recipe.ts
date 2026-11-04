@@ -92,7 +92,15 @@ export interface RecipeClickStep {
 /** Backward-compatible name used by attachment recipes. */
 export type RecipeAttachmentRevealStep = RecipeClickStep;
 
+export interface RecipeTemporaryChatVariant {
+  /** Native conversation evidence accepted only after this variant was verified in the same view. */
+  continuationWhen?: RecipeElementLocator;
+  activationSteps: RecipeClickStep[];
+  activeWhen: RecipeElementLocator;
+}
+
 export interface RecipeTemporaryChat {
+  variants?: Partial<Record<'personalized' | 'unpersonalized', RecipeTemporaryChatVariant>>;
   /** Native provider temporary/private chat support. */
   enabled: boolean;
   /** Ordered provider UI actions that activate the native mode. */
@@ -365,6 +373,34 @@ export function validateCustomRecipe(raw: any): { valid: boolean; errors: string
     if (!activeWhen) errors.push('temporaryChat.activeWhen requires selectors or role.');
     if (!inactiveWhen) errors.push('temporaryChat.inactiveWhen requires selectors or role.');
     if (!activationSteps.length || !activeWhen || !inactiveWhen) return undefined;
+    const variants: RecipeTemporaryChat['variants'] = {};
+    if (value.variants !== undefined) {
+      if (!value.variants || typeof value.variants !== 'object' || Array.isArray(value.variants)) {
+        errors.push('temporaryChat.variants must be an object.');
+      } else {
+        for (const [name, variant] of Object.entries(value.variants) as Array<[string, any]>) {
+          if (name !== 'personalized' && name !== 'unpersonalized') {
+            errors.push(`temporaryChat.variants.${name} is unsupported.`);
+            continue;
+          }
+          const steps = Array.isArray(variant?.activationSteps) ? variant.activationSteps : [];
+          const normalizedSteps: RecipeClickStep[] = [];
+          for (const step of steps) {
+            const target = step?.action === 'click' ? sanitizeElementLocator(step.target) : undefined;
+            if (!target) errors.push(`temporaryChat.variants.${name} requires valid click targets.`);
+            else normalizedSteps.push({ action: 'click', target });
+          }
+          const proof = sanitizeElementLocator(variant?.activeWhen);
+          if (!normalizedSteps.length || !proof) {
+            errors.push(`temporaryChat.variants.${name} requires activationSteps and activeWhen.`);
+          } else {
+            const continuationWhen = variant.continuationWhen === undefined ? undefined : sanitizeElementLocator(variant.continuationWhen);
+            if (variant.continuationWhen !== undefined && !continuationWhen) errors.push(`temporaryChat.variants.${name}.continuationWhen requires selectors or role.`);
+            variants[name] = { activationSteps: normalizedSteps, activeWhen: proof, ...(continuationWhen ? { continuationWhen } : {}) };
+          }
+        }
+      }
+    }
     const continuation = value.continuation;
     if (continuation && (typeof continuation.pathPrefix !== 'string' || !continuation.pathPrefix.startsWith('/') || continuation.pathPrefix === '/' || typeof continuation.queryParam !== 'string' || !continuation.queryParam.trim() || typeof continuation.queryValue !== 'string' || !continuation.queryValue.trim())) {
       errors.push('temporaryChat.continuation requires a non-root pathPrefix, queryParam and queryValue.');
@@ -374,7 +410,7 @@ export function validateCustomRecipe(raw: any): { valid: boolean; errors: string
       errors.push('temporaryChat.continuation.provisionalPathPrefix must extend pathPrefix.');
       return undefined;
     }
-    return { enabled: true, activationSteps, activeWhen, inactiveWhen, ...(continuation ? { continuation: { pathPrefix: continuation.pathPrefix, queryParam: continuation.queryParam, queryValue: continuation.queryValue, ...(continuation.provisionalPathPrefix ? { provisionalPathPrefix: continuation.provisionalPathPrefix } : {}) } } : {}) };
+    return { enabled: true, activationSteps, activeWhen, inactiveWhen, ...(Object.keys(variants).length ? { variants } : {}), ...(continuation ? { continuation: { pathPrefix: continuation.pathPrefix, queryParam: continuation.queryParam, queryValue: continuation.queryValue, ...(continuation.provisionalPathPrefix ? { provisionalPathPrefix: continuation.provisionalPathPrefix } : {}) } } : {}) };
   };
 
   if (!raw || typeof raw !== 'object') {
