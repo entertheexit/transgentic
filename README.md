@@ -14,7 +14,7 @@
 
 <p align="center">
   <strong><a href="https://github.com/entertheexit/transgentic/releases/latest">Download desktop app</a></strong> ·
-  <strong><a href="https://github.com/entertheexit/transgentic/releases/latest/download/transgentic-sync-v1.2.0.zip">Download Chrome extension (.zip)</a></strong>
+  <strong><a href="https://github.com/entertheexit/transgentic/releases/latest/download/transgentic-sync-v1.2.1.zip">Download Chrome extension (.zip)</a></strong>
 </p>
 
 <p align="center">
@@ -76,17 +76,17 @@ The gateway runs locally; requests can still leave your machine through a config
 
 ### 1. Download and start the desktop
 
-**[Desktop releases and release notes](https://github.com/entertheexit/transgentic/releases/latest)** · **[Chrome extension ZIP](https://github.com/entertheexit/transgentic/releases/download/v2.2.2/transgentic-sync-v1.2.0.zip)**
+**[Desktop releases and release notes](https://github.com/entertheexit/transgentic/releases/latest)** · **[Chrome extension ZIP](https://github.com/entertheexit/transgentic/releases/download/v2.3.0/transgentic-sync-v1.2.1.zip)**
 
-Choose the desktop package for your system. The following files belong to [release v2.2.2](https://github.com/entertheexit/transgentic/releases/tag/v2.2.2); use the latest-release link above to check for newer builds.
+Choose the desktop package for your system. The following files belong to [release v2.3.0](https://github.com/entertheexit/transgentic/releases/tag/v2.3.0); use the latest-release link above to check for newer builds.
 
 | Download | File | Use |
 | :--- | :--- | :--- |
-| **[macOS · Apple Silicon](https://github.com/entertheexit/transgentic/releases/download/v2.2.2/Transgentic-2.2.2-arm64.dmg)** | `.dmg` · ARM64 | Desktop app for Apple Silicon Macs |
-| **[macOS · Intel](https://github.com/entertheexit/transgentic/releases/download/v2.2.2/Transgentic-2.2.2.dmg)** | `.dmg` · x64 | Desktop app for Intel Macs |
-| **[Windows](https://github.com/entertheexit/transgentic/releases/download/v2.2.2/Transgentic-2.2.2-win.zip)** | `.zip` · x64 | Windows desktop application |
-| **[Linux](https://github.com/entertheexit/transgentic/releases/download/v2.2.2/Transgentic-2.2.2.AppImage)** | `.AppImage` · x64 | Linux desktop application |
-| **[Chrome extension](https://github.com/entertheexit/transgentic/releases/download/v2.2.2/transgentic-sync-v1.2.0.zip)** | `transgentic-sync-v1.2.0.zip` | Session synchronization for web providers |
+| **[macOS · Apple Silicon](https://github.com/entertheexit/transgentic/releases/download/v2.3.0/Transgentic-2.3.0-arm64.dmg)** | `.dmg` · ARM64 | Desktop app for Apple Silicon Macs |
+| **[macOS · Intel](https://github.com/entertheexit/transgentic/releases/download/v2.3.0/Transgentic-2.3.0.dmg)** | `.dmg` · x64 | Desktop app for Intel Macs |
+| **[Windows](https://github.com/entertheexit/transgentic/releases/download/v2.3.0/Transgentic-2.3.0-win.zip)** | `.zip` · x64 | Windows desktop application |
+| **[Linux](https://github.com/entertheexit/transgentic/releases/download/v2.3.0/Transgentic-2.3.0.AppImage)** | `.AppImage` · x64 | Linux desktop application |
+| **[Chrome extension](https://github.com/entertheexit/transgentic/releases/download/v2.3.0/transgentic-sync-v1.2.1.zip)** | `transgentic-sync-v1.2.1.zip` | Session synchronization for web providers |
 
 Open the desktop package and follow its installation or launch steps. The desktop build does not require Git, Node.js, npm, or a source checkout. It does not include a local model; configure one or connect a permitted web session in the next step.
 
