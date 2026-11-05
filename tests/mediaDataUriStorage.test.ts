@@ -22,6 +22,11 @@ describe('Generated media data URI storage', () => {
     expect(saved.filePath).toMatch(/\.mp4$/);
   });
 
+  it.each([['webp', 'RIFF0000WEBP'], ['gif', 'GIF89a00000000']])('uses the detected %s extension for downloaded image bytes', async (extension, header) => {
+    const saved = await assets.saveMediaAsset(Buffer.from(header), 'image');
+    expect(saved.filePath).toMatch(new RegExp(`\\.${extension}$`));
+  });
+
   it('stores an MP4 music player in the Music library', async () => {
     const saved = await assets.saveMediaAsset(`data:video/mp4;base64,${mp4.toString('base64')}`, 'video', 'gemini_music', undefined, 'music');
     expect(saved.relativePath).toMatch(/^\.\/Library\/Music\/.*\.mp4$/);

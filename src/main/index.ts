@@ -49,7 +49,7 @@ import {
   normalizeModeFlags,
   normalizeTaskMode,
 } from '../shared/types.js';
-import { getExtensionDownloadUrl } from '../shared/release.js';
+import { TRANSGENTIC_SYNC_ARCHIVE, getExtensionDownloadUrl } from '../shared/release.js';
 import { ATTACHMENT_LIMITS, type AttachmentInput, type DesktopAttachmentSelection } from '../shared/attachments.js';
 import { AttachmentManager } from './attachments/attachmentManager.js';
 
@@ -152,6 +152,7 @@ function loadPersistedConfig(): TransgenticConfig {
       music: true,
     },
     temporaryChat: { ...DEFAULT_TEMPORARY_CHAT },
+    chatModes: { coding: { chatgpt: 'temporary-unpersonalized' } },
     localLLM: {
       enabled: false,
       preset: 'ollama',
@@ -208,8 +209,9 @@ function loadPersistedConfig(): TransgenticConfig {
       } else {
         parsed.agentHaltGuard = normalizeModeFlags(parsed.agentHaltGuard);
       }
-      parsed.temporaryChat = normalizeTemporaryChatConfig(parsed.temporaryChat);
-      parsed.chatModes = normalizeChatModePreferences(parsed.chatModes, parsed.temporaryChat);
+      const legacyTemporaryChat = parsed.temporaryChat;
+      parsed.temporaryChat = normalizeTemporaryChatConfig(legacyTemporaryChat);
+      parsed.chatModes = normalizeChatModePreferences(parsed.chatModes, legacyTemporaryChat);
       // Non-destructively preserve localLLM configuration (does not wipe endpoints/models on enabled: false)
       if (!parsed.localLLM) {
         parsed.localLLM = defaults.localLLM;
@@ -1189,9 +1191,9 @@ function setupIpcHandlers() {
   ipcMain.handle('auth:download-extension-zip', async () => {
     const { shell, dialog } = await import('electron');
     const candidates = [
-      path.join(process.resourcesPath || '', 'extensions', 'transgentic-sync-v1.2.0.zip'),
-      path.join(app.getAppPath(), 'extensions', 'transgentic-sync-v1.2.0.zip'),
-      path.join(process.cwd(), 'extensions', 'transgentic-sync-v1.2.0.zip'),
+      path.join(process.resourcesPath || '', 'extensions', TRANSGENTIC_SYNC_ARCHIVE),
+      path.join(app.getAppPath(), 'extensions', TRANSGENTIC_SYNC_ARCHIVE),
+      path.join(process.cwd(), 'extensions', TRANSGENTIC_SYNC_ARCHIVE),
     ];
 
     let foundZip: string | null = null;
@@ -1208,7 +1210,7 @@ function setupIpcHandlers() {
       return { success: true, externalDownload: true, downloadUrl };
     }
 
-    const defaultFilename = 'transgentic-sync-v1.2.0.zip';
+    const defaultFilename = TRANSGENTIC_SYNC_ARCHIVE;
     const win = globalWindowManager.getMainWindow();
     const result = await dialog.showSaveDialog(win!, {
       title: 'Save Transgentic Chrome Sync Extension',
@@ -1381,6 +1383,10 @@ function setupIpcHandlers() {
 
   ipcMain.handle('reload-provider', async (_, providerId: ProviderId) => {
     await globalSessionManager.refreshProviderStatus(providerId);
+  });
+
+  ipcMain.handle('recheck-temporary-chat-availability', async (_, providerId: ProviderId) => {
+    await globalSessionManager.recheckTemporaryChatAvailability(providerId);
   });
 
   ipcMain.handle('open-provider-window', async (_, providerId: ProviderId, partitionKey?: string) => {

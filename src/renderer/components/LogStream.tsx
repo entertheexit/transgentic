@@ -343,6 +343,9 @@ export const LogStream: React.FC<LogStreamProps> = ({
                     {log.chatExecution?.policy !== 'normal' && log.chatExecution?.actualMode === 'normal' && log.chatExecution.fallbackReason && (
                       <span className="text-[9px] font-mono text-amber-300 border border-amber-500/30 rounded px-1.5 py-0.5" title={log.chatExecution.fallbackReason}>Unsupported · Normal chat used</span>
                     )}
+                    {log.executionBranches?.some(branch => branch.recall?.reason?.startsWith('Recall skipped')) && (
+                      <span className="text-[9px] font-mono text-slate-400" title="Recall skipped because Temporary mode takes priority.">Recall skipped</span>
+                    )}
                     {category === 'temporary' && log.temporaryChat && !log.promptText && (
                       <span className="text-[9px] font-mono text-slate-400 border border-white/10 rounded px-1.5 py-0.5">Content not retained under previous policy</span>
                     )}

@@ -77,6 +77,7 @@ const api = {
   minimizeWindow: () => ipcRenderer.invoke('minimize-window'),
   hideToTray: () => ipcRenderer.invoke('hide-to-tray'),
   reloadProvider: (providerId) => ipcRenderer.invoke('reload-provider', providerId),
+  recheckTemporaryChatAvailability: (providerId) => ipcRenderer.invoke('recheck-temporary-chat-availability', providerId),
   openProviderWindow: (providerId, partitionKey) => ipcRenderer.invoke('open-provider-window', providerId, partitionKey),
   openSystemBrowser: (providerId) => ipcRenderer.invoke('open-system-browser', providerId),
   openExternalUrl: (url) => ipcRenderer.invoke('open-external-url', url),

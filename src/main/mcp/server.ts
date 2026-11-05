@@ -1,3 +1,4 @@
+import { BUILTIN_PROVIDER_IDS } from '../../shared/providers.js';
 import { resolveChatMode, validateChatMode, normalizeRouteMode, type ChatModeSelection } from '../../shared/types.js';
 import { MediaJobStore } from '../media/jobs.js';
 import { createMediaRouter } from '../media/router.js';
@@ -43,7 +44,7 @@ import {
   getProviderDisplayName,
 } from './dispatchPipeline.js';
 import { classifyMicroTask } from './handlers/microTaskClassifier.js';
-import { applyRecallPipeline } from './handlers/recallHandler.js';
+import { applyRecallPipeline, effectiveRecall } from './handlers/recallHandler.js';
 import {
   formatAgentHaltDirective,
   estimateCooldownString,
@@ -79,7 +80,7 @@ import {
   type ChatPolicy,
   type ChatExecutionStatus,
 } from '../../shared/types.js';
-import { getExtensionDownloadUrl } from '../../shared/release.js';
+import { TRANSGENTIC_SYNC_ARCHIVE, getExtensionDownloadUrl } from '../../shared/release.js';
 import { app as electronApp } from 'electron';
 import { CompletionGateway } from '../completion/completionGateway.js';
 import { AttachmentManager, attachmentLogSummary } from '../attachments/attachmentManager.js';
@@ -262,8 +263,8 @@ export class TransgenticMcpServer {
     this.app.get('/api/auth/download-extension', (req, res) => {
       res.setHeader('Access-Control-Allow-Origin', '*');
       const candidates = [
-        path.join(process.resourcesPath || '', 'extensions', 'transgentic-sync-v1.2.0.zip'),
-        path.join(process.cwd(), 'extensions', 'transgentic-sync-v1.2.0.zip'),
+        path.join(process.resourcesPath || '', 'extensions', TRANSGENTIC_SYNC_ARCHIVE),
+        path.join(process.cwd(), 'extensions', TRANSGENTIC_SYNC_ARCHIVE),
       ];
       for (const p of candidates) {
         if (fs.existsSync(p)) {
@@ -451,7 +452,7 @@ export class TransgenticMcpServer {
     });
 
     // 2. Direct Provider Gateways (e.g. /claude/mcp)
-    const providers: ProviderId[] = ['chatgpt', 'claude', 'gemini', 'grok'];
+    const providers: ProviderId[] = [...BUILTIN_PROVIDER_IDS];
     for (const p of providers) {
       this.app.get(`/${p}/mcp`, (req, res) => {
         this.handleSseConnect(req, res, p, `/${p}/mcp`);
@@ -988,7 +989,7 @@ export class TransgenticMcpServer {
       {
         name: 'prompt_model',
         description:
-          'RECOMMENDED DEFAULT: Primary Transgentic auto-routing endpoint. Automatically classifies task intent (general, coding, writing, reasoning, image, video, music) and routes to the optimal active provider (Claude, ChatGPT, Gemini, Grok) with data blinding, secret protection, rate-limit fallback, model selection, and thread continuity. For media generation (images, storyboard scenes, video, music), specify the "mode" parameter ("image", "video", "music") or use dedicated media tools (generate_image, generate_video, generate_music) so Transgentic switches to specialized models rather than general text LLMs.',
+          'RECOMMENDED DEFAULT: Primary Transgentic auto-routing endpoint. Automatically classifies task intent (general, coding, writing, reasoning, image, video, music) and routes to the optimal active provider (Claude, ChatGPT, Gemini, Grok, Meta AI) with data blinding, secret protection, rate-limit fallback, model selection, and thread continuity. For media generation (images, storyboard scenes, video, music), specify the "mode" parameter ("image", "video", "music") or use dedicated media tools (generate_image, generate_video, generate_music) so Transgentic switches to specialized models rather than general text LLMs.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -1077,9 +1078,24 @@ export class TransgenticMcpServer {
         },
       },
       {
+        name: 'ask_meta',
+        description: 'Directly queries Meta AI. Use when the user explicitly requests Meta AI; otherwise use prompt_model for configured routing.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            prompt: { type: 'string', description: 'Prompt to send to Meta AI.' },
+            mode: modeProperty,
+            model: { type: 'string', description: 'default keeps the current selection; instant or thinking selects an available native mode.' },
+            files: filesProperty,
+            ...sessionProperties,
+          },
+          required: ['prompt'],
+        },
+      },
+      {
         name: 'generate_image',
         description:
-          'Generates an image via Grok (Imagine), ChatGPT (DALL-E), or Gemini (Imagen), downloads it locally to disk, and returns the short local file path. Recommended for storyboarding, scene illustrations, and visual concept generation. Automatically activates image mode and switches to the optimal image model.',
+          'Generates an image via Grok (Imagine), ChatGPT (DALL-E), Gemini (Imagen), or Meta AI, downloads it locally to disk, and returns the short local file path. Recommended for storyboarding, scene illustrations, and visual concept generation. Automatically activates image mode and switches to the optimal image model.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -1103,7 +1119,7 @@ export class TransgenticMcpServer {
       {
         name: 'generate_video',
         description:
-          'Generates a video via Grok or Gemini, downloads to local assets, and returns the short file path. Recommended for storyboard scenes and dynamic animations. Automatically activates video mode.',
+          'Generates a video via Grok, Gemini, or Meta AI, downloads to local assets, and returns the short file path. Recommended for storyboard scenes and dynamic animations. Automatically activates video mode.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -1243,6 +1259,7 @@ export class TransgenticMcpServer {
     if (name === 'ask_claude') provider = 'claude';
     if (name === 'ask_gemini') provider = 'gemini';
     if (name === 'ask_grok') provider = 'grok';
+    if (name === 'ask_meta') provider = 'meta';
     const cliTools: Record<string, string> = { ask_codex_cli: 'cli_codex', ask_claude_code_cli: 'cli_claude_code', ask_antigravity_cli: 'cli_antigravity', ask_grok_cli: 'cli_grok' };
     if (cliTools[name]) provider = cliTools[name];
     if (args.workspace_id !== undefined || args.allow_project_editing !== undefined || args.allow_commands !== undefined) {
@@ -1371,6 +1388,7 @@ export class TransgenticMcpServer {
       const observedAvailability = globalSessionManager.getStatus(providerId)?.temporaryChat;
       const unavailable = observedAvailability?.availability === 'unavailable';
       const candidateTemporaryChat = temporaryChat && supportsTemporary && !unavailable;
+      const recall = effectiveRecall(this.config?.recall, effectiveMode, providerId, candidateTemporaryChat, selectedMode);
       const fallbackReason = temporaryChat && !candidateTemporaryChat
         ? (unavailable ? observedAvailability?.reason || 'Temporary Chat is unavailable for the active account.' : `${getProviderDisplayName(providerId)} does not support native Temporary Chat.`)
         : undefined;
@@ -1750,9 +1768,9 @@ export class TransgenticMcpServer {
               isNewChat = true;
             }
             contents = await globalSessionManager.ensureWebContents(providerId, activeAccount.partitionKey);
-            if (['image', 'video', 'music'].includes(effectiveMode) && adapter instanceof CustomRecipeAdapter) {
+            if ((['image', 'video', 'music'].includes(effectiveMode) || attachments.length > 0) && adapter instanceof CustomRecipeAdapter) {
               // Drawer registration can replace the shared adapter's view mid-request.
-              // Keep media polling and cancellation attached to the submitted view.
+              // Keep reference uploads, polling and cancellation on the submitted view.
               executionAdapter = adapter.createPinnedExecutionAdapter(contents, activeAccount.partitionKey);
             }
 
@@ -1802,7 +1820,7 @@ export class TransgenticMcpServer {
             } else if (isAgenticClient) {
               promptToSend = wrapUnbalancedAgenticPrompt(promptToSend, taskIntent || effectiveMode);
             }
-            if (this.config?.recall && !candidateTemporaryChat) {
+            if (this.config?.recall && recall.enabled) {
               promptToSend = applyRecallPipeline(promptToSend, this.config.recall, effectiveMode);
             }
           }
@@ -1841,7 +1859,7 @@ export class TransgenticMcpServer {
                 } else if (isAgenticClient) {
                   rolloverPrompt = wrapUnbalancedAgenticPrompt(rolloverPrompt, taskIntent || effectiveMode);
                 }
-                if (this.config?.recall && !candidateTemporaryChat) {
+                if (this.config?.recall && recall.enabled) {
                   rolloverPrompt = applyRecallPipeline(rolloverPrompt, this.config.recall, effectiveMode);
                 }
                 adapterResult = await executionAdapter.executePrompt(rolloverPrompt, effectiveMode, projectMeta, undefined, reqAbortController?.signal || abortSignal, attachments, effectiveSettings, targetModel, mediaSubmitted);
@@ -1878,9 +1896,11 @@ export class TransgenticMcpServer {
             reportProgress?.('Saving generated asset');
             let cookieHeader: string | undefined;
             try {
-              const sess = globalSessionManager.sessions.get(providerId);
-              if (sess) {
-                const cookies = await sess.cookies.get({});
+              const mediaUrl = typeof adapterResult.media.data === 'string' && /^https?:\/\//.test(adapterResult.media.data)
+                ? adapterResult.media.data : undefined;
+              const sess = executionAdapter.getWebContents()?.session || globalSessionManager.sessions.get(providerId);
+              if (sess && mediaUrl) {
+                const cookies = await sess.cookies.get({ url: mediaUrl });
                 if (cookies && cookies.length > 0) {
                   cookieHeader = cookies.map((c: any) => `${c.name}=${c.value}`).join('; ');
                 }
@@ -2071,7 +2091,7 @@ export class TransgenticMcpServer {
       wasRolledOver,
       contextReset,
       temporaryChat: successfulTemporaryChat,
-      chatExecution: { requestedSelection: params.chatSelection, actualSelection: successfulTemporaryChat ? resolveChatMode(undefined, effectiveMode, successfulProvider, params.chatSelection, true) : 'normal', policy: chatPolicy, actualMode: successfulTemporaryChat ? 'temporary' : 'normal', verified: successfulTemporaryChat, ...(successfulFallbackReason ? { fallbackReason: successfulFallbackReason } : {}) },
+      chatExecution: { requestedSelection: params.chatSelection, actualSelection: successfulTemporaryChat ? resolveChatMode(undefined, effectiveMode, successfulProvider, params.chatSelection, true) : 'normal', policy: chatPolicy, actualMode: successfulTemporaryChat ? 'temporary' : 'normal', verified: successfulTemporaryChat, recall: effectiveRecall(this.config?.recall, effectiveMode, successfulProvider, successfulTemporaryChat, params.chatSelection), ...(successfulFallbackReason ? { fallbackReason: successfulFallbackReason } : {}) },
       ...(successfulTemporaryChat
         ? { temporarySessionKey: JSON.stringify([`${effectiveThreadId}_${successfulAccount.id}`, successfulProvider, successfulAccount.id, pipeline]) }
         : {}),
@@ -2179,7 +2199,8 @@ export class TransgenticMcpServer {
 
       const preferenceProvider = forcedProvider || candidateProviders[0] || '';
       const explicitChatSelection = chatSelection !== undefined || temporaryChat !== undefined || this.config?.chatModes?.[normalizeRouteMode(effectiveMode)]?.[preferenceProvider] !== undefined;
-      chatSelection = resolveChatMode(this.config || undefined, effectiveMode, preferenceProvider, chatSelection, temporaryChat);
+      chatSelection = resolveChatMode(this.config || undefined, effectiveMode, preferenceProvider, chatSelection, temporaryChat,
+        ServiceManifestManager.getManifest().services[preferenceProvider]?.providerType, this.providerSupportsTemporaryChat(preferenceProvider));
       resolvedChatPolicy = chatSelection === 'normal' ? 'normal' : chatSelection === 'temporary' && !explicitChatSelection ? 'prefer-temporary' : 'require-temporary';
       resolvedTemporaryChat = resolvedChatPolicy !== 'normal';
       const previousSelection = this.conversationSelections.get(effectiveThreadId);
@@ -2574,7 +2595,7 @@ export class TransgenticMcpServer {
               text: `\n\n---\n${reminderText}`,
             });
           } else if (successfulProvider !== 'localllm') {
-            const isRecallOn = isRecallEnabledForMode(this.config || undefined, effectiveMode);
+            const isRecallOn = executionBranches[0]?.recall?.enabled ?? false;
             const reminderText = wasNewChat
               ? formatBalancedWebAiDirective(successfulProvider, isRecallOn, effectiveMode)
               : formatWebAiDecisionReminder(successfulProvider, effectiveMode);

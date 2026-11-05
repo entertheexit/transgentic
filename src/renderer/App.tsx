@@ -57,6 +57,7 @@ import { soundFx } from './audio/soundFx.js';
 type ActiveTab = 'hub' | 'logs' | 'mem' | 'routes' | 'settings';
 
 export function App() {
+  const isMac = document.documentElement.dataset.nativeVibrancy === 'true';
   const {
     coreStatus,
     config,
@@ -569,7 +570,23 @@ export function App() {
             <div className="main-pane-content flex flex-col justify-between">
 
               {/* Top Titlebar & Controls */}
-              <div className="h-11 pl-4 pr-2 flex items-center justify-between border-b border-white/5 drag-region">
+              <div className="h-10 pl-2 pr-2 flex items-center justify-between border-b border-white/5 drag-region">
+                {isMac && <div className="flex items-center gap-1 no-drag mr-2">
+                  <button
+                    onClick={hideToTray}
+                    className="p-1.5 rounded-md hover:bg-rose-500/20 text-slate-400 hover:text-rose-400 transition-colors"
+                    title="Close to Tray (Keep MCP Server Active)"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    onClick={minimize}
+                    className="p-1.5 rounded-md hover:bg-white/10 text-slate-400 transition-colors"
+                    title="Minimize"
+                  >
+                    <Minus className="w-3.5 h-3.5" />
+                  </button>
+                </div>}
                 {/* Left: Interactive Blue/Purple Circle (Compact Mode Toggle) + App Title (About Modal Trigger) */}
                 <div className="flex items-center gap-2.5 no-drag">
                   {/* Blue/Purple Glowing Circle Button (Click to Toggle Compact Mode) */}
@@ -693,6 +710,7 @@ export function App() {
                   >
                     <Pin className="w-3.5 h-3.5" />
                   </button>
+                  {!isMac && <>
                   <button
                     onClick={minimize}
                     className="p-1.5 rounded-md hover:bg-white/10 text-slate-400 transition-colors"
@@ -707,6 +725,7 @@ export function App() {
                   >
                     <X className="w-3.5 h-3.5" />
                   </button>
+                  </>}
                 </div>
               </div>
 

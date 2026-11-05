@@ -1,3 +1,4 @@
+import { BUILTIN_PROVIDER_IDS } from '../../shared/providers.js';
 import fs from 'fs';
 import path from 'path';
 import { app } from 'electron';
@@ -49,6 +50,17 @@ export class ModelRegistryManager {
         { id: 'default', displayName: 'Current provider model', discoveredAvailable: true, userEnabled: true, modes: ['general', 'coding', 'image', 'video', 'music'] },
       ],
     },
+    meta: {
+      serviceEnabled: true,
+      activeSelectionMode: 'hybrid',
+      allowMcpOverride: true,
+      defaultModelId: 'default',
+      hourlyLimit: 30,
+      cooldownSeconds: 6,
+      models: [
+        { id: 'default', displayName: 'Current provider selection', discoveredAvailable: true, userEnabled: true, modes: ['general', 'coding', 'image', 'video'] },
+      ],
+    },
     grok: {
       serviceEnabled: true,
       activeSelectionMode: 'hybrid',
@@ -93,6 +105,7 @@ export class ModelRegistryManager {
           claude: { ...this.DEFAULT_REGISTRY.claude, ...(parsed?.claude || {}) },
           gemini: { ...this.DEFAULT_REGISTRY.gemini, ...(parsed?.gemini || {}) },
           grok: { ...this.DEFAULT_REGISTRY.grok, ...(parsed?.grok || {}) },
+          meta: { ...this.DEFAULT_REGISTRY.meta, ...(parsed?.meta || {}) },
         };
       }
     } catch {
@@ -104,7 +117,7 @@ export class ModelRegistryManager {
     }
 
     // A saved web catalog is historical until this account's picker is observed again.
-    for (const id of ['chatgpt', 'claude', 'gemini', 'grok'] as const) {
+    for (const id of BUILTIN_PROVIDER_IDS) {
       const config = this.currentRegistry[id];
       if (!config) continue;
       for (const model of config.models) {
@@ -114,7 +127,7 @@ export class ModelRegistryManager {
         config.models.unshift({
           id: 'default', displayName: 'Current provider model',
           discoveredAvailable: true, userEnabled: true,
-          modes: ['general', 'coding', 'image', 'video', 'music'],
+          modes: this.DEFAULT_REGISTRY[id]?.models.find(model => model.id === 'default')?.modes || ['general', 'coding'],
         });
       }
       if (!config.models.some(model => model.id === config.defaultModelId)) {

@@ -1,3 +1,4 @@
+import { BUILTIN_PROVIDER_IDS, isBuiltinProvider } from '../../shared/providers.js';
 import { ChatModeControl } from './ChatModeControl.js';
 import { CliServicesSettings, setCachedCliState } from './CliServicesSettings.js';
 import { loadCliState } from '../utils/cliStateLoader.js';
@@ -1203,8 +1204,7 @@ http_headers = { "Authorization" = "Bearer ${clientToken || 'YOUR_TOKEN'}" }`;
                 return <div key={mode} className="min-w-0 rounded-xl border border-white/10 p-2">
                   <span className="text-xs text-slate-300">{label}</span>
                   <ChatModeControl config={config} mode={mode} provider={provider}
-                    capability={providers[provider]?.temporaryChat}
-                    onOpenProvider={() => void window.transgenticApi?.openProviderWindow(provider)} />
+                    capability={providers[provider]?.temporaryChat} providerType={servicesManifest?.services?.[provider]?.providerType} />
                 </div>;
               })}
             </div>
@@ -2354,7 +2354,7 @@ http_headers = { "Authorization" = "Bearer ${clientToken || 'YOUR_TOKEN'}" }`;
                         <div>• <b>prompt</b> (string, required): The prompt to execute.</div>
                         <div>• <b>mode</b> (enum): general | writing | coding | image | video | music</div>
                         <div>• <b>writing</b>: Keeps Writing guidance and identity while using General route settings.</div>
-                        <div>• <b>provider</b> (enum): chatgpt | claude | gemini | grok</div>
+                        <div>• <b>provider</b> (enum): chatgpt | claude | gemini | grok | meta</div>
                         <div>• <b>model</b> (string): 'default' or an ID discovered from the current provider picker.</div>
                         <div>• <b>threadId</b> (string): Conversation session ID for stateful multi-turn memory.</div>
                         <div>• <b>newThread</b> (boolean): Force fresh conversation session creation.</div>
@@ -2658,7 +2658,7 @@ http_headers = { "Authorization" = "Bearer ${clientToken || 'YOUR_TOKEN'}" }`;
           {(() => {
             const allServices = servicesManifest?.services || {};
             const webviewProviders: ProviderId[] = Array.from(new Set([
-              'chatgpt', 'claude', 'gemini', 'grok',
+              ...BUILTIN_PROVIDER_IDS,
               ...Object.values(allServices).filter(s => !s.hidden && (s.providerType === 'webview' || s.id.startsWith('webview_') || s.id.startsWith('custom_'))).map(s => s.id),
             ]));
             const apiProviders = Object.values(allServices).filter(s => !s.hidden && (s.providerType === 'api' || s.id.startsWith('api_'))).map(s => s.id as ProviderId);
@@ -3446,7 +3446,7 @@ http_headers = { "Authorization" = "Bearer ${clientToken || 'YOUR_TOKEN'}" }`;
                       <span className="truncate text-xs font-bold uppercase tracking-wide text-slate-100">
                         {getProviderLabel(selectedProvider)}
                       </span>
-                      {['chatgpt', 'claude', 'gemini', 'grok'].includes(selectedProvider) && (
+                      {isBuiltinProvider(selectedProvider) && (
                         <span className="rounded-md border border-cyan-500/25 bg-cyan-500/10 px-1.5 py-0.5 text-[8px] font-mono font-bold uppercase tracking-wider text-cyan-300">
                           Built In
                         </span>

@@ -21,6 +21,7 @@ const DEFAULT_SYNC_CONFIG = {
     claude: false,
     gemini: false,
     grok: false,
+    meta: false,
   },
   syncIntervalMinutes: DEFAULT_INTERVAL_MINUTES,
   lastSuccessfulSync: {},
@@ -31,6 +32,29 @@ const DEFAULT_SYNC_CONFIG = {
  * Sync will ONLY proceed if critical session tokens are valid and non-empty.
  */
 const SERVICES_METADATA = {
+  meta: {
+    id: 'meta', name: 'Meta AI', defaultOrigin: 'https://www.meta.ai/',
+    domains: ['meta.ai', '.meta.ai'],
+    // Meta has a guest composer. Require a signed-in Meta tab before refreshing cookies.
+    isValidSession: async () => {
+      const tabs = await ext.tabs.query({ url: ['https://meta.ai/*', 'https://*.meta.ai/*'] });
+      for (const tab of tabs) {
+        if (!Number.isInteger(tab.id)) continue;
+        try {
+          const results = await ext.scripting.executeScript({
+            target: { tabId: tab.id },
+            func: () => Array.from(document.querySelectorAll('[data-testid="user-menu-button"]')).some(element => {
+              const style = getComputedStyle(element);
+              return style.display !== 'none' && style.visibility !== 'hidden' && element.getClientRects().length > 0;
+            }),
+          });
+          if (results.some(result => result.result === true)) return true;
+        } catch {}
+      }
+      return false;
+    },
+  },
+
   chatgpt: {
     id: 'chatgpt',
     name: 'OpenAI ChatGPT',
@@ -237,7 +261,11 @@ async function extractServiceCookies(service) {
     } catch {}
   }
 
-  return Array.from(cookieMap.values());
+  return Array.from(cookieMap.values()).filter(cookie => {
+    if (service.id !== 'meta') return true;
+    const host = (cookie.domain || '').replace(/^\./, '').toLowerCase();
+    return host === 'meta.ai' || host.endsWith('.meta.ai');
+  });
 }
 
 /**
@@ -319,7 +347,7 @@ async function runSilentSync() {
       }
 
       // Logout Guard: are primary session keys present and non-empty?
-      if (!service.isValidSession(cookies)) {
+      if (!await service.isValidSession(cookies)) {
         // Strict Guard: User is logged out on Chrome or cookies are expired.
         // DO NOT send empty/invalid payload to Transgentic! Preserve existing session.
         continue;

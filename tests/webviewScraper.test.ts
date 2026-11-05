@@ -54,6 +54,37 @@ describe('Built-in web model controls', () => {
     expect(await ModelScraperEngine.discoverModels('claude', view)).toEqual([{ id: 'model-a', displayName: 'Model A' }]);
   });
 
+  it('discovers and verifies Meta Instant/Thinking using stable native identities', async () => {
+    let opened = false;
+    let selected = 'Instant';
+    const trigger = {
+      get textContent() { return selected; },
+      getAttribute: (name: string) => name === 'aria-controls' ? 'meta-modes' : name === 'aria-expanded' ? String(opened) : null,
+      getClientRects: () => [1],
+      click: () => { opened = !opened; },
+    };
+    const choice = (id: string, label: string) => ({
+      textContent: label + ' description',
+      classList: { contains: () => false },
+      getAttribute: (name: string) => name === 'data-testid' ? id : name === 'aria-checked' ? String(selected === label) : null,
+      getClientRects: () => [1], matches: () => false,
+      click: () => { selected = label; opened = false; },
+    });
+    const choices = [choice('composer-mode-option-think_fast', 'Instant'), choice('composer-mode-option-think_hard', 'Thinking')];
+    const view = webview({
+      querySelectorAll: (selector: string) => selector.includes('composer-mode-dropdown-button') ? [trigger] : opened ? choices : [],
+      dispatchEvent: () => { opened = false; },
+    });
+    expect(await ModelScraperEngine.discoverModels('meta', view)).toEqual([
+      { id: 'instant', displayName: 'Instant' }, { id: 'thinking', displayName: 'Thinking' },
+    ]);
+    expect(opened).toBe(false);
+    await expect(ModelScraperEngine.selectRequestedModel('meta', 'thinking', view)).resolves.toBeUndefined();
+    expect(selected).toBe('Thinking');
+    expect(opened).toBe(false);
+    await expect(ModelScraperEngine.selectRequestedModel('meta', 'unavailable-model', view)).rejects.toThrow('MODEL_SELECTION_FAILED');
+  });
+
   it('does not invent a catalog when the picker is unavailable', async () => {
     const view = webview({ querySelectorAll: () => [] });
     expect(await ModelScraperEngine.discoverModels('gemini', view)).toEqual([]);

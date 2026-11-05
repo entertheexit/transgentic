@@ -1,3 +1,4 @@
+import { isBuiltinProvider } from '../../shared/providers.js';
 import fs from "fs";
 import { builtInCliServices } from '../../shared/cli.js';
 import path from "path";
@@ -120,6 +121,22 @@ export class ServiceManifestManager {
         },
         models: [
           { id: "default", displayName: "Current provider model", enabled: true, discoveredAvailable: true, userEnabled: true, modes: ["general", "coding", "image", "video", "music"] },
+        ],
+      },
+      meta: {
+        id: 'meta',
+        name: 'Meta AI',
+        company: 'Meta',
+        providerType: 'webview',
+        enabled: true,
+        hidden: false,
+        url: 'https://www.meta.ai/',
+        partition: 'persist:transgentic_meta',
+        defaultModelId: 'default',
+        accentColor: 'blue',
+        iconName: 'Sparkles',
+        models: [
+          { id: 'default', displayName: 'Current provider selection', enabled: true, discoveredAvailable: true, userEnabled: true, modes: ['general', 'coding', 'image', 'video'] },
         ],
       },
       localllm: {
@@ -672,7 +689,7 @@ export class ServiceManifestManager {
     const model = service.models.find((m) => m.id === modelId);
     if (!model) {
       // Built-in web model IDs are discovered from the active account, not shipped catalogs.
-      if (['chatgpt', 'claude', 'gemini', 'grok'].includes(providerId)) return true;
+      if (isBuiltinProvider(providerId)) return true;
       return false;
     }
     return model.enabled !== false;
@@ -682,7 +699,7 @@ export class ServiceManifestManager {
     providerId: ProviderId,
     models: Array<{ id: string; displayName: string; requiresTier?: string }>
   ): void {
-    if (!['chatgpt', 'claude', 'gemini', 'grok'].includes(providerId)) return;
+    if (!isBuiltinProvider(providerId)) return;
     const service = this.currentManifest.services[providerId];
     if (!service || models.length === 0) return;
     const previous = new Map((service.models || []).map(model => [model.id, model]));

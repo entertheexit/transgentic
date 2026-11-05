@@ -48,7 +48,7 @@ describe('OpenAI-compatible completion transport', () => {
     expect(globalCliRuntime.execute).toHaveBeenCalledWith('cli_codex', expect.stringContaining('Unique context'), expect.objectContaining({ newThread: true, request: {} }));
     const options = vi.mocked(globalCliRuntime.execute).mock.calls[0][2];
     expect(options.conversationKey).toBe(options.reqId);
-    expect(data.transgentic.chatExecution).toMatchObject({ policy: 'prefer-temporary', actualMode: 'normal', fallbackReason: expect.any(String) });
+    expect(data.transgentic.chatExecution).toMatchObject({ policy: 'normal', actualMode: 'normal' });
     expect(globalLogStorage.update).toHaveBeenCalledWith(expect.objectContaining({ transport: 'api', status: 'success', responseText: expect.stringContaining('Direct CLI answer') }));
   });
 

@@ -1,3 +1,4 @@
+import { BUILTIN_PROVIDER_IDS } from '../../shared/providers.js';
 import { isCliProvider } from '../../shared/cli.js';
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -57,7 +58,7 @@ interface RoutesSettingsProps {
   onBack?: () => void;
 }
 
-const DEFAULT_PROVIDERS: ProviderId[] = ['chatgpt', 'claude', 'gemini', 'grok'];
+const DEFAULT_PROVIDERS: ProviderId[] = [...BUILTIN_PROVIDER_IDS];
 
 export const RoutesSettings: React.FC<RoutesSettingsProps> = ({
   modeRoutes,
@@ -171,7 +172,7 @@ export const RoutesSettings: React.FC<RoutesSettingsProps> = ({
     // If changing Main, prevent duplicate in Co if identical
     if (activePipeline === 'main' && newPrimary === coPrimary) {
       const coFallbacks = (routeMatrix?.co?.[selectedMode]?.fallbackChain || []).filter((p) => p !== newPrimary);
-      const fallbackOptions: ProviderId[] = ['chatgpt', 'claude', 'gemini', 'grok'];
+      const fallbackOptions: ProviderId[] = [...BUILTIN_PROVIDER_IDS];
       const altCoPrimary = coFallbacks[0] || fallbackOptions.find((p) => p !== newPrimary) || 'claude';
       onUpdateRoute(selectedMode, {
         primary: altCoPrimary,

@@ -1,3 +1,4 @@
+import { BUILTIN_PROVIDER_IDS } from '../../shared/providers.js';
 import fs from 'fs';
 import path from 'path';
 import { app } from 'electron';
@@ -15,7 +16,7 @@ export class AccountRegistryManager {
 
   private static getDefaultStore(): AccountRegistryStore {
     const now = Date.now();
-    const providers: ProviderId[] = ['chatgpt', 'claude', 'gemini', 'grok'];
+    const providers: ProviderId[] = [...BUILTIN_PROVIDER_IDS];
     const result: Partial<AccountRegistryStore> = {};
 
     for (const p of providers) {
@@ -64,7 +65,7 @@ export class AccountRegistryManager {
 
   private static migrateAndSanitize(loaded: any): AccountRegistryStore {
     const defaults = this.getDefaultStore();
-    const standardProviders: ProviderId[] = ['chatgpt', 'claude', 'gemini', 'grok'];
+    const standardProviders: ProviderId[] = [...BUILTIN_PROVIDER_IDS];
     const allKeys = Array.from(new Set([...standardProviders, ...Object.keys(loaded || {})])) as ProviderId[];
     const result: Partial<AccountRegistryStore> = {};
 

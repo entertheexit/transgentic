@@ -34,6 +34,7 @@
   },
   "temporaryChat": {
     "enabled": true,
+    "personalization": "disabled",
     "activationSteps": [
       {
         "action": "click",

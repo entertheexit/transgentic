@@ -187,6 +187,13 @@ describe('Recipe Versioning, Storage & Self-Healing Tests', () => {
       expect(recipeManager.getRecipe('chatgpt')?.selectors.inputPrompt).toBe('#personalized-input');
       expect(JSON.parse(fs.readFileSync(healedFile, 'utf8')).temporaryChat).toBeUndefined();
 
+      const olderTemporary = structuredClone(bundled.temporaryChat!);
+      delete olderTemporary.personalization;
+      fs.writeFileSync(healedFile, JSON.stringify({ ...olderOverride, temporaryChat: olderTemporary }), 'utf8');
+      recipeManager.loadPersistedRecipes();
+      expect(recipeManager.getRecipe('chatgpt')?.temporaryChat?.personalization).toBe('selectable');
+      expect(JSON.parse(fs.readFileSync(healedFile, 'utf8')).temporaryChat.personalization).toBeUndefined();
+
       fs.writeFileSync(healedFile, JSON.stringify({ ...olderOverride, temporaryChat: { enabled: false } }), 'utf8');
       recipeManager.loadPersistedRecipes();
       expect(recipeManager.getRecipe('chatgpt')?.temporaryChat).toEqual({ enabled: false });

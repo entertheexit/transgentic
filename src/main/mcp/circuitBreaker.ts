@@ -1,3 +1,4 @@
+import { BUILTIN_PROVIDER_IDS } from '../../shared/providers.js';
 import { ProviderId } from '../../shared/types.js';
 
 export type CircuitState = 'CLOSED' | 'OPEN' | 'HALF_OPEN';
@@ -23,7 +24,7 @@ export class CircuitBreaker {
     this.baseCooldownMs = baseCooldownSec * 1000;
     this.maxCooldownMs = maxCooldownSec * 1000;
 
-    const providers: ProviderId[] = ['chatgpt', 'claude', 'gemini', 'grok'];
+    const providers: ProviderId[] = [...BUILTIN_PROVIDER_IDS];
     for (const p of providers) {
       this.metrics.set(p, {
         state: 'CLOSED',

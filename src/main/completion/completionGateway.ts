@@ -5,6 +5,7 @@ import { isCliProvider, CLI_DEFINITIONS } from '../../shared/cli.js';
 import type { CompletionMessage, CompletionModel, CompletionRequest, CompletionResult, CompletionTool, CompletionToolCall } from '../../shared/completion.js';
 import { isTemporaryChatPreferred, type ChatExecutionStatus, type ChatPolicy, type ProviderId, type TaskMode, type TransgenticConfig } from '../../shared/types.js';
 import { globalCliRuntime } from '../cli/cliRuntimeManager.js';
+import { effectiveRecall } from '../mcp/handlers/recallHandler.js';
 import { ServiceManifestManager } from '../registry/serviceManifest.js';
 import { ModelRegistryManager } from '../registry/modelRegistry.js';
 import { DynamicRouter } from '../mcp/router.js';
@@ -258,7 +259,9 @@ export class CompletionGateway {
     // that is already queued.
     const target = this.resolveTarget(request.model);
     const explicitChatSelection = request.chat_mode !== undefined || request.temporary_chat !== undefined || this.getConfig()?.chatModes?.[normalizeRouteMode(target.mode)]?.[target.candidates[0] || ''] !== undefined;
-    request.chat_mode = resolveChatMode(this.getConfig() || undefined, target.mode, target.candidates[0] || '', request.chat_mode, request.temporary_chat);
+    request.chat_mode = resolveChatMode(this.getConfig() || undefined, target.mode, target.candidates[0] || '', request.chat_mode, request.temporary_chat,
+      ServiceManifestManager.getManifest().services[target.candidates[0] || '']?.providerType,
+      (globalSessionManager.getAdapter(target.candidates[0]) as CustomRecipeAdapter | undefined)?.supportsTemporaryChat?.());
     const policy: ChatPolicy = request.chat_mode === 'normal' ? 'normal' : request.chat_mode === 'temporary' && !explicitChatSelection ? 'prefer-temporary' : 'require-temporary';
     const retainedKey = request.conversation_id ? JSON.stringify([caller?.principal || 'authenticated', request.conversation_id]) : undefined;
     if (!retainedKey) return this.completeUnlocked(request, signal, caller, target, policy);
@@ -325,16 +328,17 @@ export class CompletionGateway {
     const hasToolContext = Boolean(request.tools?.length || request.messages.some(message => message.role === 'tool' || message.tool_calls?.length));
     const config = this.getConfig();
     const extras = hasToolContext || retainedKey ? undefined : {
-      recall: policy === 'normal' && config?.recall?.completionEnabled === true,
+      recall: config?.recall?.completionEnabled === true,
       compaction: policy === 'normal' && config?.localLLM?.completionCompact === true,
       multiModelReview: config?.doubleAgent?.completionReviewEnabled === true,
     };
-    if (extras?.recall) {
-      request = {
-        ...request,
-        messages: [{ role: 'system', content: 'The caller explicitly enabled Recall for this text-only request. Consult provider-native memory or preferences only when they are available and relevant; do not invent remembered facts.' }, ...request.messages],
-      };
-    }
+    const withRecall = (input: CompletionRequest, decision: { enabled: boolean }): CompletionRequest => decision.enabled ? {
+      ...input,
+      messages: [{ role: 'system', content: 'The caller explicitly enabled Recall for this text-only request. Consult provider-native memory or preferences only when they are available and relevant; do not invent remembered facts.' }, ...input.messages],
+    } : input;
+    const recallFor = (provider: ProviderId, temporary: boolean, selection: ChatModeSelection) => extras?.recall
+      ? effectiveRecall({ ...config!.recall!, enabled: config!.recall!.enabled ?? true }, mode, provider, temporary, selection)
+      : { enabled: false, reason: 'Recall is disabled for this request.' };
     if (extras?.compaction) {
       const local = config?.localLLM;
       if (local?.enabled) {
@@ -364,7 +368,7 @@ export class CompletionGateway {
         const fallbackReason = policy !== 'normal' && actualMode === 'normal'
           ? unavailable ? globalSessionManager.getStatus(provider)?.temporaryChat?.reason || 'Native Temporary Chat is unavailable for this account.'
             : `${provider} does not support native Temporary Chat.` : undefined;
-        const status: ChatExecutionStatus = { requestedSelection: selection, actualSelection: actualMode === 'temporary' ? selection : 'normal', policy, actualMode, verified: actualMode === 'temporary', ...(fallbackReason ? { fallbackReason } : {}) };
+        const status: ChatExecutionStatus = { requestedSelection: selection, actualSelection: actualMode === 'temporary' ? selection : 'normal', policy, actualMode, verified: actualMode === 'temporary', recall: recallFor(provider, actualMode === 'temporary', selection), ...(fallbackReason ? { fallbackReason } : {}) };
         attemptedStatus = status;
         if (modeChanged && retainedKey) {
           if (request.messages.some(message => message.role === 'tool' || message.tool_calls?.length)) throw new Error('[CONVERSATION_MODE_CHANGED] Start a new tool conversation after changing chat mode.');
@@ -373,7 +377,7 @@ export class CompletionGateway {
           request = { ...request, messages: [latestUserMessage] };
           globalSessionManager.archiveManagedConversation(`api:${retainedKey}`);
         }
-        const primary = await this.dispatch(provider, mode, request, signal, undefined, attachments, status, { retainedKey, previousBinding: request.new_thread ? undefined : previousBinding, modeChanged, caller });
+        const primary = await this.dispatch(provider, mode, withRecall(request, status.recall!), signal, undefined, attachments, status, { retainedKey, previousBinding: request.new_thread ? undefined : previousBinding, modeChanged, caller });
         primary.chatExecution = status;
         if (request.conversation_id) primary.conversationId = request.conversation_id;
         if (modeChanged) primary.contextReset = true;
@@ -388,12 +392,12 @@ export class CompletionGateway {
         const reviewerUnavailable = globalSessionManager.getStatus(reviewer)?.temporaryChat?.availability === 'unavailable';
         const reviewerTemporary = policy !== 'normal' && reviewerCapable && !reviewerUnavailable;
         if (policy === 'require-temporary' && !reviewerTemporary) return primary;
-        const reviewerStatus: ChatExecutionStatus = { requestedSelection: selection, actualSelection: reviewerTemporary ? selection : 'normal', policy, actualMode: reviewerTemporary ? 'temporary' : 'normal', verified: reviewerTemporary,
+        const reviewerStatus: ChatExecutionStatus = { requestedSelection: selection, actualSelection: reviewerTemporary ? selection : 'normal', policy, actualMode: reviewerTemporary ? 'temporary' : 'normal', verified: reviewerTemporary, recall: recallFor(reviewer, reviewerTemporary, selection),
           ...(policy !== 'normal' && !reviewerTemporary ? { fallbackReason: reviewerUnavailable
             ? globalSessionManager.getStatus(reviewer)?.temporaryChat?.reason || 'Native Temporary Chat is unavailable for the reviewer account.'
             : `${reviewer} does not support native Temporary Chat.` } : {}) };
         try {
-          const review = await this.dispatch(reviewer, mode, {
+          const review = await this.dispatch(reviewer, mode, withRecall({
             ...request,
             tools: undefined,
             tool_choice: undefined,
@@ -402,7 +406,7 @@ export class CompletionGateway {
               { role: 'assistant', content: primary.message.content },
               { role: 'user', content: 'Review the proposed answer for correctness and completeness. Return the corrected final answer only.' },
             ],
-          }, signal, undefined, attachments, reviewerStatus);
+          }, reviewerStatus.recall!), signal, undefined, attachments, reviewerStatus);
           review.executionBranches = [status, reviewerStatus];
           review.chatExecution = { requestedSelection: selection, actualSelection: selection, policy, actualMode: status.actualMode === 'temporary' && reviewerStatus.actualMode === 'temporary' ? 'temporary' : 'normal',
             verified: status.verified && reviewerStatus.verified,
@@ -422,9 +426,9 @@ export class CompletionGateway {
         if (signal?.aborted) throw error;
         if (policy === 'prefer-temporary' && String((error as Error)?.message || '').includes('[TEMPORARY_CHAT_UNAVAILABLE]')) {
           globalSessionManager.markTemporaryUnavailable(provider, 'Native Temporary Chat is unavailable for this account.');
-          const status: ChatExecutionStatus = { policy, actualMode: 'normal', verified: false, fallbackReason: 'Native Temporary Chat is unavailable for this account.' };
+          const status: ChatExecutionStatus = { policy, actualMode: 'normal', verified: false, recall: recallFor(provider, false, 'normal'), fallbackReason: 'Native Temporary Chat is unavailable for this account.' };
           if (retainedKey && previousBinding?.mode === 'temporary') globalSessionManager.endTemporaryConversation(`api:${retainedKey}`);
-          const retry = await this.dispatch(provider, mode, request, signal, undefined, attachments, status,
+          const retry = await this.dispatch(provider, mode, withRecall(request, status.recall!), signal, undefined, attachments, status,
             { retainedKey, previousBinding: request.new_thread ? undefined : previousBinding, modeChanged: previousBinding?.mode === 'temporary', caller })
             .catch(retryError => { if (retryError instanceof Error) Object.assign(retryError, { providerUsed: provider, chatExecution: status }); throw retryError; });
           retry.chatExecution = status; if (request.conversation_id) retry.conversationId = request.conversation_id;

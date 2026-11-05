@@ -21,6 +21,10 @@ describe('Temporary Chat contracts', () => {
       expect(recipe.temporaryChat?.inactiveWhen).toBeDefined();
     }
     expect(BUILTIN_RECIPES.grok.temporaryChat).toBeUndefined();
+    expect(BUILTIN_RECIPES.chatgpt.temporaryChat?.personalization).toBe('selectable');
+    expect(BUILTIN_RECIPES.gemini.temporaryChat?.personalization).toBe('disabled');
+    expect(BUILTIN_RECIPES.claude.temporaryChat?.personalization).toBe('profile-only');
+    expect(validateCustomRecipe(structuredClone(BUILTIN_RECIPES.gemini)).recipe?.temporaryChat?.personalization).toBe('disabled');
   });
 
   it('normalizes semantic activation locators and rejects unverifiable declarations', () => {

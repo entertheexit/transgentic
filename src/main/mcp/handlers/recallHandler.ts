@@ -1,5 +1,15 @@
 import { RecallConfig, isRecallEnabledForMode } from '../../config/appConfig.js';
-import { TaskMode } from '../../../shared/types.js';
+import { TaskMode, type ChatModeSelection } from '../../../shared/types.js';
+
+/** Decide per execution branch; never infer that an unknown temporary mode has memory. */
+export function effectiveRecall(config: RecallConfig | undefined, mode: TaskMode, provider: string,
+  temporary: boolean, selection?: ChatModeSelection): { enabled: boolean; reason?: string } {
+  if (!config || !isRecallEnabledForMode(config, mode)) return { enabled: false, reason: 'Recall is disabled for this mode.' };
+  if (temporary && !(provider === 'chatgpt' && selection === 'temporary-personalized')) {
+    return { enabled: false, reason: 'Recall skipped because Temporary mode takes priority.' };
+  }
+  return { enabled: true };
+}
 
 /**
  * Recall & Context Memory Engine Handler

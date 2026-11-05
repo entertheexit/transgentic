@@ -56,6 +56,7 @@ export async function inspectMediaControl(
 }
 
 export async function applyMediaControls(config: RecipeGeneration, settings: MediaSettings, run: <T>(script: string) => Promise<T>, signal?: AbortSignal, escape?: () => void): Promise<() => Promise<void>> {
+  const readiness = config.strategy === 'prompt' ? config.readyWhen : config.activeWhen;
   const inspect = (target: MediaLocator, click: boolean | 'pointerDown' = false, anyVisible = false) =>
     inspectMediaControl(run, target, click, anyVisible);
   const inspectStable = async (target: MediaLocator): Promise<boolean> => {
@@ -116,12 +117,12 @@ export async function applyMediaControls(config: RecipeGeneration, settings: Med
     if (config.unavailableWhen && await inspect(config.unavailableWhen, false, true)) {
       throw new Error('[MEDIA_UNAVAILABLE] Native media access requires an account or subscription change.');
     }
-    if (!await inspectStable(config.activeWhen)) {
+    if (!await inspectStable(readiness)) {
       await execute(config.activationSteps);
-      await wait(config.activeWhen);
+      await wait(readiness);
     }
     const verify = async () => {
-      await wait(config.activeWhen);
+      await wait(readiness);
       for (const setting of config.settings) {
         if (!(setting.key in settings)) continue;
         const choice = setting.options.find(o => o.value === settings[setting.key]);

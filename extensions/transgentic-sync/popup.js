@@ -21,6 +21,13 @@ const FAIL_SVG_HTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height
 const SYNC_SPIN_SVG_HTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="status-svg-icon spinning"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path><path d="M3 3v5h5"></path><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"></path><path d="M16 21h5v-5"></path></svg>';
 
 const PROVIDERS = {
+  meta: {
+    id: 'meta', name: 'Meta AI', iconSvg: 'icons/services/meta.svg',
+    svgHtml: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="20" height="20"><circle cx="12" cy="12" r="8" fill="none" stroke="#5085ff" stroke-width="4"/></svg>',
+    themeClass: 'theme-meta', defaultOrigin: 'https://www.meta.ai/', domains: ['meta.ai', '.meta.ai'],
+    match: (url) => { try { const host = new URL(url).hostname; return host === 'meta.ai' || host.endsWith('.meta.ai'); } catch { return false; } },
+  },
+
   gemini: {
     id: 'gemini',
     name: 'Google Gemini',
@@ -939,7 +946,11 @@ async function extractProviderCookies(provider) {
     } catch {}
   }
 
-  return Array.from(cookieMap.values());
+  return Array.from(cookieMap.values()).filter(cookie => {
+    if (provider.id !== 'meta') return true;
+    const host = (cookie.domain || '').replace(/^\./, '').toLowerCase();
+    return host === 'meta.ai' || host.endsWith('.meta.ai');
+  });
 }
 
 /**
@@ -1159,6 +1170,7 @@ const BG_DEFAULT_SYNC_CONFIG = {
     claude: false,
     gemini: false,
     grok: false,
+    meta: false,
   },
   syncIntervalMinutes: 15,
   lastSuccessfulSync: {},
@@ -1221,7 +1233,7 @@ async function initBackgroundSyncUI() {
   });
 
   const config = await getBgSyncConfig();
-  const serviceKeys = ['chatgpt', 'claude', 'gemini', 'grok'];
+  const serviceKeys = Object.keys(PROVIDERS);
 
   // Dynamically render installed custom recipes into the background sync list
   const customContainer = document.getElementById('bgSyncCustomContainer');

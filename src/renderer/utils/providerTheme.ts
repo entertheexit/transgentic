@@ -157,6 +157,17 @@ const DEFAULT_THEMES: Record<ProviderId, ResolvedProviderTheme> = {
     glowClass: 'shadow-[0_0_15px_rgba(59,130,246,0.15)]',
     hoverBorderClass: 'hover:border-blue-500/40',
   },
+  meta: {
+    icon: Sparkles,
+    hoverBorderClass: 'hover:border-blue-500/40',
+    iconName: 'Sparkles',
+    accentColor: 'blue',
+    textClass: 'text-blue-400',
+    bgClass: 'bg-blue-500/10',
+    borderClass: 'border-blue-500/30',
+    badgeClass: 'bg-blue-500/15 text-blue-300 border-blue-500/30',
+    glowClass: 'shadow-[0_0_15px_rgba(59,130,246,0.15)]',
+  },
   grok: {
     icon: Cpu,
     iconName: 'Cpu',
@@ -406,6 +417,7 @@ export function getProviderDisplayName(
   if (lower === 'gemini') {
     return 'Gemini';
   }
+  if (lower === 'meta') return 'Meta AI';
   if (lower === 'grok') {
     return 'Grok';
   }

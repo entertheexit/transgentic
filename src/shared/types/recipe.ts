@@ -54,6 +54,8 @@ export interface RecipeSelectors {
 }
 
 export interface RecipeModeResponse {
+  /** Explain an intentionally disabled workflow in capability discovery. */
+  unavailableReason?: string;
   generation?: RecipeGeneration;
   /** Whether this mode is supported / enabled */
   enabled: boolean;
@@ -100,6 +102,7 @@ export interface RecipeTemporaryChatVariant {
 }
 
 export interface RecipeTemporaryChat {
+  personalization?: 'disabled' | 'profile-only' | 'selectable' | 'unknown';
   variants?: Partial<Record<'personalized' | 'unpersonalized', RecipeTemporaryChatVariant>>;
   /** Native provider temporary/private chat support. */
   enabled: boolean;
@@ -122,8 +125,12 @@ export interface RecipeAttachmentInput {
   revealSteps?: RecipeAttachmentRevealStep[];
   /** Optional selector whose visible element/chip proves upload readiness. */
   ready?: SelectorCandidate;
+  /** How long readiness must remain true before typing (0–10000 ms). */
+  readyStableMs?: number;
   /** Optional button used to clear uploaded chips after a pre-submit failure. */
   cleanup?: SelectorCandidate;
+  /** Inline attachment nodes that prompt insertion must preserve inside the editor. */
+  preserveInComposer?: SelectorCandidate;
   acceptedKinds: Array<'image' | 'document' | 'video'>;
   acceptedMimeTypes?: string[];
   multiple?: boolean;
@@ -158,6 +165,8 @@ export interface RecipeResponseStructure {
 }
 
 export interface RecipeAuthConfig {
+  /** Require a visible account marker at the configured origin; never infer authentication from a guest composer or cookies. */
+  requireLoggedInSelector?: boolean;
   /** Cookie names that indicate an active authenticated session */
   authCookies?: string[];
   /** Cookie domain constraints (e.g. ['grok.com', 'x.ai']) */
@@ -339,8 +348,12 @@ export function validateCustomRecipe(raw: any): { valid: boolean; errors: string
       fileInput,
       ...(normalizeSelectorCandidate(value.trigger) ? { trigger: normalizeSelectorCandidate(value.trigger) } : {}),
       ...(revealSteps.length ? { revealSteps } : {}),
+      ...(Number.isFinite(value.readyStableMs) && value.readyStableMs >= 0 && value.readyStableMs <= 10000
+        ? { readyStableMs: value.readyStableMs }
+        : {}),
       ...(normalizeSelectorCandidate(value.ready) ? { ready: normalizeSelectorCandidate(value.ready) } : {}),
       ...(normalizeSelectorCandidate(value.cleanup) ? { cleanup: normalizeSelectorCandidate(value.cleanup) } : {}),
+      ...(normalizeSelectorCandidate(value.preserveInComposer) ? { preserveInComposer: normalizeSelectorCandidate(value.preserveInComposer) } : {}),
       acceptedKinds,
       ...(Array.isArray(value.acceptedMimeTypes) ? { acceptedMimeTypes: value.acceptedMimeTypes.map(String).map((mime: string) => mime.trim().toLowerCase()).filter(Boolean) } : {}),
       multiple: value.multiple === true,
@@ -358,6 +371,10 @@ export function validateCustomRecipe(raw: any): { valid: boolean; errors: string
       return undefined;
     }
     if (!value.enabled) return { enabled: false };
+    const personalization = value.personalization;
+    if (personalization !== undefined && !['disabled', 'profile-only', 'selectable', 'unknown'].includes(personalization)) {
+      errors.push('temporaryChat.personalization is invalid.');
+    }
     if (!Array.isArray(value.activationSteps) || value.activationSteps.length === 0) {
       errors.push('temporaryChat.activationSteps must contain at least one click step when enabled.');
     }
@@ -410,7 +427,7 @@ export function validateCustomRecipe(raw: any): { valid: boolean; errors: string
       errors.push('temporaryChat.continuation.provisionalPathPrefix must extend pathPrefix.');
       return undefined;
     }
-    return { enabled: true, activationSteps, activeWhen, inactiveWhen, ...(Object.keys(variants).length ? { variants } : {}), ...(continuation ? { continuation: { pathPrefix: continuation.pathPrefix, queryParam: continuation.queryParam, queryValue: continuation.queryValue, ...(continuation.provisionalPathPrefix ? { provisionalPathPrefix: continuation.provisionalPathPrefix } : {}) } } : {}) };
+    return { enabled: true, activationSteps, activeWhen, inactiveWhen, ...(personalization ? { personalization } : {}), ...(Object.keys(variants).length ? { variants } : {}), ...(continuation ? { continuation: { pathPrefix: continuation.pathPrefix, queryParam: continuation.queryParam, queryValue: continuation.queryValue, ...(continuation.provisionalPathPrefix ? { provisionalPathPrefix: continuation.provisionalPathPrefix } : {}) } } : {}) };
   };
 
   if (!raw || typeof raw !== 'object') {
@@ -722,6 +739,7 @@ export function validateCustomRecipe(raw: any): { valid: boolean; errors: string
           ? {
               image: {
                 ...(raw.response.modes.image.generation ? { generation: validateGeneration(raw.response.modes.image.generation) } : {}),
+                ...(typeof raw.response.modes.image.unavailableReason === 'string' ? { unavailableReason: raw.response.modes.image.unavailableReason.trim() } : {}),
                 enabled: Boolean(raw.response.modes.image.enabled),
                 pageUrl: raw.response.modes.image.pageUrl?.trim() || undefined,
                 inputSelector: normalizeSelectorCandidate(raw.response.modes.image.inputSelector),
@@ -737,6 +755,7 @@ export function validateCustomRecipe(raw: any): { valid: boolean; errors: string
           ? {
               video: {
                 ...(raw.response.modes.video.generation ? { generation: validateGeneration(raw.response.modes.video.generation) } : {}),
+                ...(typeof raw.response.modes.video.unavailableReason === 'string' ? { unavailableReason: raw.response.modes.video.unavailableReason.trim() } : {}),
                 enabled: Boolean(raw.response.modes.video.enabled),
                 pageUrl: raw.response.modes.video.pageUrl?.trim() || undefined,
                 inputSelector: normalizeSelectorCandidate(raw.response.modes.video.inputSelector),
@@ -752,6 +771,7 @@ export function validateCustomRecipe(raw: any): { valid: boolean; errors: string
           ? {
               music: {
                 ...(raw.response.modes.music.generation ? { generation: validateGeneration(raw.response.modes.music.generation) } : {}),
+                ...(typeof raw.response.modes.music.unavailableReason === 'string' ? { unavailableReason: raw.response.modes.music.unavailableReason.trim() } : {}),
                 enabled: Boolean(raw.response.modes.music.enabled),
                 pageUrl: raw.response.modes.music.pageUrl?.trim() || undefined,
                 inputSelector: normalizeSelectorCandidate(raw.response.modes.music.inputSelector),
@@ -770,6 +790,7 @@ export function validateCustomRecipe(raw: any): { valid: boolean; errors: string
     ...(raw.auth && typeof raw.auth === 'object'
       ? {
           auth: {
+            ...(raw.auth.requireLoggedInSelector === true ? { requireLoggedInSelector: true } : {}),
             ...(Array.isArray(raw.auth.authCookies) ? { authCookies: raw.auth.authCookies.filter(Boolean) } : {}),
             ...(Array.isArray(raw.auth.cookieDomains) ? { cookieDomains: raw.auth.cookieDomains.filter(Boolean) } : {}),
             ...(Array.isArray(raw.auth.excludeCookieDomains) ? { excludeCookieDomains: raw.auth.excludeCookieDomains.filter(Boolean) } : {}),

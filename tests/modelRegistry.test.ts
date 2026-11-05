@@ -7,7 +7,7 @@ describe('ModelRegistryManager', () => {
   });
 
   it('starts web providers on their current native selection without advertising retired models', () => {
-    for (const provider of ['chatgpt', 'claude', 'gemini', 'grok'] as const) {
+    for (const provider of ['chatgpt', 'claude', 'gemini', 'grok', 'meta'] as const) {
       const config = ModelRegistryManager.getProviderConfig(provider);
       expect(config.defaultModelId).toBe('default');
       expect(config.models.map(model => model.id)).toEqual(['default']);

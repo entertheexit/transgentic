@@ -76,6 +76,7 @@ describe('TransgenticMcpServer Integration', () => {
     expect(parsed.result.tools).toBeDefined();
     const toolNames = parsed.result.tools.map((t: any) => t.name);
     expect(toolNames).toContain('prompt_model');
+    expect(toolNames).toContain('ask_meta');
     expect(toolNames).toContain('generate_image');
     expect(toolNames).toContain('generate_video');
     expect(toolNames).toContain('edit_image');
@@ -83,7 +84,7 @@ describe('TransgenticMcpServer Integration', () => {
     expect(toolNames).not.toContain('generate_audio');
     expect(toolNames).toContain('generate_music');
     expect(toolNames).toContain('get_status');
-    const attachmentTools = parsed.result.tools.filter((tool: any) => ['prompt_model', 'ask_chatgpt', 'ask_claude', 'ask_gemini', 'ask_grok', 'ask_codex_cli', 'ask_claude_code_cli', 'ask_antigravity_cli', 'ask_grok_cli', 'edit_image', 'edit_video'].includes(tool.name));
+    const attachmentTools = parsed.result.tools.filter((tool: any) => ['prompt_model', 'ask_chatgpt', 'ask_claude', 'ask_gemini', 'ask_grok', 'ask_meta', 'ask_codex_cli', 'ask_claude_code_cli', 'ask_antigravity_cli', 'ask_grok_cli', 'edit_image', 'edit_video'].includes(tool.name));
     expect(attachmentTools.every((tool: any) => tool.inputSchema.properties.files?.items?.oneOf?.length === 3)).toBe(true);
     expect(attachmentTools.every((tool: any) => tool.inputSchema.properties.temporary_chat?.type === 'boolean')).toBe(true);
     expect(toolNames).toContain('get_media_capabilities');
@@ -167,7 +168,7 @@ describe('TransgenticMcpServer Integration', () => {
   });
 
   it('should support direct provider SSE endpoints with token', async () => {
-    const directProviders = ['chatgpt', 'claude', 'gemini', 'grok'];
+    const directProviders = ['chatgpt', 'claude', 'gemini', 'grok', 'meta'];
     for (const provider of directProviders) {
       const res = await fetch(`http://127.0.0.1:${testPort}/${provider}/sse?token=${token}`);
       expect(res.status).toBe(200);

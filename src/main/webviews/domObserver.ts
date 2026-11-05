@@ -152,8 +152,10 @@ export class DomObserver {
           }
 
           // 4. Active Stop Button Detection (Standard Active Generation Indicator)
+          const declaredStopSelector = selectorString(recipe?.selectors?.stopButton);
           const isStopBtn = (btn) => {
             if (!isVisible(btn)) return false;
+            if (declaredStopSelector && btn.matches?.(declaredStopSelector)) return true;
             if (btn.matches?.('button[data-testid="stop-button"], [data-testid="stop-button"]')) return true;
             const label = (btn.getAttribute('aria-label') || '').toLowerCase();
             const text = (btn.textContent || '').toLowerCase();
@@ -161,8 +163,8 @@ export class DomObserver {
             const testId = (btn.getAttribute('data-testid') || '').toLowerCase();
 
             if (testId.includes('stop')) return true;
-            if (label.includes('stop') || label.includes('cancel') || label.includes('หยุด')) return true;
-            if (title.includes('stop') || title.includes('cancel') || title.includes('หยุด')) return true;
+            if (label.includes('stop') || (!declaredStopSelector && label.includes('cancel')) || label.includes('หยุด')) return true;
+            if (title.includes('stop') || (!declaredStopSelector && title.includes('cancel')) || title.includes('หยุด')) return true;
             if (text.includes('stop generating') || text.includes('stop response') || text.includes('หยุดสร้าง') || text.includes('หยุดการตอบ')) return true;
 
             const hasSquare = !!btn.querySelector('.lucide-square, svg rect, svg [class*="square"]');
@@ -173,6 +175,7 @@ export class DomObserver {
           };
 
           let hasStopBtn = false;
+          // Preserve recognizable Stop fallbacks, but only declared controls may use a generic Cancel label.
           const allButtons = document.querySelectorAll('button, [role="button"]');
           for (const btn of allButtons) {
             if (isStopBtn(btn)) {
@@ -864,7 +867,8 @@ export class DomObserver {
               if (turns.length > 0) {
                 const lastTurn = turns[turns.length - 1];
                 const modeStr = ${JSON.stringify(mode)};
-                const modeCfg = recipeCfg?.response?.modes?.[modeStr];
+                const modeKey = ['general', 'coding', 'writing'].includes(modeStr) ? 'text' : modeStr;
+                const modeCfg = recipeCfg?.response?.modes?.[modeKey];
 
                 // Image detection
                 const imgSelector = toSelectorString(modeCfg?.contentSelector) || (
@@ -876,11 +880,13 @@ export class DomObserver {
                   'img.generated-image, ' +
                   '.markdown-content img'
                 );
-                const imgCandidates = Array.from(lastTurn.querySelectorAll(imgSelector));
+                const imgCandidates = ['video', 'music'].includes(modeStr)
+                  ? [] : Array.from(lastTurn.querySelectorAll(imgSelector));
 
                 const validImg = imgCandidates.find(im => {
+                  if (im.tagName !== 'IMG') return false;
                   const src = im.src || im.getAttribute('src') || '';
-                  if (!src) return false;
+                  if (!src || excludedMediaUrls.has(src)) return false;
                   if (
                     src.includes('organization-images') ||
                     src.includes('icons/models') ||
@@ -924,6 +930,8 @@ export class DomObserver {
                 );
                 const videoCandidates = Array.from(lastTurn.querySelectorAll(videoSelector));
                 for (const vid of videoCandidates) {
+                  const player = vid.tagName === 'VIDEO' ? vid : vid.closest('video');
+                  if (player && player.readyState < 2) continue;
                   let src = vid.src || vid.currentSrc || vid.getAttribute('src') || (vid.tagName === 'A' ? vid.href : '');
                   if (src) {
                     if (src.includes('download-video?url=')) {
@@ -932,6 +940,7 @@ export class DomObserver {
                         src = decodeURIComponent(urlParam[1]);
                       }
                     }
+                    if (excludedMediaUrls.has(src) || excludedMediaUrls.has(src.split('#')[0])) continue;
                     mediaUrl = src.split('#')[0];
                     mediaType = 'video';
                     break;
@@ -964,7 +973,7 @@ export class DomObserver {
 
                 if (hasDoneImage || hasDoneVideo || hasDoneAudio) {
                   isMediaRendering = false;
-                  isGenerating = false;
+                  isGenerating = hasStopBtn || hasActiveSpinner;
                   isThinking = false;
                 }
 
@@ -1024,19 +1033,38 @@ export class DomObserver {
           // Browser-internal "blob:" URLs cannot be downloaded or saved by Node.js outside the browser.
           // Convert any blob media URL directly into a Base64 data URI within the page origin.
           if (mediaUrl && mediaUrl.startsWith('blob:')) {
+            const controller = new AbortController();
+            let blobTimeout;
             try {
-              const bResp = await fetch(mediaUrl);
-              const bBlob = await bResp.blob();
-              const bDataUri = await new Promise((resolve) => {
-                const reader = new FileReader();
-                reader.onloadend = () => resolve(reader.result);
-                reader.onerror = () => resolve(null);
-                reader.readAsDataURL(bBlob);
+              const blobData = (async () => {
+                const response = await fetch(mediaUrl, { signal: controller.signal });
+                const blob = await response.blob();
+                return await new Promise((resolve) => {
+                  const reader = new FileReader();
+                  reader.onloadend = () => resolve(reader.result);
+                  reader.onerror = () => resolve(null);
+                  reader.readAsDataURL(blob);
+                });
+              })();
+              const bounded = new Promise((_, reject) => {
+                blobTimeout = setTimeout(() => {
+                  controller.abort();
+                  reject(new Error('Media blob conversion timed out.'));
+                }, 5000);
               });
-              if (bDataUri && typeof bDataUri === 'string' && bDataUri.startsWith('data:')) {
-                mediaUrl = bDataUri;
+              const data = await Promise.race([blobData, bounded]);
+              if (typeof data === 'string' && data.startsWith('data:')) {
+                mediaUrl = data;
+              } else {
+                mediaUrl = undefined;
+                mediaType = undefined;
               }
-            } catch (blobErr) {}
+            } catch {
+              mediaUrl = undefined;
+              mediaType = undefined;
+            } finally {
+              clearTimeout(blobTimeout);
+            }
           }
 
           if (mediaUrl && excludedMediaUrls.has(mediaUrl)) { mediaUrl = undefined; mediaType = undefined; }
