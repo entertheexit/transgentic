@@ -92,6 +92,31 @@ beforeEach(() => {
   configure();
 });
 
+it.each([
+  ['temporary-unpersonalized', false],
+  ['temporary-personalized', true],
+] as const)('sends Recall only when allowed by verified %s', async (selection, recallExpected) => {
+  const web = new CustomRecipeAdapter(BUILTIN_RECIPES.chatgpt);
+  const execute = vi.spyOn(web, 'executePrompt').mockResolvedValue({ text: answer } as any);
+  vi.spyOn(web, 'checkRateLimit').mockResolvedValue({ isRateLimited: false });
+  vi.spyOn(web, 'acquireDomLock').mockResolvedValue(() => {});
+  vi.mocked(globalSessionManager.getAdapter).mockReturnValue(web);
+  vi.mocked(ServiceManifestManager.getManifest).mockReturnValue({ services: { chatgpt: { providerType: 'webview' } } } as any);
+  vi.spyOn(globalSessionManager, 'ensureTemporaryConversation').mockResolvedValue({
+    adapter: web, webContents: { getURL: () => 'https://chatgpt.com/' },
+  } as any);
+  config.recall = { enabled: true, strategy: 'single-pass', autoTriggerKeywords: true };
+  config.chatModes = { coding: { chatgpt: selection } };
+  server.updateConfig(config);
+  const result = await run('User prompt: preserve this text', 'coding', 'chatgpt', true, false, { profile: 'plain', sessionId: 'recall-test' });
+  expect(result.isError).not.toBe(true);
+  expect(execute).toHaveBeenCalledOnce();
+  const prompt = execute.mock.calls[0][0];
+  expect(prompt).toContain('User prompt: preserve this text');
+  expect(prompt.includes('[SYSTEM DIRECTIVE: RECALL')).toBe(recallExpected);
+  expect(result.metadata?.chatExecution).toMatchObject({ actualSelection: selection, verified: true, recall: { enabled: recallExpected } });
+});
+
 it.each(['chatgpt', 'claude', 'gemini', 'grok'] as const)('never falls back after an uncertain normal-chat submission on %s', async provider => {
   vi.spyOn(DynamicRouter, 'getCandidateChain').mockReturnValue([provider, 'localllm']);
   adapter.executePrompt.mockRejectedValueOnce(new Error('[WEBVIEW_SUBMISSION_UNCERTAIN] response not observed'));

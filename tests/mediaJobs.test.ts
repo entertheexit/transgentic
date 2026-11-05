@@ -43,10 +43,16 @@ describe('Usable artifact verification', () => {
     const empty = wav(); empty.writeUInt32LE(0, 40); await expect(validateMediaArtifact(asset('empty.wav', empty), 'music')).rejects.toThrow();
     await expect(validateMediaArtifact(asset('track.wav', wav()), 'music')).resolves.toMatchObject({ mimeType: 'audio/wav' });
   });
-  it('rejects images that the native decoder cannot open', async () => {
+  it('requires successful native or Chromium image decoding', async () => {
     const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jPZkAAAAASUVORK5CYII=', 'base64');
     await expect(validateMediaArtifact(asset('image.png', png), 'image')).resolves.toMatchObject({ mimeType: 'image/png' });
+    playback.mockResolvedValueOnce(false);
     await expect(validateMediaArtifact(asset('corrupt.png', png), 'image')).rejects.toThrow('decoded');
+  });
+  it('accepts an image supported by Chromium when the platform image helper cannot decode it', async () => {
+    const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jPZkAAAAASUVORK5CYII=', 'base64');
+    playback.mockResolvedValueOnce(true);
+    await expect(validateMediaArtifact(asset('corrupt-native-only.png', png), 'image')).resolves.toMatchObject({ mimeType: 'image/png' });
   });
   it('rejects a structurally valid container when the shipped player cannot decode it', async () => {
     playback.mockResolvedValueOnce(false);

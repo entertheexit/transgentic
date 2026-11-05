@@ -1,3 +1,4 @@
+import { BUILTIN_PROVIDER_IDS, isBuiltinProvider } from '../../shared/providers.js';
 import * as fs from 'fs';
 import * as path from 'path';
 import { app } from 'electron';
@@ -223,8 +224,12 @@ export class RecipeManager {
 
     const withBundledTemporaryChat = (recipe: CustomRecipe): CustomRecipe => {
       const bundled = (BUILTIN_RECIPES as Record<string, CustomRecipe>)[cleanId];
-      if (recipe.id === cleanId && cleanId === 'chatgpt' && recipe.temporaryChat?.enabled && !recipe.temporaryChat.variants && bundled?.temporaryChat?.variants) {
-        return { ...recipe, temporaryChat: { ...recipe.temporaryChat, variants: bundled.temporaryChat.variants } };
+      if (recipe.id === cleanId && recipe.temporaryChat?.enabled && bundled?.temporaryChat?.enabled) {
+        return { ...recipe, temporaryChat: {
+          ...recipe.temporaryChat,
+          ...(!recipe.temporaryChat.personalization && bundled.temporaryChat.personalization ? { personalization: bundled.temporaryChat.personalization } : {}),
+          ...(cleanId === 'chatgpt' && !recipe.temporaryChat.variants && bundled.temporaryChat.variants ? { variants: bundled.temporaryChat.variants } : {}),
+        } };
       }
       if (recipe.id !== cleanId || !bundled?.temporaryChat || recipe.temporaryChat !== undefined) return recipe;
       // Older personalized built-in overrides may predate the native privacy contract.
@@ -487,12 +492,12 @@ export class RecipeManager {
    */
   public initializeAllCustomRecipes(): void {
     const recipes = this.loadPersistedRecipes();
-    for (const providerId of ['chatgpt', 'claude', 'gemini', 'grok'] as ProviderId[]) {
+    for (const providerId of [...BUILTIN_PROVIDER_IDS]) {
       const effectiveRecipe = this.getRecipe(providerId);
       if (effectiveRecipe) globalSessionManager.registerAdapter(new CustomRecipeAdapter(effectiveRecipe));
     }
     for (const r of recipes) {
-      if (['chatgpt', 'claude', 'gemini', 'grok'].includes(r.id.replace(/^custom_|^recipe_/, ''))) continue;
+      if (isBuiltinProvider(r.id.replace(/^custom_|^recipe_/, ''))) continue;
       try {
         const providerId = (r.id.startsWith('custom_') || r.id.startsWith('webview_') ? r.id : `custom_${r.id}`) as ProviderId;
         const partitionKey = r.partition || PartitionLifecycleManager.getPartitionKey(providerId);
@@ -535,7 +540,7 @@ export class RecipeManager {
     }
 
     const cleanId = providerId.replace(/^custom_|^recipe_/, '');
-    const isBuiltin = ['chatgpt', 'claude', 'gemini', 'grok'].includes(cleanId);
+    const isBuiltin = isBuiltinProvider(cleanId);
 
     // 1. Archive current version to History
     this.ensureDirectoriesExist();
@@ -637,7 +642,7 @@ export class RecipeManager {
    */
   public resetToDefault(providerId: ProviderId): { success: boolean; recipe: CustomRecipe; message: string } {
     const cleanId = providerId.replace(/^custom_|^recipe_/, '');
-    if (!['chatgpt', 'claude', 'gemini', 'grok'].includes(cleanId)) {
+    if (!isBuiltinProvider(cleanId)) {
       throw new Error(`Reset to default is only applicable to built-in providers (${cleanId} is custom).`);
     }
 
@@ -710,7 +715,7 @@ export class RecipeManager {
     }
 
     const restoredRecipe = validated.recipe;
-    const isBuiltin = ['chatgpt', 'claude', 'gemini', 'grok'].includes(cleanId);
+    const isBuiltin = isBuiltinProvider(cleanId);
 
     if (isBuiltin) {
       const healedFile = path.join(this.getHealedDirectory(), `${cleanId}.json`);

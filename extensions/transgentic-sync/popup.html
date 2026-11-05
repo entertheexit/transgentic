@@ -335,6 +335,19 @@
             </label>
           </div>
 
+          <!-- Meta AI: refresh requires an open signed-in Meta tab. -->
+          <div class="bg-sync-row">
+            <div class="bg-sync-service-meta">
+              <span class="bg-sync-service-name">Meta AI</span>
+              <span class="bg-sync-service-domain">meta.ai · requires a signed-in tab</span>
+              <span class="bg-sync-service-status" id="bgSyncTime_meta">Off</span>
+            </div>
+            <label class="toggle-switch">
+              <input type="checkbox" id="bgSyncToggle_meta" data-service="meta" aria-label="Automatically sync Meta AI">
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+
           <!-- Dynamic Custom Recipe Sync Rows -->
           <div id="bgSyncCustomContainer"></div>
         </div>

@@ -30,6 +30,18 @@ The field reference below covers commonly used fields, not a complete validation
 
 ---
 
+## Meta AI built-in recipe
+
+Meta AI is registered as `meta` at `https://www.meta.ai/`. Select it in Providers or configure it explicitly in a route; adding it does not change saved routing defaults. MCP clients can call `ask_meta` or `prompt_model` with `provider: "meta"`. `default` retains the native selection; Instant and Thinking are selectable after discovery from the signed-in account's picker.
+
+Reload the updated Transgentic Sync extension and restart the rebuilt desktop application before syncing a signed-in Meta AI tab. Authentication requires a visible account-menu marker, because the guest site also exposes a composer. Only Meta AI domains are imported. Optional background refresh is off by default and requires an open signed-in Meta AI tab.
+
+Image and video generation use prompt-directed configuration and are enabled after successful Electron MCP execution and validated WebP/MP4 downloads. Explicit duration, quality and aspect-ratio settings are not advertised. A single PNG, JPEG or WebP reference image is supported for text requests, image editing and image-to-video. Upload readiness must remain confirmed for eight seconds before typing, because the inline thumbnail can appear before Meta finishes processing it. Prompt insertion preserves inline references, and output extraction distinguishes generated tiles and edited comparison outputs from reference previews. Documents, video-file uploads, multiple references, Temporary Chat and Music are not enabled.
+
+The shared Chrome authentication extension is version 1.2.1. Build its local archive with `npm run build:extension`, or reload `extensions/transgentic-sync` as the existing unpacked extension. Desktop download and installer resources use the matching archive. Published release links remain unchanged until a release is published.
+
+See [image-to-video verification](reports/meta-ai-image-to-video-2026-11-05.md) and the [Meta AI compatibility report](reports/meta-ai-integration-2026-11-04.md) for the observed browser behavior and remaining runtime checks.
+
 ## Field reference
 
 | Top-Level Field | Type | Description |
@@ -63,7 +75,7 @@ The field reference below covers commonly used fields, not a complete validation
 * **`video`**: `{ enabled: true, contentSelector: "video source, video[src]", downloadSelector?: "...", mediaKind: "video" }` — Video generation.
 * **`music`**: `{ enabled: true, contentSelector: "audio source, audio[src]", downloadSelector?: "...", mediaKind: "audio" }` — Music generation. The product mode stays Music even when the provider packages its audio track in an MP4 video container.
 
-Any mode may opt into uploads with `inputAttachments`. It declares `fileInput`, optional `revealSteps`, legacy `trigger`, `ready`, and `cleanup` selectors, `acceptedKinds` (`image`, `document`, `video`), optional `acceptedMimeTypes`, and `multiple`. Each reveal step is an upload-scoped `{ "action": "click", "target": { "selectors"?, "role"?, "name"? } }`; `name` is an exact accessible-name value or localized fallback list. Recipes without this block remain text-only.
+Any mode may opt into uploads with `inputAttachments`. It declares `fileInput`, optional `revealSteps`, legacy `trigger`, `ready`, and `cleanup` selectors, optional `readyStableMs` (0–10000 ms of continuously confirmed readiness), `preserveInComposer` for inline reference nodes, `acceptedKinds` (`image`, `document`, `video`), optional `acceptedMimeTypes`, and `multiple`. Each reveal step is an upload-scoped `{ "action": "click", "target": { "selectors"?, "role"?, "name"? } }`; `name` is an exact accessible-name value or localized fallback list. Recipes without this block remain text-only.
 
 Transgentic first uses an already available native file input. Only when no unambiguous usable input exists does it replay the minimum reveal steps, preferring semantic role/name matching with ordered CSS fallbacks. It intercepts the native chooser, attaches every file, verifies the input and provider readiness UI, then types and submits exactly once. Missing or ambiguous controls fail before prompt entry. A pre-submit failure invokes cleanup, clears the input, and closes transient menus before the composer can be reused. Existing `trigger` recipes remain compatible as a one-step reveal flow.
 
@@ -250,11 +262,17 @@ including description alternatives where necessary. Never match `Personalized`
 with a substring search: that also matches `Unpersonalized`.
 
 Home and Settings expose only declared modes and remember choices per task mode
-and provider. Existing ChatGPT preferences migrate from true to Personalized and
-false to Normal. Other providers retain their generic Temporary Chat preference.
-Personalization changes the provider's use of memory, plugins, and custom
-instructions; Transgentic Recall, local logging, and Library storage keep their
-existing behavior.
+and provider. New Coding configurations default to ChatGPT Unpersonalized; saved
+choices and legacy boolean preferences remain unchanged. Other supported web
+providers use their native Temporary mode. Recipes may declare `personalization`
+as `disabled`, `profile-only`, `selectable`, or `unknown`; absent metadata means
+unknown. Gemini declares disabled personalization, while Claude Incognito may
+still use profile preferences and custom styles.
+
+When Recall is enabled, Transgentic skips its generated Recall instruction for
+Unpersonalized and generic Temporary chats. Explicitly Personalized ChatGPT and
+Normal chats may use Recall. The original prompt and saved Recall setting remain
+unchanged. Local logging and Library storage follow their own settings.
 
 Desktop IPC accepts `chatMode`; MCP tools, completion requests, and media jobs
 accept `chat_mode`: `normal`, `temporary`, `temporary-personalized`, or
@@ -268,5 +286,11 @@ The selected mode is captured before queueing. Mode changes isolate conversation
 history, and exact personalization must be verified again before uploads, prompt
 entry, submission, and continuation. A temporary URL alone does not prove the
 selected personalization. Missing or ambiguous controls stop execution. Idle
-availability displays “Verified when starting”; an active provider probe is
-bounded to eight seconds and exposes retry/open-provider recovery on failure.
+availability uses a neutral status circle with a verification-on-start tooltip.
+The text trigger opens a mode-selection popover with Recheck availability.
+Recheck uses an isolated hidden page in the active account
+partition, with an eight-second budget covering navigation, hydration and inspection.
+It does not activate a chat mode or change an open conversation. Results remain
+bound to the current account, partition and recipe; account or recipe changes
+invalidate them. A failed check exposes retry/open-provider recovery. The exact
+selected mode is still verified independently before uploads and submission.

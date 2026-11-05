@@ -1,11 +1,28 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { setTimeout as delay } from 'node:timers/promises';
+import vm from 'node:vm';
 
 describe('development preload resource copying', () => {
+  it('exposes background availability checks through the shipped CJS bridge', async () => {
+    const invoke = vi.fn().mockResolvedValue(undefined);
+    let api: any;
+    vm.runInNewContext(fs.readFileSync('src/main/preload/mainPreload.cjs', 'utf8'), {
+      require: () => ({
+        contextBridge: {
+          exposeInMainWorld: (_name: string, value: unknown) => { api = value; },
+        },
+        ipcRenderer: { invoke },
+      }),
+      window: { addEventListener: () => {} },
+      process,
+    });
+    await api.recheckTemporaryChatAvailability('chatgpt');
+    expect(invoke).toHaveBeenCalledWith('recheck-temporary-chat-availability', 'chatgpt');
+  });
   it('copies CJS bridges initially and after a source edit', async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'tg-preload-watch-'));
     const source = path.join(root, 'src/main/preload');

@@ -1,3 +1,4 @@
+import { isBuiltinProvider } from '../../shared/providers.js';
 import { isCliProvider, cliSupportsMode } from '../../shared/cli.js';
 import { globalCliRuntime } from '../cli/cliRuntimeManager.js';
 import fs from 'fs';
@@ -372,7 +373,7 @@ export class DynamicRouter {
     // custom recipe's named catalog does not contain a synthetic default entry.
     const service = ServiceManifestManager.getManifest().services[providerId];
     const isWebView = service?.providerType === 'webview' ||
-      ['chatgpt', 'claude', 'gemini', 'grok'].includes(providerId);
+      isBuiltinProvider(providerId);
     if (explicitModel === 'default' && isWebView) return 'default';
 
     const supportsModelRouting = ServiceManifestManager.supportsModelRouting(providerId);

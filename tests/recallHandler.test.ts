@@ -1,9 +1,24 @@
 import { describe, it, expect } from 'vitest';
-import { applyRecallPipeline } from '../src/main/mcp/handlers/recallHandler.js';
+import { applyRecallPipeline, effectiveRecall } from '../src/main/mcp/handlers/recallHandler.js';
 import { RecallConfig } from '../src/main/config/appConfig.js';
 
 describe('Recall & Context Memory Engine Handler', () => {
   const samplePrompt = 'Refactor the authentication flow to support Passkeys.';
+
+  it.each(['single-pass', 'two-stage'] as const)('prioritizes temporary mode for %s recall', strategy => {
+    const config: RecallConfig = { enabled: true, strategy, autoTriggerKeywords: true };
+    for (const [provider, selection] of [
+      ['chatgpt', 'temporary-unpersonalized'], ['gemini', 'temporary'],
+      ['claude', 'temporary'], ['custom', 'temporary'],
+    ] as const) {
+      const decision = effectiveRecall(config, 'coding', provider, true, selection);
+      expect(decision).toEqual({ enabled: false, reason: 'Recall skipped because Temporary mode takes priority.' });
+      expect(decision.enabled ? applyRecallPipeline(samplePrompt, config, 'coding') : samplePrompt).toBe(samplePrompt);
+    }
+    expect(effectiveRecall(config, 'coding', 'chatgpt', true, 'temporary-personalized').enabled).toBe(true);
+    expect(effectiveRecall(config, 'coding', 'chatgpt', false, 'normal').enabled).toBe(true);
+    expect(effectiveRecall({ ...config, enabled: false }, 'coding', 'chatgpt', true, 'temporary-personalized').enabled).toBe(false);
+  });
 
   it('returns raw prompt unchanged when recall is undefined or disabled', () => {
     expect(applyRecallPipeline(samplePrompt, undefined)).toBe(samplePrompt);

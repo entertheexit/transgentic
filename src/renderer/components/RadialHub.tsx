@@ -1,3 +1,4 @@
+import { isBuiltinProvider } from '../../shared/providers.js';
 import { resolveChatMode } from '../../shared/types.js';
 import { ChatModeControl } from './ChatModeControl.js';
 import React, { useEffect, useState } from 'react';
@@ -205,7 +206,8 @@ export const RadialHub: React.FC<RadialHubProps> = ({
   const routeLabel = routedProvider ? getProviderDisplayName(routedProvider, servicesManifest, providers) : 'No service';
   const activeRouteLabel = `${routeMode.charAt(0).toUpperCase() + routeMode.slice(1)} (${routeLabel})`;
   const routedTemporaryCapability = routedProvider ? providers[routedProvider]?.temporaryChat : undefined;
-  const temporaryChat = resolveChatMode(config, coreStatus.activeMode, routedProvider || '') !== 'normal';
+  const temporaryChat = resolveChatMode(config, coreStatus.activeMode, routedProvider || '', undefined, undefined,
+    routedProvider ? servicesManifest?.services?.[routedProvider]?.providerType : undefined, routedTemporaryCapability?.supported) !== 'normal';
   const [latestAnswer, setLatestAnswer] = useState<QuickPromptAnswer | null>(() => {
     try {
       const saved = localStorage.getItem('transgentic_latest_quick_answer');
@@ -253,7 +255,7 @@ export const RadialHub: React.FC<RadialHubProps> = ({
   const dynamicProviders = Object.values(servicesManifest?.services || {})
     .filter(
       (s) =>
-        !['chatgpt', 'claude', 'gemini', 'grok', 'localllm'].includes(s.id) &&
+        !(isBuiltinProvider(s.id) || s.id === 'localllm') &&
         s.enabled !== false &&
         !s.hidden &&
         (s.providerType === 'cli' || s.providerType === 'webview' || s.providerType === 'api' || s.id.startsWith('custom_') || s.id.startsWith('webview_') || s.id.startsWith('api_'))
@@ -575,7 +577,7 @@ export const RadialHub: React.FC<RadialHubProps> = ({
               <span>Gateway Active</span>
             </span>
             <ChatModeControl config={config!} mode={routeMode} provider={routedProvider}
-              capability={routedTemporaryCapability} onOpenProvider={() => routedProvider && onProviderClick(routedProvider)} />
+              capability={routedTemporaryCapability} providerType={routedProvider ? servicesManifest?.services?.[routedProvider]?.providerType : undefined} />
           </div>
           <div className="flex shrink-0 items-center gap-1.5">
             <span className="text-slate-300 font-medium">
@@ -1035,6 +1037,9 @@ export const RadialHub: React.FC<RadialHubProps> = ({
                       )}
                       {currentAnswer.chatExecution?.fallbackReason && (
                         <span className="text-[9px] font-mono text-amber-300 border border-amber-500/30 rounded px-1.5 py-0.5" title={currentAnswer.chatExecution.fallbackReason}>Normal fallback</span>
+                      )}
+                      {currentAnswer.chatExecution?.recall?.reason?.startsWith('Recall skipped') && (
+                        <span className="text-[9px] font-mono text-slate-400" title={currentAnswer.chatExecution.recall.reason}>Recall skipped</span>
                       )}
                     </div>
                   </div>

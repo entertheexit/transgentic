@@ -26,6 +26,7 @@ export class CookieSyncManager {
     chatgpt: 'https://chatgpt.com',
     claude: 'https://claude.ai',
     grok: 'https://grok.com',
+    meta: 'https://www.meta.ai/',
   };
 
   private static readonly PROVIDER_DEFAULT_DOMAINS: Partial<Record<ProviderId, string>> = {
@@ -33,6 +34,7 @@ export class CookieSyncManager {
     chatgpt: '.chatgpt.com',
     claude: '.claude.ai',
     grok: '.grok.com',
+    meta: '.meta.ai',
   };
 
   private static readonly PROVIDER_PRIMARY_AUTH_COOKIE: Partial<Record<ProviderId, string>> = {
@@ -47,6 +49,12 @@ export class CookieSyncManager {
    */
   public static normalizeProviderId(raw: string): ProviderId {
     const lower = (raw || '').toLowerCase().trim();
+    if (lower === 'meta') return 'meta';
+    try {
+      const hostname = new URL(lower.includes('://') ? lower : `https://${lower}`).hostname;
+      if (hostname === 'meta.ai' || hostname.endsWith('.meta.ai')) return 'meta';
+    } catch {}
+
     if (lower.includes('gemini') || lower.includes('google')) {
       return 'gemini';
     }
@@ -169,6 +177,12 @@ export class CookieSyncManager {
     }
 
     let providerId = this.normalizeProviderId(payload.provider);
+    if (providerId === 'meta') {
+      const origin = new URL(payload.origin || this.PROVIDER_DEFAULT_ORIGINS.meta!);
+      if (origin.protocol !== 'https:' || (origin.hostname !== 'meta.ai' && !origin.hostname.endsWith('.meta.ai'))) {
+        throw new Error('Meta AI session sync requires an HTTPS meta.ai origin.');
+      }
+    }
 
     const { ServiceManifestManager } = await import('../registry/serviceManifest.js');
     const { ModelRegistryManager } = await import('../registry/modelRegistry.js');
@@ -248,6 +262,7 @@ export class CookieSyncManager {
     const defaultDomain = this.PROVIDER_DEFAULT_DOMAINS[providerId] || (payload.origin ? new URL(payload.origin).hostname : fallbackDomain) || '';
     const originUrl = payload.origin || defaultOrigin;
 
+
     // 1. Ensure synced Chrome User-Agent (or host Chrome fallback) is bound to target partition
     if (payload.userAgent) {
       await bindUserAgentToPartition(partitionKey, payload.userAgent);
@@ -256,7 +271,11 @@ export class CookieSyncManager {
     }
 
     // 2. Process & Set Cookies into isolated partition via PartitionLifecycleManager
-    const cookieList = this.parseRawCookies(payload.cookies || '', defaultDomain, providerId);
+    const cookieList = this.parseRawCookies(payload.cookies || '', defaultDomain, providerId).filter(cookie => {
+      if (providerId !== 'meta') return true;
+      const host = (cookie.domain || defaultDomain).replace(/^\./, '').toLowerCase();
+      return host === 'meta.ai' || host.endsWith('.meta.ai');
+    });
     const injectedCount = await PartitionLifecycleManager.syncCookiesToPartition(
       partitionKey,
       cookieList,

@@ -54,7 +54,7 @@ describe('DomObserver Multi-Provider & Media Scraping Tests', () => {
   it('should include in-browser blob to data-URI conversion in inspection script', () => {
     const script = DomObserver.getInspectionScript('gemini', 'image');
     expect(script).toContain("mediaUrl.startsWith('blob:')");
-    expect(script).toContain('fetch(mediaUrl)');
+    expect(script).toContain('fetch(mediaUrl, { signal: controller.signal })');
     expect(script).toContain('FileReader');
     expect(script).toContain('readAsDataURL');
   });

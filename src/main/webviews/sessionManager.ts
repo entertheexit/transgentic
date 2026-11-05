@@ -1,4 +1,4 @@
-import { boundedTemporaryChatProbe } from './temporaryChatProbe.js';
+import { boundedTemporaryChatProbe, inspectTemporaryChatInBackground } from './temporaryChatProbe.js';
 import { isCliProvider } from '../../shared/cli.js';
 import path from 'path';
 import fs from 'fs';
@@ -46,8 +46,18 @@ export interface TemporaryConversationHandle {
   webContents: WebContents;
 }
 
+interface AvailabilityContext {
+  adapter: BaseProviderAdapter;
+  accountId: string | undefined;
+  partition: string;
+  recipe?: CustomRecipeAdapter['recipe'];
+  recipeVersion?: string;
+}
+
 export class SessionManager {
   private adapters: Map<ProviderId, BaseProviderAdapter> = new Map();
+  private availabilityContexts = new Map<ProviderId, AvailabilityContext>();
+  private availabilityRechecks = new Map<ProviderId, { context: AvailabilityContext; promise: Promise<ProviderStatus> }>();
   private statusProbeGenerations = new Map<ProviderId, number>();
   public sessions: Map<ProviderId, Session> = new Map();
   private partitionSessions: Map<string, Session> = new Map();
@@ -65,10 +75,9 @@ export class SessionManager {
   private healthCheckInterval: NodeJS.Timeout | null = null;
 
   constructor() {
-    this.registerAdapter(new CustomRecipeAdapter(BUILTIN_RECIPES.chatgpt));
-    this.registerAdapter(new CustomRecipeAdapter(BUILTIN_RECIPES.claude));
-    this.registerAdapter(new CustomRecipeAdapter(BUILTIN_RECIPES.gemini));
-    this.registerAdapter(new CustomRecipeAdapter(BUILTIN_RECIPES.grok));
+    for (const recipe of Object.values(BUILTIN_RECIPES)) {
+      this.registerAdapter(new CustomRecipeAdapter(recipe));
+    }
   }
 
   public registerAdapter(adapter: BaseProviderAdapter): void {
@@ -99,6 +108,8 @@ export class SessionManager {
     this.endNormalConversations(providerId);
     this.adapters.delete(providerId);
     this.statuses.delete(providerId);
+    this.availabilityContexts.delete(providerId);
+    this.availabilityRechecks.delete(providerId);
     this.sessions.delete(providerId);
   }
 
@@ -451,6 +462,9 @@ export class SessionManager {
       const manifestService = manifestServices[id];
       const dynamicName = adapter?.name || manifestService?.name || status.name;
       const dynamicUrl = adapter?.url || manifestService?.url || status.url;
+      const context = this.availabilityContexts.get(id);
+      const temporaryStatus = context && adapter &&
+        !this.sameAvailabilityContext(context, this.availabilityContext(id, adapter)) ? undefined : status.temporaryChat;
 
       result[id] = {
         ...status,
@@ -461,19 +475,100 @@ export class SessionManager {
         rateLimitedUntil: isRateLimited ? (activeAcc?.rateLimitedUntil || (Date.now() + remaining * 1000)) : undefined,
         rateLimitCount: rateMetrics.rateLimitCount,
         temporaryChat: {
-          checking: status.temporaryChat?.checking,
-          checkedAt: status.temporaryChat?.checkedAt,
-          checkFailed: status.temporaryChat?.checkFailed,
+          checking: temporaryStatus?.checking,
+          checkedAt: temporaryStatus?.checkedAt,
+          checkFailed: temporaryStatus?.checkFailed,
           supported: adapter instanceof CustomRecipeAdapter && adapter.supportsTemporaryChat(),
+          personalization: adapter instanceof CustomRecipeAdapter ? adapter.recipe.temporaryChat?.personalization || 'unknown' : undefined,
           variants: adapter instanceof CustomRecipeAdapter ? Object.keys(adapter.recipe.temporaryChat?.variants || {}) as Array<'personalized' | 'unpersonalized'> : [],
           availability: adapter instanceof CustomRecipeAdapter && adapter.supportsTemporaryChat()
-            ? (status.temporaryChat?.availability || 'unknown')
+            ? (temporaryStatus?.availability || 'unknown')
             : 'unavailable',
-          ...(status.temporaryChat?.reason ? { reason: status.temporaryChat.reason } : {}),
+          ...(temporaryStatus?.reason ? { reason: temporaryStatus.reason } : {}),
         },
       };
     }
     return result as Record<ProviderId, ProviderStatus>;
+  }
+
+  private availabilityContext(id: ProviderId, adapter: BaseProviderAdapter): AvailabilityContext {
+    const account = AccountRegistryManager.getActiveAccount(id);
+    return {
+      adapter, accountId: account?.id, partition: account?.partitionKey || adapter.partition,
+      ...(adapter instanceof CustomRecipeAdapter ? { recipe: adapter.recipe, recipeVersion: adapter.recipe.version } : {}),
+    };
+  }
+
+  private sameAvailabilityContext(a: AvailabilityContext | undefined, b: AvailabilityContext): boolean {
+    return !!a && a.adapter === b.adapter && a.accountId === b.accountId && a.partition === b.partition &&
+      a.recipe === b.recipe && a.recipeVersion === b.recipeVersion;
+  }
+
+  private createAvailabilityProbeWindow(partition: string): BrowserWindow {
+    const session = this.configureSession(partition);
+    const window = new BrowserWindow({
+      width: 1024, height: 768, show: false,
+      webPreferences: {
+        session, nodeIntegration: false, contextIsolation: true, sandbox: true,
+        backgroundThrottling: false, preload: getStealthPreloadPath(),
+      },
+    });
+    try {
+      window.webContents.setUserAgent(session.getUserAgent());
+      window.webContents.on('dom-ready', () => {
+        window.webContents.executeJavaScript(SessionProfileManager.getPreloadCompatibilityScript(), false).catch(() => {});
+      });
+      // Availability checks cannot open a sign-in popup or another visible window.
+      window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+    } catch (error) {
+      if (!window.isDestroyed()) window.destroy();
+      throw error;
+    }
+    return window;
+  }
+
+  public recheckTemporaryChatAvailability(id: ProviderId): Promise<ProviderStatus> {
+    const adapter = this.adapters.get(id);
+    if (!(adapter instanceof CustomRecipeAdapter) || !adapter.supportsTemporaryChat()) {
+      return this.refreshProviderStatus(id);
+    }
+    const context = this.availabilityContext(id, adapter);
+    const existing = this.availabilityRechecks.get(id);
+    if (existing && this.sameAvailabilityContext(existing.context, context)) return existing.promise;
+    const current = this.statuses.get(id)!;
+    const variants = Object.keys(adapter.recipe.temporaryChat?.variants || {}) as Array<'personalized' | 'unpersonalized'>;
+    this.availabilityContexts.set(id, context);
+    current.temporaryChat = { supported: true, variants, availability: 'unknown', checking: true };
+    this.notifyStatusChange();
+
+    const task = async () => {
+      let observed: Awaited<ReturnType<typeof inspectTemporaryChatInBackground>>;
+      try {
+        const window = this.createAvailabilityProbeWindow(context.partition);
+        observed = await inspectTemporaryChatInBackground(adapter, window, context.partition);
+      } catch { /* Surface a failed check without changing account authentication. */ }
+      const active = this.adapters.get(id);
+      if (!active) throw new Error('Provider removed during availability check.');
+      if (!this.sameAvailabilityContext(context, this.availabilityContext(id, active))) {
+        return this.refreshProviderStatus(id);
+      }
+      // A newer check, including a newer active-view inspection, owns its result.
+      if (this.availabilityContexts.get(id) !== context) return this.getStatus(id)!;
+      current.temporaryChat = {
+        supported: true, variants, checking: false, checkedAt: Date.now(),
+        availability: observed?.availability || 'unknown',
+        checkFailed: !observed || observed.availability === 'unknown',
+        ...(observed?.reason ? { reason: observed.reason } : !observed
+          ? { reason: 'Could not verify Temporary Chat in the background. Recheck or open the provider to sign in.' } : {}),
+      };
+      this.notifyStatusChange();
+      return current;
+    };
+    const promise = task().finally(() => {
+      if (this.availabilityRechecks.get(id)?.context === context) this.availabilityRechecks.delete(id);
+    });
+    this.availabilityRechecks.set(id, { context, promise });
+    return promise;
   }
 
   public async refreshProviderStatus(id: ProviderId): Promise<ProviderStatus> {
@@ -662,13 +757,18 @@ export class SessionManager {
 
       if (webContents && !webContents.isDestroyed()) {
         try {
-          if (adapter instanceof CustomRecipeAdapter && adapter.supportsTemporaryChat()) {
+          if (adapter instanceof CustomRecipeAdapter && adapter.supportsTemporaryChat() &&
+              !this.sameAvailabilityContext(this.availabilityRechecks.get(id)?.context, this.availabilityContext(id, adapter))) {
             const accountAtStart = initialAccountId;
+            const availabilityContext = this.availabilityContext(id, adapter);
+            this.availabilityContexts.set(id, availabilityContext);
             current.temporaryChat = { supported: true, availability: 'unknown', checking: true,
               variants: Object.keys(adapter.recipe.temporaryChat?.variants || {}) as Array<'personalized' | 'unpersonalized'> };
             this.notifyStatusChange();
             const observed = await boundedTemporaryChatProbe(() => adapter.inspectTemporaryChatAvailability());
-            if (this.statusProbeGenerations.get(id) !== probeGeneration || this.adapters.get(id) !== adapter || adapter.getWebContents() !== webContents || AccountRegistryManager.getActiveAccount(id)?.id !== accountAtStart) {
+            if (this.statusProbeGenerations.get(id) !== probeGeneration || this.adapters.get(id) !== adapter ||
+                this.availabilityContexts.get(id) !== availabilityContext || adapter.getWebContents() !== webContents ||
+                AccountRegistryManager.getActiveAccount(id)?.id !== accountAtStart) {
               return this.getStatus(id)!;
             }
             const availability = observed || { availability: 'unknown' as const, reason: 'Could not verify Temporary Chat. Open the provider and retry.' };
@@ -688,13 +788,17 @@ export class SessionManager {
         } catch {
           isDomAuth = null;
         }
-      } else if (adapter instanceof CustomRecipeAdapter && adapter.supportsTemporaryChat()) {
-        // Availability observed in a previous view may belong to another account or session.
+      } else if (adapter instanceof CustomRecipeAdapter && adapter.supportsTemporaryChat() &&
+          (!this.sameAvailabilityContext(this.availabilityContexts.get(id), this.availabilityContext(id, adapter)) ||
+            (!current.temporaryChat?.checkedAt && !this.sameAvailabilityContext(
+              this.availabilityRechecks.get(id)?.context, this.availabilityContext(id, adapter))))) {
+        // Never carry a result across accounts, partitions or recipe replacements.
+        this.availabilityContexts.delete(id);
         current.temporaryChat = {
           supported: true,
           variants: Object.keys(adapter.recipe.temporaryChat?.variants || {}) as Array<'personalized' | 'unpersonalized'>,
           availability: 'unknown',
-          reason: 'Temporary Chat will be checked when the provider view opens.',
+          reason: 'Recheck availability to inspect Temporary Chat in the background.',
         };
       }
 

@@ -1,12 +1,26 @@
+import { isBuiltinProvider } from '../../shared/providers.js';
 import { session } from 'electron';
+import { InputDispatcher } from '../security/inputDispatcher.js';
 import { BaseProviderAdapter, ProviderAdapterResult } from './adapterBase.js';
 import { ProviderId, TaskMode } from '../../shared/types.js';
 import { CustomRecipe, normalizeSelectorList, toCombinedCssSelector, RecipeModes, RecipeAttachmentRevealStep, RecipeElementLocator, RecipeClickStep, SelectorCandidate } from '../../shared/types/recipe.js';
 import { ProjectMetadata } from '../storage/projectManager.js';
 import type { StagedAttachment } from '../../shared/attachments.js';
-import { resolveMediaSettings, type MediaSettings, type MediaMode } from '../../shared/media.js';
+import { mediaGenerationPrompt, resolveMediaSettings, type MediaSettings, type MediaMode } from '../../shared/media.js';
 import { applyMediaControls } from './mediaControls.js';
 import { DomObserver, providerNoticeText, type DomInspectionResult } from './domObserver.js';
+
+function inlineAttachmentInspectionScript(selector: string, markerSelector: string, expectedCount: number): string {
+  const editorScript = InputDispatcher.getInputTargetScript(selector);
+  return `
+      const editor = ${editorScript};
+      const markers = editor ? [...editor.querySelectorAll(${JSON.stringify(markerSelector)})] : [];
+      if (!editor || markers.length !== ${expectedCount}) return 'attachments-missing';
+      const clone = editor.cloneNode(true);
+      for (const node of clone.querySelectorAll(${JSON.stringify(markerSelector)})) node.remove();
+      const text = (clone.innerText || clone.textContent || '').trim();
+    `;
+}
 
 /**
  * CustomRecipeAdapter
@@ -39,7 +53,7 @@ export class CustomRecipeAdapter extends BaseProviderAdapter {
   constructor(recipe: CustomRecipe) {
     super();
     this.recipe = recipe;
-    const isBuiltin = ['chatgpt', 'claude', 'gemini', 'grok'].includes(recipe.id);
+    const isBuiltin = isBuiltinProvider(recipe.id);
     this.providerId = (isBuiltin || recipe.id.startsWith('custom_') || recipe.id.startsWith('webview_') ? recipe.id : `custom_${recipe.id}`) as ProviderId;
     this.partition = recipe.partition || (isBuiltin ? `persist:transgentic_${recipe.id}` : (recipe.id.startsWith('custom_') ? `persist:transgentic_${recipe.id}` : `persist:transgentic_custom_${recipe.id}`));
   }
@@ -252,7 +266,11 @@ export class CustomRecipeAdapter extends BaseProviderAdapter {
     } catch (error: any) {
       const message = String(error?.message || '');
       if (message.includes('ambiguous')) throw new Error('[TEMPORARY_CHAT_ACTIVATION_AMBIGUOUS] More than one provider control matched the Temporary Chat activation step.');
-      if (message.includes('not found')) throw new Error('[TEMPORARY_CHAT_ACTIVATION_MISSING] The provider Temporary Chat activation control was not found.');
+      if (message.includes('not found')) {
+        const names = Array.isArray(step.target.name) ? step.target.name : [step.target.name];
+        const control = names.filter(Boolean).join(' / ') || 'configured control';
+        throw new Error(`[TEMPORARY_CHAT_ACTIVATION_MISSING] The provider Temporary Chat activation control was not found (${control}).`);
+      }
       throw error;
     }
   }
@@ -269,6 +287,12 @@ export class CustomRecipeAdapter extends BaseProviderAdapter {
       // 1. Authoritative DOM inspection if WebContents is active
       if (webContents && !webContents.isDestroyed()) {
         const currentUrl = (webContents.getURL() || '').toLowerCase();
+        if (authCfg?.requireLoggedInSelector) {
+          try {
+            if (new URL(currentUrl).origin !== new URL(this.url).origin) return false;
+          } catch { return false; }
+        }
+
         if (authCfg?.loginUrls && authCfg.loginUrls.length > 0) {
           const isExplicitLoginUrl = authCfg.loginUrls.some((u) => currentUrl.includes(u.toLowerCase()));
           if (isExplicitLoginUrl) {
@@ -316,9 +340,14 @@ export class CustomRecipeAdapter extends BaseProviderAdapter {
 
               // 3. Explicit logged-in markers
               const loggedInSel = ${JSON.stringify(toCombinedCssSelector(authCfg?.loggedInSelector || null))};
-              if (loggedInSel && !!document.querySelector(loggedInSel)) {
+              if (loggedInSel && Array.from(document.querySelectorAll(loggedInSel)).some(element => {
+                const style = getComputedStyle(element);
+                return style.display !== 'none' && style.visibility !== 'hidden' && element.getClientRects().length > 0;
+              })) {
                 return true;
               }
+
+              if (${JSON.stringify(authCfg?.requireLoggedInSelector === true)}) return false;
 
               // 4. Default check: is the input prompt present?
               const inputSel = ${JSON.stringify(toCombinedCssSelector(this.recipe.selectors.inputPrompt))};
@@ -336,6 +365,8 @@ export class CustomRecipeAdapter extends BaseProviderAdapter {
         if (domResult === true) return true;
         if (domResult === false) return false;
       }
+
+      if (authCfg?.requireLoggedInSelector) return false;
 
       // 2. Partition cookies check
       const sess = session.fromPartition(this.getActivePartition());
@@ -577,11 +608,14 @@ export class CustomRecipeAdapter extends BaseProviderAdapter {
 
       // Dispatch only after every attachment is present and ready.
       await verifyMedia?.();
+      const submittedPrompt = mediaGenerationPrompt(modeConfig?.generation, prompt);
       const rawInput = modeConfig?.inputSelector || this.recipe.selectors.inputPrompt;
       const inputSelector = toCombinedCssSelector(rawInput);
-      const inputResult = this.recipe.id === 'chatgpt' && mode === 'image'
-        ? await this.dispatchPromptAfterImagePill(inputSelector, prompt)
-        : await this.dispatchRealisticInput(inputSelector, prompt);
+      const inputResult = attachments.length && upload?.preserveInComposer
+        ? await this.dispatchPromptPreservingAttachments(inputSelector, submittedPrompt, toCombinedCssSelector(upload.preserveInComposer), attachments.length)
+        : this.recipe.id === 'chatgpt' && mode === 'image'
+        ? await this.dispatchPromptAfterImagePill(inputSelector, submittedPrompt)
+        : await this.dispatchRealisticInput(inputSelector, submittedPrompt);
       if (!inputResult?.success) throw new Error(`Failed to inject prompt into "${this.name}": ${inputResult?.error || 'Target input not found'}`);
       await new Promise((r) => setTimeout(r, 250));
 
@@ -590,13 +624,16 @@ export class CustomRecipeAdapter extends BaseProviderAdapter {
       }
 
       await verifyMedia?.();
-      if (verifyMedia) {
+      if (verifyMedia || attachments.length) {
         const prior = await this.executeScript<DomInspectionResult>(DomObserver.getInspectionScript(this.providerId, mode, this.recipe));
         const existing = await this.executeScript<string[]>(`Array.from(document.querySelectorAll('img,video,audio,source')).flatMap(el => [el.src, el.currentSrc, el.getAttribute('src')]).filter(Boolean)`);
         excludedMediaUrls = [...existing, ...(prior.mediaUrl ? [prior.mediaUrl] : [])];
       }
       const rawSubmit = modeConfig?.submitSelector || this.recipe.selectors.submitButton;
       const submitSelector = toCombinedCssSelector(rawSubmit);
+      if (attachments.length && upload?.preserveInComposer && !await this.verifyInlineAttachmentPrompt(
+        inputSelector, submittedPrompt, toCombinedCssSelector(upload.preserveInComposer), attachments.length,
+      )) throw new Error('Inline attachments or prompt changed before submission.');
       onSubmitted?.(); // Persist uncertainty before the irreversible UI action.
       const submitResult = verifyMedia
         ? await this.dispatchRealisticSubmit(submitSelector, inputSelector, undefined, true)
@@ -629,6 +666,44 @@ export class CustomRecipeAdapter extends BaseProviderAdapter {
       if (!this.temporaryChatRequired) throw new Error(`[WEBVIEW_SUBMISSION_UNCERTAIN] The prompt may have been submitted, and the response could not be completed: ${error?.message || 'unknown provider error'}`);
       throw error;
     }
+  }
+
+  private async dispatchPromptPreservingAttachments(
+    selector: string, prompt: string, markerSelector: string, expectedCount: number,
+  ): Promise<{ success: boolean; error?: string }> {
+    if (!this.webContents || this.webContents.isDestroyed()) return { success: false, error: 'Composer is unavailable.' };
+    const inspect = inlineAttachmentInspectionScript(selector, markerSelector, expectedCount);
+    const state = await this.executeScript<string>(`(() => {
+      ${inspect}
+      if (text === ${JSON.stringify(prompt.trim())}) return 'already-entered';
+      if (text) return 'occupied';
+      editor.focus();
+      const range = document.createRange();
+      range.selectNodeContents(editor);
+      range.collapse(false);
+      const selection = window.getSelection();
+      selection?.removeAllRanges();
+      selection?.addRange(range);
+      return document.activeElement === editor ? 'ready' : 'not-focused';
+    })()`);
+    if (state === 'already-entered') return { success: true };
+    if (state !== 'ready') return { success: false, error: `Inline attachment composer is not ready (${state}).` };
+    await this.webContents.insertText(prompt);
+    const verified = await this.executeScript<string>(`(() => {
+      ${inspect}
+      return text === ${JSON.stringify(prompt.trim())} ? 'preserved' : 'prompt-mismatch';
+    })()`);
+    return verified === 'preserved'
+      ? { success: true }
+      : { success: false, error: `Inline attachments or prompt were lost (${verified}).` };
+  }
+
+  private async verifyInlineAttachmentPrompt(selector: string, prompt: string, markerSelector: string, expectedCount: number): Promise<boolean> {
+    const state = await this.executeScript<string>(`(() => {
+      ${inlineAttachmentInspectionScript(selector, markerSelector, expectedCount)}
+      return text === ${JSON.stringify(prompt.trim())} ? 'preserved' : 'prompt-mismatch';
+    })()`);
+    return state === 'preserved';
   }
 
   private async dispatchPromptAfterImagePill(selector: string, prompt: string): Promise<{ success: boolean; error?: string }> {
@@ -775,11 +850,18 @@ export class CustomRecipeAdapter extends BaseProviderAdapter {
       return [...document.querySelectorAll(${JSON.stringify(selector)})]
         .some(input => input.files && input.files.length === ${attachments.length});
     })()`;
-    const deadline = Date.now() + 15_000;
+    const stableMs = upload.readyStableMs || 0;
+    let readySince: number | undefined;
+    const deadline = Date.now() + 15_000 + stableMs;
     while (Date.now() < deadline) {
       if (abortSignal?.aborted) { const error = new Error('Request cancelled.'); error.name = 'AbortError'; throw error; }
       const ready = await this.executeScript<boolean>(readyScript).catch(() => false);
-      if (ready) return;
+      if (ready) {
+        readySince ??= Date.now();
+        if (Date.now() - readySince >= stableMs) return;
+      } else {
+        readySince = undefined;
+      }
       await new Promise(resolve => setTimeout(resolve, 150));
     }
     const readyCount = readySelector ? await this.executeScript<number>(`document.querySelectorAll(${JSON.stringify(readySelector)}).length`).catch(() => 0) : undefined;
@@ -888,6 +970,13 @@ export class CustomRecipeAdapter extends BaseProviderAdapter {
             if (matches.length > 1) return { success: false, ambiguous: true };
             if (matches.length === 1) {
               matches[0].scrollIntoView({ block: 'nearest', inline: 'nearest' });
+              // Native menu triggers can open on pointerdown (for example Radix),
+              // while ordinary controls use click. Reproduce the menu press first.
+              const popup = matches[0].getAttribute('aria-haspopup');
+              if (popup === 'menu' || popup === 'true') {
+                matches[0].dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, button: 0, buttons: 1, pointerType: 'mouse', isPrimary: true }));
+                matches[0].dispatchEvent(new PointerEvent('pointerup', { bubbles: true, cancelable: true, button: 0, buttons: 0, pointerType: 'mouse', isPrimary: true }));
+              }
               matches[0].click();
               return { success: true };
             }

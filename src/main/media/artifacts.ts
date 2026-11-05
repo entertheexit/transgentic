@@ -23,7 +23,7 @@ export async function validateMediaArtifact(file: string, mode: MediaMode): Prom
       if (mimeType) {
         const decoded = nativeImage.createFromPath(file);
         const size = decoded.getSize();
-        if (decoded.isEmpty() || !size.width || !size.height) throw new Error('The generated image could not be decoded.');
+        if (decoded.isEmpty() || !size.width || !size.height) await verifyDecodedAsset(file, 'image');
       }
     } else if (head.toString('ascii', 4, 8) === 'ftyp') {
       let offset = 0, moov: Buffer | undefined, payload = false, fragmented = false;
@@ -76,13 +76,13 @@ export async function validateMediaArtifact(file: string, mode: MediaMode): Prom
       }
     }
     if (!mimeType) throw new Error(mode === 'music' ? 'The music artifact has no verified audio track.' : 'The generated asset is not a supported usable media container.');
-    if (mode !== 'image') await verifyPlayback(file);
+    if (mode !== 'image') await verifyDecodedAsset(file, 'media');
     return { bytes: stat.size, mimeType };
   } finally { await handle.close(); }
 }
 
 /** Use the shipped Chromium codecs, with networking/Node disabled and audio muted. */
-async function verifyPlayback(file: string): Promise<void> {
+async function verifyDecodedAsset(file: string, kind: 'image' | 'media'): Promise<void> {
   const player = new BrowserWindow({ show: false, webPreferences: { partition: `media-validation-${crypto.randomUUID()}`, nodeIntegration: false, contextIsolation: true, sandbox: true } });
   player.webContents.setAudioMuted(true);
   let directory: string | undefined;
@@ -91,21 +91,25 @@ async function verifyPlayback(file: string): Promise<void> {
     directory = await fs.mkdtemp(path.join(os.tmpdir(), 'transgentic-playback-'));
     const page = path.join(directory, 'player.html'), mediaUrl = pathToFileURL(file).href;
     const escapedUrl = mediaUrl.replace(/&/g, '&amp;').replace(/"/g, '&quot;');
-    await fs.writeFile(page, `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; media-src file:"><video muted preload="auto" src="${escapedUrl}"></video>`, { mode: 0o600 });
+    const element = kind === 'image' ? `<img src="${escapedUrl}">` : `<video muted preload="auto" src="${escapedUrl}"></video>`;
+    await fs.writeFile(page, `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; media-src file:; img-src file:">${element}`, { mode: 0o600 });
     const pageUrl = pathToFileURL(page).href;
     player.webContents.session.webRequest.onBeforeRequest((details, callback) => callback({ cancel: details.url !== pageUrl && details.url !== mediaUrl }));
     await Promise.race([player.loadURL(pageUrl), new Promise<never>((_resolve, reject) => { loadTimeout = setTimeout(() => reject(new Error('Saved media playback loading timed out.')), 12000); })]);
     clearTimeout(loadTimeout);
     const usable = await player.webContents.executeJavaScript(`new Promise(resolve => {
-      const media = document.querySelector('video,audio');
+      const image = ${JSON.stringify(kind)} === 'image';
+      const media = document.querySelector(image ? 'img' : 'video,audio');
       if (!media) { resolve(false); return; }
       media.muted = true;
-      const ready = () => media.readyState >= 2 && Number.isFinite(media.duration) && media.duration > 0;
+      const ready = () => image ? media.complete && media.naturalWidth > 0 && media.naturalHeight > 0
+        : media.readyState >= 2 && Number.isFinite(media.duration) && media.duration > 0;
       if (ready()) { resolve(true); return; }
+      if (image && media.complete) { resolve(false); return; }
       const timeout = setTimeout(() => resolve(false), 8000);
-      media.addEventListener('loadeddata', () => { clearTimeout(timeout); resolve(ready()); }, { once: true });
+      media.addEventListener(image ? 'load' : 'loadeddata', () => { clearTimeout(timeout); resolve(ready()); }, { once: true });
       media.addEventListener('error', () => { clearTimeout(timeout); resolve(false); }, { once: true });
     })`);
-    if (!usable) throw new Error('The saved media could not be decoded for playback.');
+    if (!usable) throw new Error(kind === 'image' ? 'The generated image could not be decoded.' : 'The saved media could not be decoded for playback.');
   } finally { clearTimeout(loadTimeout); if (!player.isDestroyed()) player.destroy(); if (directory) await fs.rm(directory, { recursive: true, force: true }); }
 }

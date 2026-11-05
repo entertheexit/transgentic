@@ -23,6 +23,8 @@ export class ModelScraperEngine {
         return this.scrapeBuiltIn('gemini', webContents);
       case 'grok':
         return this.scrapeBuiltIn('grok', webContents);
+      case 'meta':
+        return this.scrapeBuiltIn('meta', webContents);
       default:
         if (
           providerId.startsWith('custom_') ||
@@ -56,6 +58,8 @@ export class ModelScraperEngine {
         return this.switchBuiltIn('gemini', targetModelId, webContents);
       case 'grok':
         return this.switchBuiltIn('grok', targetModelId, webContents);
+      case 'meta':
+        return this.switchBuiltIn('meta', targetModelId, webContents);
       default:
         if (
           providerId.startsWith('custom_') ||
@@ -73,6 +77,7 @@ export class ModelScraperEngine {
     claude: 'button[aria-label*="model" i], [data-testid="model-selector"]',
     gemini: 'button[aria-label*="Open mode picker" i], button[aria-label*="model" i], div.model-switcher',
     grok: 'button[aria-label*="model" i]',
+    meta: 'button[data-testid="composer-mode-dropdown-button"]',
   };
 
   /** Discovery and selection must use the same menu ownership and label contract. */
@@ -80,7 +85,9 @@ export class ModelScraperEngine {
     return `
       const provider = ${JSON.stringify(providerId)};
       const triggerSelector = ${JSON.stringify(this.pickerTriggers[providerId])};
-      const itemSelector = provider === 'gemini'
+      const itemSelector = provider === 'meta'
+        ? '[role="menuitemcheckbox"][data-testid^="composer-mode-option-"]'
+        : provider === 'gemini'
         ? '[role="menuitem"][data-mode-id]'
         : '[role="menuitemradio"], [role="option"][data-model-id]';
       const normalize = value => String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
@@ -103,7 +110,13 @@ export class ModelScraperEngine {
         const menus = Array.from(document.querySelectorAll('[role="menu"], [role="listbox"]')).filter(visible);
         return menus.length === 1 ? menus[0] : null;
       };
+      const metaChoice = item => ({
+        'composer-mode-option-think_fast': { id: 'instant', displayName: 'Instant' },
+        'composer-mode-option-think_hard': { id: 'thinking', displayName: 'Thinking' },
+      })[item.getAttribute('data-testid')];
       const labelFor = item => {
+        if (provider === 'meta') return metaChoice(item)?.displayName || '';
+
         const label = provider === 'gemini' ? item.querySelector('.label')
           : provider === 'claude' ? item.querySelector('[data-model-name], .truncate') : null;
         return (label?.textContent || item.getAttribute('aria-label') ||
@@ -115,7 +128,7 @@ export class ModelScraperEngine {
         const menu = getMenu(trigger);
         return menu ? Array.from(menu.querySelectorAll(itemSelector)).filter(visible).map(item => {
           const displayName = labelFor(item);
-          const id = item.getAttribute('data-model-id') || displayName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+          const id = (provider === 'meta' ? metaChoice(item)?.id : undefined) || item.getAttribute('data-model-id') || displayName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
           return { item, id, displayName };
         }).filter(choice => choice.id && choice.displayName) : [];
       };

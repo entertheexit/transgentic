@@ -213,6 +213,7 @@ Choose a provider-specific connection when the workflow calls for that service. 
 | Claude | `http://127.0.0.1:58420/claude/mcp` | `http://127.0.0.1:58420/claude/sse` |
 | Gemini | `http://127.0.0.1:58420/gemini/mcp` | `http://127.0.0.1:58420/gemini/sse` |
 | Grok | `http://127.0.0.1:58420/grok/mcp` | `http://127.0.0.1:58420/grok/sse` |
+| Meta AI | `http://127.0.0.1:58420/meta/mcp` | `http://127.0.0.1:58420/meta/sse` |
 
 ### Task-mode endpoints
 

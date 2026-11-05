@@ -1,3 +1,4 @@
+import { isBuiltinProvider } from '../../shared/providers.js';
 import React, { useRef, useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { AccountProfile, ProviderAccountStore, ProviderId, ProviderStatus, LocalLLMConfig, CustomRecipe } from '../../shared/types.js';
@@ -440,7 +441,7 @@ Respond ONLY with valid JSON.`;
       {/* Drawer Top Navigation Bar */}
       <div className="browser-toolbar h-10 shrink-0 px-3 bg-[#13151b] border-b border-white/10 flex items-center justify-between gap-2 drag-region">
         {/* Left Side: Provider Identity + URL Tag */}
-        <div className="flex items-center gap-2 min-w-0 flex-1 no-drag">
+        <div className="flex items-center gap-2 min-w-0 flex-1 drag-region">
           <div className="flex items-center gap-1.5 min-w-0">
             <span className="shrink-0 w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
             <span className="font-bold text-xs text-slate-100 uppercase tracking-wide truncate">
@@ -451,7 +452,7 @@ Respond ONLY with valid JSON.`;
           {Boolean(provider.url && provider.url.startsWith('http')) && (
             <button
               onClick={handleOpenSystemBrowser}
-              className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-white/5 hover:bg-white/10 text-slate-400 hover:text-slate-200 text-[10px] font-mono transition-colors cursor-pointer"
+              className="no-drag flex items-center gap-1 px-1.5 py-0.5 rounded bg-white/5 hover:bg-white/10 text-slate-400 hover:text-slate-200 text-[10px] font-mono transition-colors cursor-pointer"
               title="Open in System Browser"
             >
               <Globe className="w-2.5 h-2.5" />
@@ -775,7 +776,7 @@ Respond ONLY with valid JSON.`;
                       <span className="text-slate-300">
                         {recipeInfo?.healedAt
                           ? `Healed via ${recipeInfo.healer || 'Local LLM'}`
-                          : ['chatgpt', 'claude', 'gemini', 'grok'].includes(provider.id)
+                          : isBuiltinProvider(provider.id)
                           ? 'Default Pristine'
                           : 'Custom Recipe'}
                       </span>
@@ -825,7 +826,7 @@ Respond ONLY with valid JSON.`;
                       </div>
                     )}
 
-                    {Boolean(recipeInfo?.healedAt || ['chatgpt', 'claude', 'gemini', 'grok'].includes(provider.id)) && (
+                    {Boolean(recipeInfo?.healedAt || isBuiltinProvider(provider.id)) && (
                       <button
                         onClick={handleResetToDefault}
                         disabled={isResetting || isHealing || (!recipeInfo?.healedAt && recipeHistory.length === 0)}

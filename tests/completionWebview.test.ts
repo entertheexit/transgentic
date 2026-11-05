@@ -224,6 +224,49 @@ describe('WebView completion conversation ownership', () => {
     expect(result.chatExecution).toMatchObject({ policy: 'require-temporary', requestedSelection: 'temporary-unpersonalized', actualSelection: 'temporary-unpersonalized', verified: true });
   });
 
+  it.each([
+    ['temporary-personalized', true], ['temporary-unpersonalized', false],
+  ] as const)('applies completion Recall according to %s', async (selection, expected) => {
+    gateway = new CompletionGateway(() => ({
+      temporaryChat: { ...DEFAULT_TEMPORARY_CHAT },
+      recall: { enabled: true, completionEnabled: true, strategy: 'single-pass', autoTriggerKeywords: true },
+    } as any), () => 58420);
+    const result = await gateway.complete({ model: 'transgentic/provider/chatgpt', chat_mode: selection, messages: [{ role: 'user', content: 'original sentinel' }] });
+    const prompt = executePrompt.mock.calls[0][0] as string;
+    expect(prompt).toContain('original sentinel');
+    expect(prompt.includes('explicitly enabled Recall')).toBe(expected);
+    expect(result.chatExecution).toMatchObject({ actualSelection: selection, verified: true, recall: { enabled: expected } });
+  });
+
+  it('recomputes completion Recall for a temporary fallback after a normal provider fails', async () => {
+    gateway = new CompletionGateway(() => ({
+      temporaryChat: { ...DEFAULT_TEMPORARY_CHAT },
+      recall: { enabled: true, completionEnabled: true, strategy: 'single-pass', autoTriggerKeywords: true },
+    } as any), () => 58420);
+    vi.spyOn(DynamicRouter, 'getRule').mockReturnValue({ defaultService: 'grok', fallbackChain: ['chatgpt'] } as any);
+    executePrompt.mockRejectedValueOnce(new Error('provider unavailable before submission'));
+    const result = await gateway.complete({ model: 'transgentic/general', messages: [{ role: 'user', content: 'fallback sentinel' }] });
+    expect(executePrompt).toHaveBeenCalledTimes(2);
+    expect(String(executePrompt.mock.calls[0][0])).toContain('explicitly enabled Recall');
+    expect(String(executePrompt.mock.calls[1][0])).not.toContain('explicitly enabled Recall');
+    expect(result.chatExecution).toMatchObject({ actualMode: 'temporary', recall: { enabled: false } });
+  });
+
+  it('keeps Recall out of a temporary reviewer when the primary used a normal chat', async () => {
+    gateway = new CompletionGateway(() => ({
+      temporaryChat: { ...DEFAULT_TEMPORARY_CHAT },
+      recall: { enabled: true, completionEnabled: true, strategy: 'single-pass', autoTriggerKeywords: true },
+      doubleAgent: { completionReviewEnabled: true },
+    } as any), () => 58420);
+    vi.spyOn(DynamicRouter, 'getRule').mockImplementation((_mode, pipeline) =>
+      ({ defaultService: pipeline === 'co' ? 'chatgpt' : 'grok', fallbackChain: [] }) as any);
+    const result = await gateway.complete({ model: 'transgentic/general', messages: [{ role: 'user', content: 'review sentinel' }] });
+    expect(executePrompt).toHaveBeenCalledTimes(2);
+    expect(String(executePrompt.mock.calls[0][0])).toContain('explicitly enabled Recall');
+    expect(String(executePrompt.mock.calls[1][0])).not.toContain('explicitly enabled Recall');
+    expect(result.executionBranches?.map(branch => branch.recall?.enabled)).toEqual([true, false]);
+  });
+
   it('rejects exact personalization on generic providers without submitting', async () => {
     await expect(gateway.complete({ model: 'transgentic/provider/grok', chat_mode: 'temporary-unpersonalized', messages: [{ role: 'user', content: 'sentinel' }] })).rejects.toThrow('TEMPORARY_CHAT_UNSUPPORTED');
     expect(executePrompt).not.toHaveBeenCalled();

@@ -193,6 +193,10 @@ export class AssetManager {
     if (buffer && buffer.length >= 8) {
       if (buffer.subarray(4, 8).toString('utf-8') === 'ftyp') {
         ext = 'mp4';
+      } else if (buffer.subarray(0, 4).toString('ascii') === 'RIFF' && buffer.length >= 12 && buffer.subarray(8, 12).toString('ascii') === 'WEBP') {
+        ext = 'webp';
+      } else if (/^GIF8[79]a/.test(buffer.subarray(0, 6).toString('ascii'))) {
+        ext = 'gif';
       } else if (buffer.subarray(0, 3).toString('utf-8') === 'ID3' || (buffer[0] === 0xff && (buffer[1] & 0xe0) === 0xe0)) {
         ext = 'mp3';
       } else if (buffer.subarray(0, 4).toString('utf-8') === 'RIFF' && buffer.length >= 12 && buffer.subarray(8, 12).toString('utf-8') === 'WAVE') {
@@ -240,7 +244,7 @@ export class AssetManager {
             'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,video/*,audio/*,*/*;q=0.8',
             'Referer': `${parsed.protocol}//${parsed.hostname}/`,
           };
-          if (cookieHeader) {
+          if (cookieHeader && parsed.origin === new URL(cleanUrl).origin) {
             headers['Cookie'] = cookieHeader;
           }
           const options = {
@@ -258,7 +262,8 @@ export class AssetManager {
               if (res.headers.location.includes('accounts.google.com/ServiceLogin')) {
                 return reject(new Error('Failed to download asset: Authentication required (redirected to Google login).'));
               }
-              return get(res.headers.location, redirectCount + 1);
+              res.resume();
+              return get(new URL(res.headers.location, parsed).href, redirectCount + 1);
             }
             if (res.statusCode && (res.statusCode < 200 || res.statusCode >= 300)) {
               return reject(new Error(`Failed to download asset: HTTP status ${res.statusCode}`));

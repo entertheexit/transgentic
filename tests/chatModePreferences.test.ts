@@ -14,7 +14,12 @@ describe('chat mode preferences and request contracts', () => {
     const config = { chatModes: { general: { chatgpt: 'temporary-unpersonalized' as const, gemini: 'normal' as const } } };
     expect(resolveChatMode(config, 'general', 'chatgpt')).toBe('temporary-unpersonalized');
     expect(resolveChatMode(config, 'general', 'gemini')).toBe('normal');
-    expect(resolveChatMode(config, 'coding', 'chatgpt')).toBe('temporary-personalized');
+    expect(resolveChatMode(config, 'coding', 'chatgpt')).toBe('temporary-unpersonalized');
+    expect(resolveChatMode(config, 'coding', 'claude')).toBe('temporary');
+    expect(resolveChatMode(config, 'coding', 'localllm')).toBe('normal');
+    expect(resolveChatMode(config, 'coding', 'custom_web', undefined, undefined, 'webview', true)).toBe('temporary');
+    expect(resolveChatMode({ temporaryChat: { coding: true } as any }, 'coding', 'custom_api', undefined, undefined, 'api')).toBe('normal');
+    expect(resolveChatMode({ temporaryChat: { coding: true } as any }, 'coding', 'custom_api', 'temporary', undefined, 'api')).toBe('temporary');
     expect(resolveChatMode(config, 'writing', 'chatgpt')).toBe('temporary-unpersonalized');
   });
   it('preserves legacy overrides and rejects contradictory fields', () => {

@@ -38,14 +38,15 @@ export class InputDispatcher {
   /** Use the same rendered composer for native focus, text insertion, and Enter. */
   public static getInputTargetScript(selector: string): string {
     return `(function() {
-      return Array.from(document.querySelectorAll(${JSON.stringify(selector)})).find(el => {
+      const candidates = Array.from(document.querySelectorAll(${JSON.stringify(selector)})).filter(el => {
         if (el.disabled || el.readOnly || el.getAttribute('aria-disabled') === 'true') return false;
         if (el.closest('[hidden], [inert], [aria-hidden="true"]')) return false;
         const style = getComputedStyle(el);
         if (style.display === 'none' || style.visibility === 'hidden' || style.visibility === 'collapse') return false;
         const rect = el.getBoundingClientRect();
         return rect.width > 0 && rect.height > 0;
-      }) || null;
+      });
+      return candidates.length === 1 ? candidates[0] : null;
     })()`;
   }
 

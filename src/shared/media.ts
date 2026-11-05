@@ -34,14 +34,24 @@ export interface MediaSetting {
   models?: string[];
   options: MediaChoice[];
 }
-export interface RecipeGeneration {
+interface RecipeGenerationBase {
   activationSteps: MediaStep[];
-  activeWhen: MediaLocator;
   unavailableWhen?: MediaLocator;
   settings: MediaSetting[];
   models?: string[];
   nativeDefaults?: Record<string, MediaValue>;
 }
+
+/** Prompt-directed providers prove composer readiness; they do not claim a native tool toggle. */
+export type RecipeGeneration = RecipeGenerationBase & (
+  | { strategy?: 'controls'; activeWhen: MediaLocator; readyWhen?: never; promptInstruction?: never }
+  | { strategy: 'prompt'; readyWhen: MediaLocator; promptInstruction: string; activeWhen?: never }
+);
+
+export function mediaGenerationPrompt(generation: RecipeGeneration | undefined, prompt: string): string {
+  return generation?.strategy === 'prompt' ? `${generation.promptInstruction}\n\n${prompt}` : prompt;
+}
+
 export interface MediaCapability {
   provider: string;
   title: string;
@@ -82,22 +92,49 @@ export function normalizeMediaPreferences(raw: unknown): MediaPreferences {
 }
 export function mediaCapability(recipe: CustomRecipe, mode: MediaMode, model?: string, available = true): MediaCapability | undefined {
   const config = recipe.response.modes[mode];
-  if (!config?.enabled) return undefined;
+  if (!config || (!config.enabled && !config.unavailableReason)) return undefined;
+
   const generation = config.generation;
   const modelSupported = !generation?.models || !!model && generation.models.includes(model);
-  const definitions = (generation?.settings || []).filter(s => !s.models || !!model && s.models.includes(model));
-  const settings = definitions.map(s => ({ key: s.key, label: s.label, type: s.type, default: s.default, options: s.options.filter(o => !o.models || !!model && o.models.includes(model)).map(o => ({ value: o.value, label: o.label })) }));
-  const defaultsSupported = settings.every(s => s.options.some(o => o.value === s.default));
-  return { provider: recipe.id, title: recipe.title, mode, model, available: available && !!generation && modelSupported && defaultsSupported,
-    ...(!generation ? { unavailable_reason: 'Media controls have not been verified in this recipe.' } : !modelSupported || !defaultsSupported ? { unavailable_reason: 'Media controls are unavailable for this model.' } : !available ? { unavailable_reason: 'Provider is not authenticated or available.' } : {}),
-    ...(generation?.nativeDefaults ? { native_defaults: generation.nativeDefaults } : {}), settings,
-    ...(config.inputAttachments ? { attachments: { acceptedKinds: config.inputAttachments.acceptedKinds,
-      ...(config.inputAttachments.acceptedMimeTypes ? { acceptedMimeTypes: config.inputAttachments.acceptedMimeTypes } : {}),
-      multiple: config.inputAttachments.multiple === true,
-      ...ATTACHMENT_LIMITS, maxFiles: config.inputAttachments.multiple === true ? ATTACHMENT_LIMITS.maxFiles : 1,
-    } } : {}),
+  const definitions = (generation?.settings || []).filter(setting => !setting.models || !!model && setting.models.includes(model));
+  const settings = definitions.map(setting => ({
+    key: setting.key,
+    label: setting.label,
+    type: setting.type,
+    default: setting.default,
+    options: setting.options
+      .filter(option => !option.models || !!model && option.models.includes(model))
+      .map(option => ({ value: option.value, label: option.label })),
+  }));
+  const defaultsSupported = settings.every(setting => setting.options.some(option => option.value === setting.default));
+
+  let unavailableReason: string | undefined;
+  if (!config.enabled) unavailableReason = config.unavailableReason || 'This media workflow is disabled.';
+  else if (!generation) unavailableReason = 'Media controls have not been verified in this recipe.';
+  else if (!modelSupported || !defaultsSupported) unavailableReason = 'Media controls are unavailable for this model.';
+  else if (!available) unavailableReason = 'Provider is not authenticated or available.';
+
+  return {
+    provider: recipe.id,
+    title: recipe.title,
+    mode,
+    model,
+    available: config.enabled && available && !!generation && modelSupported && defaultsSupported,
+    ...(unavailableReason ? { unavailable_reason: unavailableReason } : {}),
+    ...(generation?.nativeDefaults ? { native_defaults: generation.nativeDefaults } : {}),
+    settings,
+    ...(config.inputAttachments ? {
+      attachments: {
+        acceptedKinds: config.inputAttachments.acceptedKinds,
+        ...(config.inputAttachments.acceptedMimeTypes ? { acceptedMimeTypes: config.inputAttachments.acceptedMimeTypes } : {}),
+        multiple: config.inputAttachments.multiple === true,
+        ...ATTACHMENT_LIMITS,
+        maxFiles: config.inputAttachments.multiple === true ? ATTACHMENT_LIMITS.maxFiles : 1,
+      },
+    } : {}),
   };
 }
+
 export function resolveMediaSettings(recipe: CustomRecipe, mode: MediaMode, preferences: MediaPreferences = {}, model?: string, providerId = recipe.id): MediaSettings {
   const capability = mediaCapability(recipe, mode, model);
   if (!capability?.available) throw new Error(`[MEDIA_SETTINGS_UNSUPPORTED] ${recipe.title}: ${capability?.unavailable_reason || `does not support ${mode}`}`);
@@ -131,7 +168,9 @@ export function validateGeneration(raw: unknown): RecipeGeneration {
     if (!Array.isArray(v) || v.length > 16) return fail();
     return v.map(s => s?.action === 'click' || s?.action === 'clickIfPresent' || s?.action === 'pointerDown' || s?.action === 'waitAbsent' ? { action: s.action, target: locator(s.target) } : s?.action === 'escape' ? { action: 'escape' } : fail());
   };
-  if (!object(raw) || !Array.isArray(raw.settings) || raw.settings.length > 32) return fail();
+  if (!object(raw) ||
+      (raw.strategy !== undefined && raw.strategy !== 'controls' && raw.strategy !== 'prompt') ||
+      !Array.isArray(raw.settings) || raw.settings.length > 32) return fail();
   const keys = new Set<string>();
   const settings: MediaSetting[] = raw.settings.map((s: any) => {
     if (!s || !safeKey.test(s.key) || keys.has(s.key) || typeof s.label !== 'string' || !['enum', 'number', 'boolean'].includes(s.type) || !Array.isArray(s.options) || !s.options.length || s.options.length > 64) return fail();
@@ -146,5 +185,19 @@ export function validateGeneration(raw: unknown): RecipeGeneration {
   });
   if (raw.models !== undefined && (!Array.isArray(raw.models) || !raw.models.length || !raw.models.every(m => typeof m === 'string'))) return fail();
   const nativeDefaults = raw.nativeDefaults === undefined ? undefined : normalizeMediaPreferences({ settings: raw.nativeDefaults }).settings;
-  return { activationSteps: steps(raw.activationSteps), activeWhen: locator(raw.activeWhen), ...(raw.unavailableWhen ? { unavailableWhen: locator(raw.unavailableWhen) } : {}), settings, ...(raw.models ? { models: raw.models as string[] } : {}), ...(nativeDefaults ? { nativeDefaults } : {}) };
+  const base = {
+    activationSteps: steps(raw.activationSteps),
+    ...(raw.unavailableWhen ? { unavailableWhen: locator(raw.unavailableWhen) } : {}),
+    settings,
+    ...(raw.models ? { models: raw.models as string[] } : {}),
+    ...(nativeDefaults ? { nativeDefaults } : {}),
+  };
+  if (raw.strategy === 'prompt') {
+    if (raw.activeWhen !== undefined || typeof raw.promptInstruction !== 'string' ||
+        !raw.promptInstruction.trim() || raw.promptInstruction.length > 1000 ||
+        raw.promptInstruction.includes('\0') || settings.length > 0 || base.activationSteps.length > 0) return fail();
+    return { ...base, strategy: 'prompt', readyWhen: locator(raw.readyWhen), promptInstruction: raw.promptInstruction.trim() };
+  }
+  if (raw.readyWhen !== undefined || raw.promptInstruction !== undefined) return fail();
+  return { ...base, ...(raw.strategy ? { strategy: 'controls' as const } : {}), activeWhen: locator(raw.activeWhen) };
 }

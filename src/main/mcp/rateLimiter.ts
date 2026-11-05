@@ -20,6 +20,7 @@ export class AdaptiveRateLimiter {
     ['claude', { rateLimitedUntil: 0, rateLimitCount: 0, consecutiveFailures: 0, lastUsed: 0, hourlyRequests: 0, hourlyLimit: 35, cooldownSeconds: 6 }],
     ['gemini', { rateLimitedUntil: 0, rateLimitCount: 0, consecutiveFailures: 0, lastUsed: 0, hourlyRequests: 0, hourlyLimit: 50, cooldownSeconds: 5 }],
     ['grok', { rateLimitedUntil: 0, rateLimitCount: 0, consecutiveFailures: 0, lastUsed: 0, hourlyRequests: 0, hourlyLimit: 40, cooldownSeconds: 6 }],
+    ['meta', { rateLimitedUntil: 0, rateLimitCount: 0, consecutiveFailures: 0, lastUsed: 0, hourlyRequests: 0, hourlyLimit: 30, cooldownSeconds: 6 }],
   ]);
 
   // Rolling request timestamps for sliding 1-hour window
@@ -28,6 +29,7 @@ export class AdaptiveRateLimiter {
     ['claude', []],
     ['gemini', []],
     ['grok', []],
+    ['meta', []],
   ]);
 
   public interMessageCooldownMs = 6000;

@@ -77,6 +77,15 @@ const DEFAULT_REGISTRY: RegistryStore = {
       { id: 'default', displayName: 'Current provider model', discoveredAvailable: true, userEnabled: true, modes: ['general', 'coding', 'image', 'video', 'music'] },
     ],
   },
+  meta: {
+    serviceEnabled: true,
+    activeSelectionMode: 'hybrid',
+    allowMcpOverride: true,
+    defaultModelId: 'default',
+    hourlyLimit: 30,
+    cooldownSeconds: 6,
+    models: [{ id: 'default', displayName: 'Current provider selection', discoveredAvailable: true, userEnabled: true, modes: ['general', 'coding'] }],
+  },
   grok: {
     serviceEnabled: true,
     activeSelectionMode: 'hybrid',
@@ -140,6 +149,7 @@ export function useTransgentic() {
     claude: { id: 'claude', name: 'Claude', url: 'https://claude.ai', state: 'disconnected', partition: 'persist:transgentic_claude', rateLimitCount: 0, isAuthenticated: false },
     gemini: { id: 'gemini', name: 'Gemini', url: 'https://gemini.google.com', state: 'disconnected', partition: 'persist:transgentic_gemini', rateLimitCount: 0, isAuthenticated: false },
     grok: { id: 'grok', name: 'Grok', url: 'https://grok.com', state: 'disconnected', partition: 'persist:transgentic_grok', rateLimitCount: 0, isAuthenticated: false },
+    meta: { id: 'meta', name: 'Meta AI', url: 'https://www.meta.ai/', state: 'disconnected', partition: 'persist:transgentic_meta', rateLimitCount: 0, isAuthenticated: false },
     localllm: { id: 'localllm', name: 'Local LLM', url: 'http://127.0.0.1:11434', state: 'disconnected', partition: 'persist:transgentic_localllm', rateLimitCount: 0, isAuthenticated: true },
   });
 

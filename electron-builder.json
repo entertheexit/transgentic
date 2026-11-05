@@ -18,6 +18,10 @@
       "from": "extensions/transgentic-sync",
       "to": "extensions/transgentic-sync",
       "filter": ["**/*"]
+    },
+    {
+      "from": "extensions/transgentic-sync-v1.2.1.zip",
+      "to": "extensions/transgentic-sync-v1.2.1.zip"
     }
   ],
   "mac": {

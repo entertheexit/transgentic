@@ -25,6 +25,12 @@ jobs:
         with:
           ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
       - name: Validate release tag
         id: release
         env:
@@ -37,7 +43,18 @@ jobs:
           fi
           package_version="$(node -p "require('./package.json').version")"
           [[ "$tag" == "v$package_version" ]]
+          test -f "docs/releases/$tag.md"
+          node -e "const p=require('./package.json'),l=require('./package-lock.json'); if(p.version!==l.version || p.version!==l.packages[''].version) process.exit(1)"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify release source
+        run: |
+          npm run check:recipes
+          npm run check:publication
+          npm test
 
   macos:
     needs: release-info
@@ -159,14 +176,44 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  extension:
+    needs: release-info
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.release-info.outputs.tag }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      - name: Build Chrome Sync archive
+        run: npm run build:extension
+
+      - name: Stage Chrome Sync release file
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-extension
+          path: extensions/transgentic-sync-v*.zip
+          if-no-files-found: error
+          retention-days: 7
+
   draft-release:
-    needs: [release-info, macos, windows, linux]
+    needs: [release-info, macos, windows, linux, extension]
     runs-on: ubuntu-latest
     env:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
       RELEASE_TAG: ${{ needs.release-info.outputs.tag }}
     steps:
+      - name: Check out release notes
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.release-info.outputs.tag }}
+
       - name: Collect release files
         uses: actions/download-artifact@v4
         with:
@@ -176,9 +223,12 @@ jobs:
 
       - name: Create or update draft release
         run: |
+          notes="docs/releases/$RELEASE_TAG.md"
+          test -f "$notes"
           if release_is_draft="$(gh release view "$RELEASE_TAG" --json isDraft --jq .isDraft 2>/dev/null)"; then
             [[ "$release_is_draft" == "true" ]]
           else
-            gh release create "$RELEASE_TAG" --verify-tag --generate-notes --draft
+            gh release create "$RELEASE_TAG" --verify-tag --title "Transgentic $RELEASE_TAG" --notes-file "$notes" --draft
           fi
+          gh release edit "$RELEASE_TAG" --title "Transgentic $RELEASE_TAG" --notes-file "$notes"
           gh release upload "$RELEASE_TAG" release-assets/* --clobber

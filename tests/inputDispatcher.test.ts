@@ -103,6 +103,17 @@ describe('InputDispatcher', () => {
     expect(visible.dispatchEvent).toHaveBeenCalled();
   });
 
+  it('refuses to type when two declared composers are visible', async () => {
+    const fixture = browserFixture();
+    const first = fixture.element(true);
+    const second = fixture.element(true);
+    expect(fixture.run(InputDispatcher.getInputTargetScript('[data-testid="composer-input"]'))).toBeNull();
+    expect(await fixture.run(InputDispatcher.getDispatchScript('[data-testid="composer-input"]', 'test')))
+      .toMatchObject({ success: false });
+    expect(first.focus).not.toHaveBeenCalled();
+    expect(second.focus).not.toHaveBeenCalled();
+  });
+
   it('does not report input success when only a hidden or disabled composer exists', async () => {
     const browser = browserFixture();
     const hidden = browser.element(false);
