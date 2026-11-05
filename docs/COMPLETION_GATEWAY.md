@@ -29,6 +29,16 @@ The stable route models are:
 
 `GET /v1/models` also lists compatible direct providers as `transgentic/provider/<provider-id>`. A CLI appears there only while enabled, connected, and in Provider Mode. Eligible Webview providers use their selected account and recipe, including native Temporary Chat activation where declared and verified.
 
+For Meta AI, choose `transgentic/provider/meta` after connecting the Meta AI WebView account. This is Transgentic's OpenAI-compatible interface to a browser session, not a Meta API credential. For example:
+
+```sh
+curl http://127.0.0.1:58420/v1/chat/completions \
+  -H "Authorization: Bearer $TRANSGENTIC_TOKEN" -H 'Content-Type: application/json' \
+  --data '{"model":"transgentic/provider/meta","chat_mode":"normal","messages":[{"role":"user","content":"Summarize this idea in one sentence."}]}'
+```
+
+Meta does not declare native Temporary Chat. Explicitly requiring it fails instead of silently using a normal chat. Completion requests use the text contract; use [media jobs](MEDIA_API.md) for generated images and videos.
+
 ## Request behavior
 
 Route models use the existing Main route and fallback order without an extra classification request. Without `conversation_id`, each request starts a fresh backend conversation; Webview requests use an isolated browser view that closes after the request. Transgentic sends the caller's structured history once and does not resume a native CLI session or attach hidden Transgentic conversation context.

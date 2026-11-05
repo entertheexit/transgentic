@@ -1,3 +1,4 @@
+import { PopoverSelect } from './PopoverSelect.js';
 import React, { useEffect, useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Check, CheckCircle2, ChevronDown, CircleAlert, Clock3, Code2, Copy, ExternalLink, Folder, FolderGit2, HardDrive, KeyRound, LoaderCircle, PencilLine, Plus, Power, RefreshCw, ShieldCheck, Terminal, Trash2, X, Zap } from 'lucide-react';
@@ -401,12 +402,12 @@ export function CliServicesSettings({ manifest, selectedProvider: id, onToggleSe
               </button>
             </div>
             {modelDiscovery?.state === 'available' && modelDiscovery.models.length > 0 && !customModelEditing ? <div className="relative mt-1.5">
-              <select value={config.model || ''} disabled={Boolean(busy)} onChange={event => { const value = event.target.value; if (value === '__custom__') { setCustomModelEditing(true); return; } void run(`${id}-model`, () => api!.configureCli!(id, { model: value })); }} className="w-full appearance-none truncate rounded-xl border border-white/10 bg-black/30 px-3 py-2 pr-8 text-xs text-slate-200 outline-none transition focus:border-cyan-500/40 disabled:cursor-not-allowed disabled:opacity-45" title={config.model || 'CLI default'}>
+              <PopoverSelect value={config.model || ''} disabled={Boolean(busy)} onChange={event => { const value = event.target.value; if (value === '__custom__') { setCustomModelEditing(true); return; } void run(`${id}-model`, () => api!.configureCli!(id, { model: value })); }} className="w-full appearance-none truncate rounded-xl border border-white/10 bg-black/30 px-3 py-2 pr-8 text-xs text-slate-200 outline-none transition focus:border-cyan-500/40 disabled:cursor-not-allowed disabled:opacity-45" title={config.model || 'CLI default'}>
                 <option value="">CLI default</option>
                 {config.model && !modelDiscovery.models.some(model => model.id === config.model) && <option value={config.model}>{config.model} · Current override</option>}
                 {modelDiscovery.models.map(model => <option key={model.id} value={model.id}>{model.name === model.id ? model.id : `${model.name} · ${model.id}`}</option>)}
                 <option value="__custom__">Custom model…</option>
-              </select>
+              </PopoverSelect>
               <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-500" />
             </div> : <input key={`${id}-${config.model || ''}-${customModelEditing ? 'custom' : 'manual'}`} autoFocus={customModelEditing} defaultValue={config.model || ''} placeholder="CLI default" title={modelDiscovery?.message} className="mt-1.5 w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-xs text-slate-200 outline-none transition focus:border-cyan-500/40" onKeyDown={event => { if (event.key === 'Enter') event.currentTarget.blur(); if (event.key === 'Escape' && customModelEditing) { event.currentTarget.value = config.model || ''; setCustomModelEditing(false); } }} onBlur={event => { const value = event.target.value.trim(); const changed = value !== (config.model || ''); if (changed) void run(`${id}-model`, () => api!.configureCli!(id, { model: value })).finally(() => setCustomModelEditing(false)); else setCustomModelEditing(false); }} />}
           </div>

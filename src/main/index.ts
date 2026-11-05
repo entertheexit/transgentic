@@ -35,6 +35,7 @@ import {
   DEFAULT_TEMPORARY_CHAT,
   normalizeTemporaryChatConfig,
   normalizeChatModePreferences,
+  migrateTemporaryModeSwitches,
   AgentHaltGuardConfig,
   doubleAgentConfig,
   HealingConfig,
@@ -152,6 +153,7 @@ function loadPersistedConfig(): TransgenticConfig {
       music: true,
     },
     temporaryChat: { ...DEFAULT_TEMPORARY_CHAT },
+    temporaryChatModeVersion: 1,
     chatModes: { coding: { chatgpt: 'temporary-unpersonalized' } },
     localLLM: {
       enabled: false,
@@ -264,7 +266,7 @@ function loadPersistedConfig(): TransgenticConfig {
         ? 'music'
         : normalizeTaskMode(parsed.defaultMode);
       parsed.modeSchemaVersion = MODE_SCHEMA_VERSION;
-      return { ...defaults, ...parsed };
+      return migrateTemporaryModeSwitches({ ...defaults, ...parsed, temporaryChatModeVersion: parsed.temporaryChatModeVersion });
     }
   } catch {}
   return defaults;

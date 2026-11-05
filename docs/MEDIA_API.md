@@ -14,6 +14,7 @@ Media requests use recipe-controlled tools and settings through Quick Prompt, MC
 | Grok Imagine | Image | `quality: "speed"`, `aspect_ratio: "1:1"` |
 | Grok Imagine | Video | `resolution: "480p"`, `duration_seconds: 6`, `aspect_ratio: "16:9"`, `sound: true` |
 | ChatGPT | Image | Native automatic quality and aspect ratio; no verified configurable controls |
+| Meta AI | Image / Video | Prompt-directed; no verified explicit quality, duration, or aspect-ratio controls |
 
 Gemini Music supports Short/Standard; Custom/Vocals on/Instrumental; and Custom, Pop, Hip-hop & rap, Rock, K-pop, Latin, Electronic, R&B, Country, Afrobeats, Reggae, Jazz & blues, Classical, Folk, Lo-fi, Acoustic, Cinematic, and Ambient. Use the semantic values returned by discovery (for example `hip_hop_rap`, `jazz_blues`, `instrumental`). Gemini image ratios are `1:1`, `9:16`, `3:4`, `4:3`, and `16:9`; video offers `16:9` and `9:16`. Grok ratios are `2:3`, `3:2`, `1:1`, `9:16`, and `16:9`; image quality is `speed` or `quality_2`; video offers 480p/720p and 6/10/15 seconds.
 
@@ -30,6 +31,8 @@ Gemini Music supports Short/Standard; Custom/Vocals on/Instrumental; and Custom,
 
 
 Every endpoint requires `Authorization: Bearer <Transgentic access token>`, including artifact downloads. MCP session IDs do not replace this authentication. Use the local base URL `http://127.0.0.1:58420/v1`; LAN requests use the configured gateway address.
+
+To use Meta AI, sync its signed-in WebView session and set `provider` to `meta`. Image and video jobs accept at most one PNG, JPEG, or WebP image reference; image-to-video is supported. The recipe does not accept video files, documents, multiple references, or explicit media settings. Availability also depends on authentication and the provider account.
 
 ```sh
 curl "$TRANSGENTIC_URL/media/capabilities" \

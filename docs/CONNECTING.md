@@ -28,7 +28,7 @@ A model described as local may still be hosted on another machine if its configu
 
 ### Web sessions and companion extension
 
-Built-in web adapters cover ChatGPT, Claude, Gemini, and Grok. Custom services use [recipes](RECIPES.md). These are configured integrations, not a statement of provider endorsement or current compatibility.
+Built-in web adapters cover ChatGPT, Claude, Gemini, Grok, and Meta AI. Custom services use [recipes](RECIPES.md). These are configured integrations, not a statement of provider endorsement or current compatibility.
 
 Use only sessions you are authorized to use, and confirm that the intended automation complies with the provider's terms and permissions. Account access alone is not permission to automate.
 
@@ -93,6 +93,7 @@ These connections supply a built-in provider selection for `prompt_model`. They 
 | Claude | The request should use your configured Claude session. | `/claude/mcp` | `/claude/sse` |
 | Gemini | The request should use your configured Gemini session. | `/gemini/mcp` | `/gemini/sse` |
 | Grok | The request should use your configured Grok session. | `/grok/mcp` | `/grok/sse` |
+| Meta AI | The request should use your synced Meta AI session. | `/meta/mcp` | `/meta/sse` |
 
 For example, use `/claude/mcp` with `prompt_model` and `mode: "coding"` when the task specifically calls for Claude in coding mode. Provider-forced requests do not use the ordinary cross-provider fallback chain. A failed or unavailable service remains an error rather than permission to use it another way.
 

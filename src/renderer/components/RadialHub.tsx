@@ -1,4 +1,3 @@
-import { isBuiltinProvider } from '../../shared/providers.js';
 import { resolveChatMode } from '../../shared/types.js';
 import { ChatModeControl } from './ChatModeControl.js';
 import React, { useEffect, useState } from 'react';
@@ -255,7 +254,7 @@ export const RadialHub: React.FC<RadialHubProps> = ({
   const dynamicProviders = Object.values(servicesManifest?.services || {})
     .filter(
       (s) =>
-        !(isBuiltinProvider(s.id) || s.id === 'localllm') &&
+        s.id !== 'localllm' && !PROVIDERS_CONFIG.some(provider => provider.id === s.id) &&
         s.enabled !== false &&
         !s.hidden &&
         (s.providerType === 'cli' || s.providerType === 'webview' || s.providerType === 'api' || s.id.startsWith('custom_') || s.id.startsWith('webview_') || s.id.startsWith('api_'))
@@ -275,7 +274,11 @@ export const RadialHub: React.FC<RadialHubProps> = ({
       };
     });
 
-  const visibleProviders = [...baseProviders, ...dynamicProviders];
+  const visibleProviders = [
+    ...baseProviders,
+    ...dynamicProviders.filter(provider => provider.id === 'meta'),
+    ...dynamicProviders.filter(provider => provider.id !== 'meta'),
+  ];
 
   // Keep the latest completed Quick Prompt outcome, including failures, available after Hub remounts.
   const latestQuickPromptLog = logs?.find(

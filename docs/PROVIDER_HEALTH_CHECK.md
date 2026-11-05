@@ -31,7 +31,7 @@ State the evidence layer for each result: source inspection, fixture test, nativ
 
 ## 2. Model discovery and selection
 
-For ChatGPT, Claude, Gemini, Grok, and each configured integration:
+For ChatGPT, Claude, Gemini, Grok, Meta AI, and each configured integration:
 
 - Inspect the current account's model picker and official provider documentation. Record exact labels/IDs, reasoning controls, selected state, disabled choices, and plan/quota restrictions. Do not infer web model IDs from API or CLI naming.
 - Compare the live list with the manifest, registry, route settings, and MCP tool schemas. Identify retired defaults, missing models, invented availability, and stale cached discovery.

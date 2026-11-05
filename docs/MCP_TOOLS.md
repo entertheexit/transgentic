@@ -19,7 +19,7 @@ The connected server's `tools/list` response is the reference for the tools and 
 | Tool | Role |
 | :--- | :--- |
 | `prompt_model` | Send a prompt through configured routing |
-| `ask_chatgpt`, `ask_claude`, `ask_gemini`, `ask_grok` | Request a specific built-in provider |
+| `ask_chatgpt`, `ask_claude`, `ask_gemini`, `ask_grok`, `ask_meta` | Request a specific built-in web provider |
 | `generate_image` | Request image mode |
 | `generate_video` | Request video mode |
 | `edit_image` | Edit one or more attached images in Image mode |
@@ -29,6 +29,8 @@ The connected server's `tools/list` response is the reference for the tools and 
 | `get_status` | Inspect server health, provider state, limits, and model registry |
 
 Media tools request generation and attempt to save detected assets. They do not guarantee that a provider can generate the requested media or that extraction will succeed.
+
+Meta AI is the built-in WebView provider `meta`. After syncing a signed-in Meta AI session, call `ask_meta` or `prompt_model` with `provider: "meta"`; `/meta/mcp` and `/meta/sse` are also available. For example, pass `{"name":"ask_meta","arguments":{"prompt":"Describe the scene","mode":"general","chat_mode":"normal"}}` to your MCP client. Meta supports one PNG, JPEG, or WebP image reference for text, image, and video workflows. It does not advertise document or video-file inputs, multiple references, Music, or native Temporary Chat. See [Meta AI recipe](RECIPES.md#meta-ai-built-in-recipe).
 
 Use an explicit mode for media requests. Public task modes are `general`, `writing`, `coding`, `image`, `video`, and `music`. Writing keeps its prose guidance and request identity while using the General provider route and per-mode policy configuration. Music covers songs, tracks, soundtracks, beats, melodies, jingles, BGM, and instrumentals. Speech and sound generation are reserved internally for a future Audio provider. Availability is determined by the configured model catalog, active account, and adapter; this guide intentionally does not list provider model IDs as permanent capabilities.
 

@@ -106,6 +106,7 @@ it.each([
     adapter: web, webContents: { getURL: () => 'https://chatgpt.com/' },
   } as any);
   config.recall = { enabled: true, strategy: 'single-pass', autoTriggerKeywords: true };
+  config.temporaryChat!.coding = true;
   config.chatModes = { coding: { chatgpt: selection } };
   server.updateConfig(config);
   const result = await run('User prompt: preserve this text', 'coding', 'chatgpt', true, false, { profile: 'plain', sessionId: 'recall-test' });

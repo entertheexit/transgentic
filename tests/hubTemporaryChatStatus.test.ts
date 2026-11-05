@@ -30,7 +30,7 @@ describe('Hub Temporary Chat status', () => {
   it('shows declared support as unavailable while preserving an enabled mode selector', () => {
     const html = renderStatus({ supported: true, availability: 'unavailable', reason: 'Sign in required' }, true);
     expect(html).toContain('Sign in required');
-    expect(html).toContain('aria-label="Chat mode: Personalized Temporary"');
+    expect(html).toContain('aria-label="Chat mode: Unpersonalized Temporary"');
     expect(html).toContain('aria-haspopup="menu"');
     expect(html).toContain('bg-amber-400');
     expect(html).not.toMatch(/disabled=""[^>]*aria-label="Chat mode:/);
@@ -51,7 +51,7 @@ describe('Hub Temporary Chat status', () => {
 it('shows the selected text trigger while keeping declared choices in the popover', () => {
   const capability: TemporaryChatCapability = { supported: true, availability: 'unknown', variants: ['personalized', 'unpersonalized'] };
   const html = renderStatus(capability, true);
-  expect(html).toContain('aria-label="Chat mode: Personalized Temporary"');
+  expect(html).toContain('aria-label="Chat mode: Unpersonalized Temporary"');
   expect(html).toContain('aria-expanded="false"');
   expect(html).not.toContain('role="menuitemradio"');
   expect(html).not.toContain('aria-pressed=');
@@ -63,4 +63,22 @@ it('shows the selected text trigger while keeping declared choices in the popove
 it('distinguishes an active check from an idle unknown capability', () => {
   expect(renderStatus({ supported: true, availability: 'unknown', checking: true })).toContain('Checking Temporary Chat…');
   expect(renderStatus({ supported: true, availability: 'unknown', checkFailed: true })).toContain('Couldn’t verify');
+});
+
+it('shows built-in providers from the service manifest without duplicating existing cards', () => {
+  const html = renderToString(React.createElement(RadialHub, {
+    coreStatus, providers: {} as any, config: {} as any,
+    servicesManifest: { services: {
+      cli_codex: { id: 'cli_codex', name: 'Codex CLI', providerType: 'cli', enabled: true },
+      meta: { id: 'meta', name: 'Meta AI', company: 'Meta', providerType: 'webview', enabled: true },
+      chatgpt: { id: 'chatgpt', name: 'ChatGPT', providerType: 'webview', enabled: true },
+      hidden: { id: 'hidden', name: 'Hidden Service', providerType: 'webview', enabled: true, hidden: true },
+    } } as any,
+    onProviderClick: () => {}, onModeChange: () => {},
+  }));
+  expect(html).toContain('Meta AI');
+  expect(html.indexOf('>Grok<')).toBeLessThan(html.indexOf('>Meta AI<'));
+  expect(html.indexOf('>Meta AI<')).toBeLessThan(html.indexOf('>Codex CLI<'));
+  expect(html.match(/>ChatGPT</g)).toHaveLength(1);
+  expect(html).not.toContain('Hidden Service');
 });

@@ -418,6 +418,7 @@ export interface TransgenticConfig {
   recall?: RecallConfig;
   agentHaltGuard?: AgentHaltGuardConfig | boolean;
   temporaryChat?: TemporaryChatModeConfig;
+  temporaryChatModeVersion?: number;
   chatModes?: ChatModePreferences;
   localLLM?: LocalLLMConfig;
   healing?: HealingConfig;
@@ -632,16 +633,27 @@ export function validateChatMode(value: unknown, legacy?: unknown): ChatModeSele
 export function resolveChatMode(config: Pick<TransgenticConfig, 'temporaryChat' | 'chatModes'> | undefined, mode: TaskMode, provider: string,
   requested?: ChatModeSelection, legacy?: boolean, providerType?: ServiceManifestEntry['providerType'], supportsTemporary?: boolean): ChatModeSelection {
   validateChatMode(requested, legacy);
-  const selection = requested ?? (legacy === undefined ? config?.chatModes?.[normalizeRouteMode(mode)]?.[provider] : undefined);
-  if (selection) return validateChatMode(selection)!;
+  if (requested) return validateChatMode(requested)!;
+  if (legacy !== undefined) return !legacy ? 'normal' : provider === 'chatgpt' ? 'temporary-personalized' : 'temporary';
   if (legacy === undefined && (providerType === 'api' || providerType === 'cli' || isCliProvider(provider) || provider === 'localllm' || provider.startsWith('api_'))) return 'normal';
-  if (legacy === undefined && config?.temporaryChat?.[normalizeRouteMode(mode)] === undefined && normalizeRouteMode(mode) === 'coding') {
-    if (provider === 'chatgpt') return 'temporary-unpersonalized';
-    if (supportsTemporary || provider === 'claude' || provider === 'gemini') return 'temporary';
-    return 'normal';
+  if (!isTemporaryChatPreferred(config, mode)) return 'normal';
+  if (provider === 'chatgpt') {
+    const saved = config?.chatModes?.[normalizeRouteMode(mode)]?.[provider];
+    return saved === 'temporary-personalized' ? saved : 'temporary-unpersonalized';
   }
-  const enabled = legacy ?? isTemporaryChatPreferred(config, mode);
-  return !enabled ? 'normal' : provider === 'chatgpt' ? 'temporary-personalized' : 'temporary';
+  return 'temporary';
+}
+
+/** Migrate the currently routed provider's prior choice into the shared mode switch. */
+export function migrateTemporaryModeSwitches(config: TransgenticConfig): TransgenticConfig {
+  if (config.temporaryChatModeVersion === 1) return config;
+  const switches = normalizeTemporaryChatConfig(config.temporaryChat);
+  for (const mode of TASK_MODES) {
+    const provider = config.routes?.main?.[mode]?.defaultService || config.routes?.main?.[mode]?.primary;
+    const selection = provider && config.chatModes?.[mode]?.[provider];
+    if (selection) switches[mode] = selection !== 'normal';
+  }
+  return { ...config, temporaryChat: switches, temporaryChatModeVersion: 1 };
 }
 
 /** Normalize saved preferences and migrate the historical ChatGPT boolean once. */

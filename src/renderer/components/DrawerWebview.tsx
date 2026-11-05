@@ -1,3 +1,4 @@
+import { PopoverSelect } from './PopoverSelect.js';
 import { isBuiltinProvider } from '../../shared/providers.js';
 import React, { useRef, useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -803,7 +804,7 @@ Respond ONLY with valid JSON.`;
                   <div className="flex items-center gap-2 pt-1">
                     {recipeHistory.length > 0 && (
                       <div className="flex-1 flex items-center gap-1.5">
-                        <select
+                        <PopoverSelect
                           disabled={isRollbacking}
                           onChange={(e) => {
                             if (e.target.value) {
@@ -822,7 +823,7 @@ Respond ONLY with valid JSON.`;
                               Rollback to v{h.version} ({new Date(h.timestamp).toLocaleTimeString()})
                             </option>
                           ))}
-                        </select>
+                        </PopoverSelect>
                       </div>
                     )}
 

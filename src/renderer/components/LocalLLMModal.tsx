@@ -1,3 +1,4 @@
+import { PopoverSelect } from './PopoverSelect.js';
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { LocalLLMConfig, type AttachmentKind } from '../../shared/types.js';
@@ -731,7 +732,7 @@ export const LocalLLMModal: React.FC<LocalLLMModalProps> = ({
 
             {availableModels.length > 0 ? (
               <div className="space-y-1">
-                <select
+                <PopoverSelect
                   value={selectedModel}
                   onChange={(e) => handleModelChange(e.target.value)}
                   className="w-full bg-black/60 border border-blue-500/30 rounded-xl px-3 py-2 text-xs text-blue-300 font-mono focus:outline-none focus:border-blue-500"
@@ -741,7 +742,7 @@ export const LocalLLMModal: React.FC<LocalLLMModalProps> = ({
                       {m}
                     </option>
                   ))}
-                </select>
+                </PopoverSelect>
                 <span className="text-[9px] font-mono text-emerald-400 block px-1">
                   ✓ Found {availableModels.length} models from local runtime
                 </span>
