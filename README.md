@@ -92,6 +92,8 @@ Open the desktop package and follow its installation or launch steps. The deskto
 
 **For web providers:** download and extract the Chrome extension ZIP from the same release as your desktop build. In Chrome, open `chrome://extensions`, enable **Developer mode**, choose **Load unpacked**, and select the extracted directory containing `manifest.json`. The extension is not needed for local-model-only use.
 
+The current source includes Meta AI as a built-in WebView provider (`meta`), alongside ChatGPT, Claude, Gemini, and Grok. Meta AI requires a signed-in session synced with a compatible Transgentic Sync extension. Use `ask_meta`, the `/meta/mcp` or `/meta/sse` endpoints, `transgentic/provider/meta` for text completions, or `provider: "meta"` for media jobs. See the [Meta AI recipe](docs/RECIPES.md#meta-ai-built-in-recipe) for supported media and attachment limits. The release links above describe the published version; check its release notes for included providers.
+
 Downloads are supplied under [LICENSE](LICENSE). For source changes, custom builds, or contributor testing, use the separate [custom development and build guide](docs/DEVELOPMENT.md#source-setup).
 
 ### 2. Configure a provider

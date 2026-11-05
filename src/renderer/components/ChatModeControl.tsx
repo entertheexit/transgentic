@@ -1,7 +1,8 @@
 import React, { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Check, ChevronDown, RefreshCw } from 'lucide-react';
-import { resolveChatMode, type ChatModeSelection, type ProviderStatus, type RouteMode, type TransgenticConfig } from '../../shared/types.js';
+import { normalizeTemporaryChatConfig, resolveChatMode, type ChatModeSelection, type ProviderStatus, type RouteMode, type TransgenticConfig } from '../../shared/types.js';
+import { selectMenuPosition } from './PopoverSelect.js';
 import { isCliProvider } from '../../shared/cli.js';
 
 const chatModeLabels: Record<ChatModeSelection, string> = {
@@ -41,7 +42,7 @@ export function ChatModeControl({ config, mode, provider, capability, providerTy
   const [saving, setSaving] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
-  const [position, setPosition] = useState({ left: 0, top: 0 });
+  const [position, setPosition] = useState({ left: 0, top: 0, width: 0, maxHeight: 0 });
   const trigger = useRef<HTMLButtonElement>(null);
   const statusDot = useRef<HTMLSpanElement>(null);
   const tooltip = useRef<HTMLDivElement>(null);
@@ -90,7 +91,12 @@ export function ChatModeControl({ config, mode, provider, capability, providerTy
     if (!open || !trigger.current || !menu.current) return;
     const place = () => {
       if (!trigger.current || !menu.current) return;
-      setPosition(floatingPosition(trigger.current, menu.current));
+      const rect = trigger.current.getBoundingClientRect();
+      if (rect.bottom <= 0 || rect.top >= window.innerHeight) { setOpen(false); return; }
+      menu.current.style.width = 'max-content';
+      const width = Math.min(Math.max(rect.width, menu.current.getBoundingClientRect().width), window.innerWidth - 16);
+      menu.current.style.width = `${width}px`;
+      setPosition(selectMenuPosition({ ...rect.toJSON(), width }, menu.current.scrollHeight, window.innerWidth, window.innerHeight));
     };
     place();
     const initial = menu.current.querySelector<HTMLButtonElement>('[aria-checked="true"]')
@@ -100,7 +106,7 @@ export function ChatModeControl({ config, mode, provider, capability, providerTy
       if (!trigger.current?.contains(event.target as Node) && !menu.current?.contains(event.target as Node)) setOpen(false);
     };
     const onScroll = (event: Event) => {
-      if (!menu.current?.contains(event.target as Node)) setOpen(false);
+      if (!menu.current?.contains(event.target as Node)) place();
     };
     document.addEventListener('pointerdown', dismiss);
     window.addEventListener('resize', place);
@@ -120,7 +126,8 @@ export function ChatModeControl({ config, mode, provider, capability, providerTy
     setError('');
     try {
       await window.transgenticApi.updateConfig({
-        chatModes: { ...config.chatModes, [mode]: { ...config.chatModes?.[mode], [provider]: value } },
+        temporaryChat: { ...normalizeTemporaryChatConfig(config.temporaryChat), [mode]: value !== 'normal' },
+        ...(value !== 'normal' ? { chatModes: { ...config.chatModes, [mode]: { ...config.chatModes?.[mode], [provider]: value } } } : {}),
       });
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'Could not save chat mode.'); }
     finally { setSaving(false); }

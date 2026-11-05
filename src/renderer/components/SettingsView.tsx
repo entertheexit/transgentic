@@ -1,5 +1,5 @@
+import { PopoverSelect } from './PopoverSelect.js';
 import { BUILTIN_PROVIDER_IDS, isBuiltinProvider } from '../../shared/providers.js';
-import { ChatModeControl } from './ChatModeControl.js';
 import { CliServicesSettings, setCachedCliState } from './CliServicesSettings.js';
 import { loadCliState } from '../utils/cliStateLoader.js';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -12,7 +12,7 @@ import {
   TransgenticConfig,
   ServicesManifest,
   RouteMode,
-  DEFAULT_TEMPORARY_CHAT,
+  isTemporaryChatPreferred,
   TaskMode,
   AttachmentKind,
 } from '../../shared/types.js';
@@ -221,7 +221,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         if (Array.isArray(recipes)) {
           setInstalledCustomRecipes(recipes);
         }
-      }).catch(() => {});
+      }).catch(() => { });
     }
   }, [servicesManifest]);
   const [expandedServiceModels, setExpandedServiceModels] = useState<Record<string, boolean>>({});
@@ -247,12 +247,12 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const isBalancedMode = config.balancedMode ?? config.coding?.balancedMode ?? true;
 
   React.useEffect(() => {
-    try { window.localStorage.setItem('transgentic.providerUi', JSON.stringify({ category: providerCategory, selections: selectedProviders })); } catch {}
+    try { window.localStorage.setItem('transgentic.providerUi', JSON.stringify({ category: providerCategory, selections: selectedProviders })); } catch { }
   }, [providerCategory, selectedProviders]);
 
   React.useEffect(() => {
     if (window.transgenticApi?.getCliState) {
-      void loadCliState(window.transgenticApi).then(setCachedCliState).catch(() => {});
+      void loadCliState(window.transgenticApi).then(setCachedCliState).catch(() => { });
     }
   }, []);
 
@@ -276,7 +276,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     void window.transgenticApi?.getNetworkInterfaces?.().then((items: Array<{ name: string; address: string }>) => {
       setNetworkInterfaces(items || []);
       if (!lanAddress && items?.[0]) setLanAddress(items[0].address);
-    }).catch(() => {});
+    }).catch(() => { });
   }, []);
 
   React.useEffect(() => {
@@ -455,7 +455,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         if (api?.getRecipes) {
           void api.getRecipes().then((recipes: any[]) => {
             if (Array.isArray(recipes)) setInstalledCustomRecipes(recipes);
-          }).catch(() => {});
+          }).catch(() => { });
         }
         setTimeout(() => {
           setShowWebviewForm(false);
@@ -929,8 +929,8 @@ http_headers = { "Authorization" = "Bearer ${clientToken || 'YOUR_TOKEN'}" }`;
               setActiveTab('general');
             }}
             className={`relative z-10 px-2.5 py-1 rounded-md text-[10px] font-semibold flex items-center gap-1 transition-colors cursor-pointer select-none ${activeTab === 'general'
-                ? 'text-cyan-300'
-                : 'text-slate-400 hover:text-slate-200'
+              ? 'text-cyan-300'
+              : 'text-slate-400 hover:text-slate-200'
               }`}
           >
             {activeTab === 'general' && (
@@ -952,8 +952,8 @@ http_headers = { "Authorization" = "Bearer ${clientToken || 'YOUR_TOKEN'}" }`;
               setActiveTab('models');
             }}
             className={`relative z-10 px-2.5 py-1 rounded-md text-[10px] font-semibold flex items-center gap-1 transition-colors cursor-pointer select-none ${activeTab === 'models'
-                ? 'text-cyan-300'
-                : 'text-slate-400 hover:text-slate-200'
+              ? 'text-cyan-300'
+              : 'text-slate-400 hover:text-slate-200'
               }`}
           >
             {activeTab === 'models' && (
@@ -1125,7 +1125,8 @@ http_headers = { "Authorization" = "Bearer ${clientToken || 'YOUR_TOKEN'}" }`;
                   </span>
                 </label>
               </div>
-              <div className="grid grid-cols-1 gap-2 pt-1 sm:grid-cols-2">
+              {/* Do not ever change grid */}
+              <div className="grid grid-cols-5 gap-2 pt-1">
                 {[
                   { mode: 'general' as RouteMode, label: 'General', icon: Sparkles },
                   { mode: 'coding' as RouteMode, label: 'Coding', icon: Code2 },
@@ -1144,11 +1145,10 @@ http_headers = { "Authorization" = "Bearer ${clientToken || 'YOUR_TOKEN'}" }`;
                         soundFx.playClick();
                         if (onToggleDoubleAgentMode) onToggleDoubleAgentMode(mode, !isModeActive);
                       }}
-                      className={`flex flex-col items-center justify-center p-2 rounded-xl border transition-all cursor-pointer ${
-                        isModeActive
-                          ? 'bg-amber-500/20 border-amber-500/50 text-amber-300 shadow-[0_0_10px_rgba(245,158,11,0.2)]'
-                          : 'bg-black/30 border-white/5 text-slate-400 hover:text-slate-200 hover:border-white/10'
-                      }`}
+                      className={`flex flex-col items-center justify-center p-2 rounded-xl border transition-all cursor-pointer ${isModeActive
+                        ? 'bg-amber-500/20 border-amber-500/50 text-amber-300 shadow-[0_0_10px_rgba(245,158,11,0.2)]'
+                        : 'bg-black/30 border-white/5 text-slate-400 hover:text-slate-200 hover:border-white/10'
+                        }`}
                       title={`Toggle Double Agent for ${label} mode`}
                     >
                       <Icon className={`w-3.5 h-3.5 mb-1 ${isModeActive ? 'text-amber-400' : 'text-slate-500'}`} />
@@ -1189,24 +1189,32 @@ http_headers = { "Authorization" = "Bearer ${clientToken || 'YOUR_TOKEN'}" }`;
               <div className="p-2 rounded-xl bg-indigo-500/10 border border-indigo-500/30 text-indigo-300"><Shield className="w-4 h-4" /></div>
               <div>
                 <span className="text-xs font-bold text-slate-100 uppercase tracking-wide">Temporary Chat</span>
-                <p className="text-[10px] text-slate-400">Applies to new conversations in each mode. Selections are saved per mode and provider. Personalized and Unpersonalized control provider memory, plugins, and custom instructions; Transgentic Recall follows its existing settings. Transgentic saves conversation logs locally, and generated files save to your Library.</p>
+                <p className="text-[10px] text-slate-400">Applies to new conversations in each mode. Home and Settings share these switches. ChatGPT remembers its selected personalization; other providers use their native Temporary mode. Local logs and Library files follow their existing settings.</p>
               </div>
             </div>
-            <div className="grid grid-cols-1 gap-2 pt-1 sm:grid-cols-2">
-              {([
-                { mode: 'general' as RouteMode, label: 'General', icon: Sparkles },
-                { mode: 'coding' as RouteMode, label: 'Coding', icon: Code2 },
-                { mode: 'image' as RouteMode, label: 'Image', icon: ImageIcon },
-                { mode: 'video' as RouteMode, label: 'Video', icon: Video },
-                { mode: 'music' as RouteMode, label: 'Music', icon: Music },
-              ]).map(({ mode, label, icon: Icon }) => {
-                const provider = config.routes?.main?.[mode]?.defaultService || selectedProvider;
-                return <div key={mode} className="min-w-0 rounded-xl border border-white/10 p-2">
-                  <span className="text-xs text-slate-300">{label}</span>
-                  <ChatModeControl config={config} mode={mode} provider={provider}
-                    capability={providers[provider]?.temporaryChat} providerType={servicesManifest?.services?.[provider]?.providerType} />
-                </div>;
-              })}
+            <div className="rounded-xl border border-white/5 bg-black/30 p-2.5">
+              <div className="grid grid-cols-5 gap-2">
+                {([
+                  { mode: 'general' as RouteMode, label: 'General', icon: Sparkles },
+                  { mode: 'coding' as RouteMode, label: 'Coding', icon: Code2 },
+                  { mode: 'image' as RouteMode, label: 'Image', icon: ImageIcon },
+                  { mode: 'video' as RouteMode, label: 'Video', icon: Video },
+                  { mode: 'music' as RouteMode, label: 'Music', icon: Music },
+                ]).map(({ mode, label, icon: Icon }) => {
+                  const active = isTemporaryChatPreferred(config, mode);
+                  return <button key={mode} type="button" aria-pressed={active}
+                    title={`Toggle Temporary Chat for ${label}`}
+                    onClick={() => {
+                      soundFx.playClick();
+                      void onToggleTemporaryChatMode?.(mode, !active);
+                    }}
+                    className={`flex min-w-0 flex-col items-center justify-center rounded-xl border p-2 transition-all disabled:cursor-not-allowed disabled:opacity-50 ${active ? 'border-indigo-400/50 bg-indigo-500/20 text-indigo-300 shadow-[0_0_10px_rgba(129,140,248,0.2)]' : 'border-white/5 bg-black/30 text-slate-400 hover:border-white/10 hover:text-slate-200'}`}>
+                    <Icon className={`mb-1 h-3.5 w-3.5 ${active ? 'text-indigo-300' : 'text-slate-500'}`} />
+                    <span className="text-[10px] font-mono font-semibold">{label}</span>
+                    <span className={`mt-0.5 text-[8.5px] font-mono ${active ? 'font-bold text-indigo-300' : 'text-slate-500'}`}>{active ? 'ON' : 'OFF'}</span>
+                  </button>;
+                })}
+              </div>
             </div>
           </div>
 
@@ -1232,8 +1240,8 @@ http_headers = { "Authorization" = "Bearer ${clientToken || 'YOUR_TOKEN'}" }`;
                 <span>Limit Agent</span>
               </div>
             </div>
-
-            <div className="grid grid-cols-1 gap-2 pt-1 sm:grid-cols-2">
+            {/* Do not ever change grid */}
+            <div className="grid grid-cols-5 gap-2 pt-1">
               {[
                 { mode: 'general' as RouteMode, label: 'General', icon: Sparkles },
                 { mode: 'coding' as RouteMode, label: 'Coding', icon: Code2 },
@@ -1252,8 +1260,8 @@ http_headers = { "Authorization" = "Bearer ${clientToken || 'YOUR_TOKEN'}" }`;
                       if (onToggleAgentGuard) onToggleAgentGuard(mode, !isGuardActive);
                     }}
                     className={`flex flex-col items-center justify-center p-2 rounded-xl border transition-all cursor-pointer ${isGuardActive
-                        ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-300 shadow-[0_0_10px_rgba(16,185,129,0.2)]'
-                        : 'bg-black/30 border-white/5 text-slate-400 hover:text-slate-200 hover:border-white/10'
+                      ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-300 shadow-[0_0_10px_rgba(16,185,129,0.2)]'
+                      : 'bg-black/30 border-white/5 text-slate-400 hover:text-slate-200 hover:border-white/10'
                       }`}
                     title={`Toggle Agent Guard for ${label} mode`}
                   >
@@ -1319,8 +1327,8 @@ http_headers = { "Authorization" = "Bearer ${clientToken || 'YOUR_TOKEN'}" }`;
                       handleUpdateRecallStrategy('single-pass');
                     }}
                     className={`py-1 rounded-md text-[9.5px] font-mono font-semibold transition-all cursor-pointer ${(config.recall?.strategy ?? 'single-pass') === 'single-pass'
-                        ? 'bg-purple-500/20 text-purple-300 border border-purple-500/40 shadow-[0_0_8px_rgba(168,85,247,0.2)]'
-                        : 'text-slate-400 hover:text-slate-200'
+                      ? 'bg-purple-500/20 text-purple-300 border border-purple-500/40 shadow-[0_0_8px_rgba(168,85,247,0.2)]'
+                      : 'text-slate-400 hover:text-slate-200'
                       }`}
                   >
                     Single-Pass
@@ -1331,8 +1339,8 @@ http_headers = { "Authorization" = "Bearer ${clientToken || 'YOUR_TOKEN'}" }`;
                       handleUpdateRecallStrategy('two-stage');
                     }}
                     className={`py-1 rounded-md text-[9.5px] font-mono font-semibold transition-all cursor-pointer ${config.recall?.strategy === 'two-stage'
-                        ? 'bg-purple-500/20 text-purple-300 border border-purple-500/40 shadow-[0_0_8px_rgba(168,85,247,0.2)]'
-                        : 'text-slate-400 hover:text-slate-200'
+                      ? 'bg-purple-500/20 text-purple-300 border border-purple-500/40 shadow-[0_0_8px_rgba(168,85,247,0.2)]'
+                      : 'text-slate-400 hover:text-slate-200'
                       }`}
                   >
                     Two-Stage
@@ -1350,11 +1358,12 @@ http_headers = { "Authorization" = "Bearer ${clientToken || 'YOUR_TOKEN'}" }`;
                 <label className="text-[10px] font-mono uppercase tracking-wider text-slate-300 flex items-center justify-between">
                   <span>Auto Context Triggers:</span>
                 </label>
-                <div className="flex items-center justify-between pt-1">
-                  <span className="text-[11px] text-slate-300 font-sans">Automatic keywords detection</span>
-                  <label className="cursor-pointer select-none">
+                <div className="flex min-w-0 items-center justify-between gap-2 pt-1">
+                  <span className="min-w-0 text-[11px] text-slate-300 font-sans">Automatic keywords detection</span>
+                  <label className="inline-flex shrink-0 cursor-pointer select-none">
                     <input
                       type="checkbox"
+                      aria-label="Automatic keywords detection"
                       checked={config.recall?.autoTriggerKeywords ?? true}
                       onChange={(e) => {
                         soundFx.playClick();
@@ -1362,7 +1371,7 @@ http_headers = { "Authorization" = "Bearer ${clientToken || 'YOUR_TOKEN'}" }`;
                       }}
                       className="sr-only peer"
                     />
-                    <span className="relative h-5 w-9 rounded-full border border-white/10 bg-slate-700/80 shadow-inner transition-colors peer-checked:border-purple-400/40 peer-checked:bg-purple-500 after:absolute after:left-[2px] after:top-[2px] after:h-3.5 after:w-3.5 after:rounded-full after:bg-slate-300 after:shadow after:transition-transform peer-checked:after:translate-x-4 peer-checked:after:bg-white" />
+                    <span className="relative inline-block h-5 w-9 shrink-0 rounded-full border border-white/10 bg-slate-700/80 shadow-inner transition-colors peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-purple-400 peer-checked:border-purple-400/40 peer-checked:bg-purple-500 after:absolute after:left-[2px] after:top-[2px] after:h-3.5 after:w-3.5 after:rounded-full after:bg-slate-300 after:shadow after:transition-transform peer-checked:after:translate-x-4 peer-checked:after:bg-white" />
                   </label>
                 </div>
                 <p className="text-[9px] text-slate-500 font-sans">
@@ -1400,7 +1409,8 @@ http_headers = { "Authorization" = "Bearer ${clientToken || 'YOUR_TOKEN'}" }`;
                 </span>
               </div>
 
-              <div className="grid grid-cols-1 gap-2 pt-1 sm:grid-cols-2">
+              {/* Do not ever change grid */}
+              <div className="grid grid-cols-5 gap-2 pt-1">
                 {[
                   { mode: 'general' as RouteMode, label: 'General', icon: Sparkles },
                   { mode: 'coding' as RouteMode, label: 'Coding', icon: Code2 },
@@ -1420,10 +1430,10 @@ http_headers = { "Authorization" = "Bearer ${clientToken || 'YOUR_TOKEN'}" }`;
                       }}
                       disabled={!isMasterEnabled}
                       className={`flex flex-col items-center justify-center p-2 rounded-xl border transition-all cursor-pointer ${!isMasterEnabled
-                          ? 'opacity-40 border-white/5 bg-white/[0.02] text-slate-500 cursor-not-allowed'
-                          : isEffective
-                            ? 'bg-purple-500/20 border-purple-500/50 text-purple-300 shadow-[0_0_10px_rgba(168,85,247,0.2)]'
-                            : 'bg-black/30 border-white/5 text-slate-400 hover:text-slate-200 hover:border-white/10'
+                        ? 'opacity-40 border-white/5 bg-white/[0.02] text-slate-500 cursor-not-allowed'
+                        : isEffective
+                          ? 'bg-purple-500/20 border-purple-500/50 text-purple-300 shadow-[0_0_10px_rgba(168,85,247,0.2)]'
+                          : 'bg-black/30 border-white/5 text-slate-400 hover:text-slate-200 hover:border-white/10'
                         }`}
                       title={`Toggle Recall for ${label} mode (${isEffective ? 'Active' : 'Disabled'})`}
                     >
@@ -1745,8 +1755,8 @@ http_headers = { "Authorization" = "Bearer ${clientToken || 'YOUR_TOKEN'}" }`;
                             onClick={() => handleAuditProvider(pId)}
                             disabled={isAuditing || isHealing}
                             className={`px-2.5 py-1 rounded-lg text-[10px] font-mono transition-colors ${isAuditing
-                                ? 'bg-white/10 text-slate-400 cursor-wait'
-                                : 'bg-white/5 hover:bg-orange-500/10 text-slate-300 hover:text-orange-200 border border-white/10 hover:border-orange-500/30 cursor-pointer'
+                              ? 'bg-white/10 text-slate-400 cursor-wait'
+                              : 'bg-white/5 hover:bg-orange-500/10 text-slate-300 hover:text-orange-200 border border-white/10 hover:border-orange-500/30 cursor-pointer'
                               }`}
                           >
                             {isAuditing ? 'Checking...' : 'Check'}
@@ -1756,10 +1766,10 @@ http_headers = { "Authorization" = "Bearer ${clientToken || 'YOUR_TOKEN'}" }`;
                             disabled={isAuditing || isHealing || !config.localLLM?.enabled}
                             title={!config.localLLM?.enabled ? 'Local LLM is disabled. Enable Local LLM in Hub to repair DOM landmarks.' : undefined}
                             className={`px-2.5 py-1 rounded-lg text-[10px] font-mono font-semibold transition-all ${!config.localLLM?.enabled
-                                ? 'bg-white/5 text-slate-500 border border-white/5 cursor-not-allowed'
-                                : isHealing
-                                  ? 'bg-orange-500/20 text-orange-300 cursor-wait'
-                                  : 'bg-orange-500/20 hover:bg-orange-500/30 text-orange-300 border border-orange-500/40 shadow-[0_0_8px_rgba(249,115,22,0.25)] cursor-pointer'
+                              ? 'bg-white/5 text-slate-500 border border-white/5 cursor-not-allowed'
+                              : isHealing
+                                ? 'bg-orange-500/20 text-orange-300 cursor-wait'
+                                : 'bg-orange-500/20 hover:bg-orange-500/30 text-orange-300 border border-orange-500/40 shadow-[0_0_8px_rgba(249,115,22,0.25)] cursor-pointer'
                               }`}
                           >
                             {isHealing ? 'Healing...' : 'Heal'}
@@ -1895,7 +1905,7 @@ http_headers = { "Authorization" = "Bearer ${clientToken || 'YOUR_TOKEN'}" }`;
             )}
             <div className="space-y-2 border-t border-white/[0.06] pt-3">
               <label className={`flex items-center justify-between rounded-xl border border-white/[0.07] bg-black/25 px-3 py-2.5 ${isApplyingNetwork ? 'cursor-wait opacity-65' : 'cursor-pointer'}`}><div><div className="text-[10.5px] font-semibold text-slate-200">Share on local network</div><div className="text-[9.5px] text-slate-500">Changes apply immediately. Remote clients must use the access token.</div></div><input type="checkbox" className="sr-only peer" checked={lanEnabled} disabled={isApplyingNetwork} onChange={event => void handleNetworkToggle(event.target.checked)} /><span className="relative h-5 w-9 rounded-full border border-white/10 bg-slate-800 shadow-inner transition-colors peer-checked:border-cyan-400/40 peer-checked:bg-cyan-500/70 after:absolute after:left-[2px] after:top-[2px] after:h-3.5 after:w-3.5 after:rounded-full after:bg-slate-300 after:shadow after:transition-transform peer-checked:after:translate-x-4 peer-checked:after:bg-white" /></label>
-              {lanEnabled && <select value={lanAddress} disabled={isApplyingNetwork} onChange={event => void handleNetworkAddressChange(event.target.value)} className="w-full rounded-xl border border-cyan-500/20 bg-black/40 px-3 py-2 text-[10.5px] font-mono text-cyan-200 outline-none focus:border-cyan-500/50 disabled:cursor-wait disabled:opacity-60">{networkInterfaces.map(item => <option key={`${item.name}-${item.address}`} value={item.address}>{item.name} · {item.address}</option>)}</select>}
+              {lanEnabled && <PopoverSelect value={lanAddress} disabled={isApplyingNetwork} onChange={event => void handleNetworkAddressChange(event.target.value)} className="w-full rounded-xl border border-cyan-500/20 bg-black/40 px-3 py-2 text-[10.5px] font-mono text-cyan-200 outline-none focus:border-cyan-500/50 disabled:cursor-wait disabled:opacity-60">{networkInterfaces.map(item => <option key={`${item.name}-${item.address}`} value={item.address}>{item.name} · {item.address}</option>)}</PopoverSelect>}
               <div className="rounded-xl border border-white/[0.06] bg-black/25 px-3 py-2 font-mono text-[9.5px] text-slate-400">Completion: http://{gatewayHost}:{currentPort}/v1<br />MCP: http://{gatewayHost}:{currentPort}/mcp<br />SSE: http://{gatewayHost}:{currentPort}/sse</div>
               {networkStatus && <div className="rounded-lg border border-cyan-500/15 bg-cyan-500/[0.06] px-2.5 py-1.5 text-[9.5px] font-mono text-cyan-300">{networkStatus}</div>}
             </div>
@@ -2087,8 +2097,8 @@ http_headers = { "Authorization" = "Bearer ${clientToken || 'YOUR_TOKEN'}" }`;
                     setSelectedPlatform(p);
                   }}
                   className={`py-1 rounded-lg text-[9.5px] font-semibold uppercase tracking-wider transition-all cursor-pointer ${selectedPlatform === p
-                      ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40'
-                      : 'text-slate-400 hover:text-slate-200'
+                    ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40'
+                    : 'text-slate-400 hover:text-slate-200'
                     }`}
                 >
                   {p === 'claude_desktop' ? 'Claude' : p === 'cli_stdio' ? 'CLI Stdio' : p.toUpperCase()}
@@ -2688,15 +2698,14 @@ http_headers = { "Authorization" = "Bearer ${clientToken || 'YOUR_TOKEN'}" }`;
                     setSelectedProvider(pid);
                     setSelectedProviders(previous => ({ ...previous, [providerCategory]: pid }));
                   }}
-                  className={`relative flex min-w-0 items-center justify-center gap-1.5 overflow-hidden rounded-lg px-2 py-1.5 text-[10px] font-semibold uppercase tracking-wider transition-all cursor-pointer select-none ${
-                    isSelected
-                      ? isDevDisabled
-                        ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40 shadow-[0_0_12px_rgba(244,63,94,0.25)]'
-                        : 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-[0_0_12px_rgba(6,182,212,0.25)]'
-                      : isDevDisabled
-                        ? 'text-rose-400/80 hover:text-rose-300 hover:bg-rose-500/10 border border-transparent'
-                        : 'text-slate-400 hover:text-slate-200 border border-transparent'
-                  }`}
+                  className={`relative flex min-w-0 items-center justify-center gap-1.5 overflow-hidden rounded-lg px-2 py-1.5 text-[10px] font-semibold uppercase tracking-wider transition-all cursor-pointer select-none ${isSelected
+                    ? isDevDisabled
+                      ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40 shadow-[0_0_12px_rgba(244,63,94,0.25)]'
+                      : 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-[0_0_12px_rgba(6,182,212,0.25)]'
+                    : isDevDisabled
+                      ? 'text-rose-400/80 hover:text-rose-300 hover:bg-rose-500/10 border border-transparent'
+                      : 'text-slate-400 hover:text-slate-200 border border-transparent'
+                    }`}
                 >
                   {providerCategory === 'webview' && getProviderIcon(pid)}
                   <span className={`${isCliProvider ? 'w-full text-center' : 'min-w-0'} truncate`} title={getProviderLabel(pid)}>{getProviderLabel(pid)}</span>
@@ -2713,9 +2722,8 @@ http_headers = { "Authorization" = "Bearer ${clientToken || 'YOUR_TOKEN'}" }`;
                       <button
                         key={category}
                         onClick={() => switchCategory(category)}
-                        className={`relative z-10 flex items-center justify-center gap-1.5 rounded-lg px-2 py-2 text-[10px] font-semibold uppercase tracking-wider transition-colors duration-200 cursor-pointer select-none ${
-                          isSelected ? 'text-cyan-200' : 'text-slate-500 hover:text-slate-300'
-                        }`}
+                        className={`relative z-10 flex items-center justify-center gap-1.5 rounded-lg px-2 py-2 text-[10px] font-semibold uppercase tracking-wider transition-colors duration-200 cursor-pointer select-none ${isSelected ? 'text-cyan-200' : 'text-slate-500 hover:text-slate-300'
+                          }`}
                       >
                         {isSelected && (
                           <motion.div
@@ -2742,1104 +2750,1102 @@ http_headers = { "Authorization" = "Bearer ${clientToken || 'YOUR_TOKEN'}" }`;
 
           {/* VIEW A: MORE PROVIDERS PAGE */}
           <div key={`${providerCategory}-${showExperimentalPage ? 'manage' : 'details'}`} className="provider-panel-enter">
-          {showExperimentalPage ? (
-            <div className="tactile-core-card p-4 rounded-2xl space-y-4 animate-in fade-in zoom-in-95 duration-200">
-              {/* Header */}
-              <div className="flex items-center justify-between pb-3 border-b border-white/10">
-                <div className="flex items-center gap-2.5">
-                  <button
-                    onClick={() => {
-                      soundFx.playClick();
-                      setShowExperimentalPage(false);
-                    }}
-                    className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-400 hover:text-slate-200 transition-colors cursor-pointer"
-                    title="Back to Providers"
-                  >
-                    <ArrowLeft className="w-4 h-4" />
-                  </button>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <h3 className="text-xs font-bold text-slate-100 uppercase tracking-wide">
-                        Manage Providers
-                      </h3>
-                    </div>
-                    <p className="text-[10.5px] text-slate-400 mt-0.5">
-                      {providerCategory === 'api' ? 'Add, edit, or remove OpenAI-compatible API services.' : 'Add and maintain Custom Recipe webview services.'}
-                    </p>
-                  </div>
-                </div>
-
-                <span className={`rounded-lg border px-2.5 py-1 text-[9px] font-mono uppercase tracking-wider ${providerCategory === 'api' ? 'border-cyan-500/25 bg-cyan-500/10 text-cyan-300' : 'border-teal-500/25 bg-teal-500/10 text-teal-300'}`}>{providerCategory}</span>
-              </div>
-
-              {/* TAB 1: API PROVIDERS */}
-              {moreProvidersTab === 'api' && (
-                <div className="space-y-4">
-                  {/* Top Bar */}
-                  <div className="flex items-center justify-between">
+            {showExperimentalPage ? (
+              <div className="tactile-core-card p-4 rounded-2xl space-y-4 animate-in fade-in zoom-in-95 duration-200">
+                {/* Header */}
+                <div className="flex items-center justify-between pb-3 border-b border-white/10">
+                  <div className="flex items-center gap-2.5">
+                    <button
+                      onClick={() => {
+                        soundFx.playClick();
+                        setShowExperimentalPage(false);
+                      }}
+                      className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-400 hover:text-slate-200 transition-colors cursor-pointer"
+                      title="Back to Providers"
+                    >
+                      <ArrowLeft className="w-4 h-4" />
+                    </button>
                     <div>
-                      <h4 className="text-xs font-semibold text-slate-200">
-                        Custom API Providers ({(Object.values(servicesManifest?.services || {}).filter((s) => s.providerType === 'api' || s.id.startsWith('api_'))).length})
-                      </h4>
-                      <p className="text-[10.5px] text-slate-400">
-                        Integrate external OpenAI-compatible endpoints with Transgentic tools & routing.
+                      <div className="flex items-center gap-2">
+                        <h3 className="text-xs font-bold text-slate-100 uppercase tracking-wide">
+                          Manage Providers
+                        </h3>
+                      </div>
+                      <p className="text-[10.5px] text-slate-400 mt-0.5">
+                        {providerCategory === 'api' ? 'Add, edit, or remove OpenAI-compatible API services.' : 'Add and maintain Custom Recipe webview services.'}
                       </p>
                     </div>
-                    {!showApiForm && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          soundFx.playClick();
-                          setEditingApiId(null);
-                          setApiFormName('');
-                          setApiFormBaseUrl('');
-                          setApiFormApiKey('');
-                          setApiFormModel('');
-                          setApiFormAttachmentKinds([]);
-                          setApiFormError(null);
-                          setShowApiForm(true);
-                        }}
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-500/40 text-xs font-semibold transition-all cursor-pointer"
-                      >
-                        <Plus className="w-3.5 h-3.5" />
-                        <span>Add API Provider</span>
-                      </button>
-                    )}
                   </div>
 
-                  {/* Add / Edit Form Card */}
-                  {showApiForm && (
-                    <form onSubmit={handleSaveApiProvider} className="p-4 rounded-xl bg-black/40 border border-cyan-500/30 space-y-3.5 animate-in fade-in duration-150">
-                      <div className="flex items-center justify-between pb-2 border-b border-white/5">
-                        <div className="flex items-center gap-2">
-                          <div className="p-1.5 rounded-lg bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 shadow-[0_0_10px_rgba(6,182,212,0.15)]">
-                            <Braces className="w-3.5 h-3.5" />
-                          </div>
-                          <span className="text-xs font-bold text-cyan-300 uppercase tracking-wide">
-                            {editingApiId ? 'Edit API Provider' : 'Add API Provider'}
-                          </span>
-                        </div>
+                  <span className={`rounded-lg border px-2.5 py-1 text-[9px] font-mono uppercase tracking-wider ${providerCategory === 'api' ? 'border-cyan-500/25 bg-cyan-500/10 text-cyan-300' : 'border-teal-500/25 bg-teal-500/10 text-teal-300'}`}>{providerCategory}</span>
+                </div>
+
+                {/* TAB 1: API PROVIDERS */}
+                {moreProvidersTab === 'api' && (
+                  <div className="space-y-4">
+                    {/* Top Bar */}
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h4 className="text-xs font-semibold text-slate-200">
+                          Custom API Providers ({(Object.values(servicesManifest?.services || {}).filter((s) => s.providerType === 'api' || s.id.startsWith('api_'))).length})
+                        </h4>
+                        <p className="text-[10.5px] text-slate-400">
+                          Integrate external OpenAI-compatible endpoints with Transgentic tools & routing.
+                        </p>
+                      </div>
+                      {!showApiForm && (
                         <button
                           type="button"
                           onClick={() => {
                             soundFx.playClick();
-                            setShowApiForm(false);
                             setEditingApiId(null);
+                            setApiFormName('');
+                            setApiFormBaseUrl('');
+                            setApiFormApiKey('');
+                            setApiFormModel('');
+                            setApiFormAttachmentKinds([]);
+                            setApiFormError(null);
+                            setShowApiForm(true);
                           }}
-                          className="p-1 rounded text-slate-400 hover:text-slate-200 cursor-pointer"
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-500/40 text-xs font-semibold transition-all cursor-pointer"
                         >
-                          <X className="w-4 h-4" />
+                          <Plus className="w-3.5 h-3.5" />
+                          <span>Add API Provider</span>
                         </button>
-                      </div>
-
-                      {apiFormError && (
-                        <div className="p-2.5 rounded-lg bg-rose-500/10 border border-rose-500/30 text-rose-300 text-[11px] flex items-center gap-2">
-                          <AlertCircle className="w-4 h-4 shrink-0" />
-                          <span>{apiFormError}</span>
-                        </div>
                       )}
+                    </div>
 
-                      <div className="grid grid-cols-2 gap-3">
-                        <div className="space-y-1">
-                          <label className="text-[10px] font-mono uppercase text-slate-400">Provider Name *</label>
-                          <input
-                            type="text"
-                            required
-                            placeholder="e.g. DeepSeek, Groq Cloud, OpenRouter"
-                            value={apiFormName}
-                            onChange={(e) => setApiFormName(e.target.value)}
-                            className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-slate-200 focus:border-cyan-500/50 focus:outline-none"
-                          />
-                        </div>
-                        <div className="space-y-1">
-                          <label className="text-[10px] font-mono uppercase text-slate-400">Default Model ID</label>
-                          <input
-                            type="text"
-                            placeholder="e.g. deepseek-chat, llama-3.3-70b-versatile"
-                            value={apiFormModel}
-                            onChange={(e) => setApiFormModel(e.target.value)}
-                            className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-slate-200 focus:border-cyan-500/50 focus:outline-none"
-                          />
-                        </div>
-                      </div>
-
-                      <div className="space-y-1">
-                        <label className="text-[10px] font-mono uppercase text-slate-400">Base URL * (OpenAI compatible)</label>
-                        <input
-                          type="text"
-                          required
-                          placeholder="e.g. https://api.deepseek.com/v1"
-                          value={apiFormBaseUrl}
-                          onChange={(e) => setApiFormBaseUrl(e.target.value)}
-                          className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-xs font-mono text-slate-200 focus:border-cyan-500/50 focus:outline-none"
-                        />
-                      </div>
-
-                      <div className="space-y-1">
-                        <label className="text-[10px] font-mono uppercase text-slate-400">API Key (Optional / Stored in Vault)</label>
-                        <input
-                          type="password"
-                          placeholder="sk-..."
-                          value={apiFormApiKey}
-                          onChange={(e) => setApiFormApiKey(e.target.value)}
-                          className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-xs font-mono text-slate-200 focus:border-cyan-500/50 focus:outline-none"
-                        />
-                      </div>
-
-                      <div className="space-y-1.5">
-                        <label className="text-[10px] font-mono uppercase text-slate-400">Declared attachment inputs</label>
-                        <div className="flex flex-wrap gap-2">
-                          {(['image', 'document', 'video'] as AttachmentKind[]).map(kind => (
-                            <label key={kind} className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-2.5 py-1.5 text-[10px] text-slate-300 cursor-pointer">
-                              <input
-                                type="checkbox"
-                                checked={apiFormAttachmentKinds.includes(kind)}
-                                onChange={(event) => setApiFormAttachmentKinds(current => event.target.checked ? [...current, kind] : current.filter(item => item !== kind))}
-                              />
-                              <span className="capitalize">{kind}</span>
-                            </label>
-                          ))}
-                        </div>
-                        <p className="text-[9.5px] text-slate-500">Enable only kinds accepted by this endpoint/model. Undeclared inputs are never sent.</p>
-                      </div>
-
-                      <div className="flex items-center justify-end gap-2 pt-2 border-t border-white/5">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            soundFx.playClick();
-                            setShowApiForm(false);
-                            setEditingApiId(null);
-                          }}
-                          className="px-3 py-1.5 rounded-lg text-xs text-slate-400 hover:text-slate-200 hover:bg-white/5 transition-colors cursor-pointer"
-                        >
-                          Cancel
-                        </button>
-                        <button
-                          type="submit"
-                          disabled={isSubmittingApi}
-                          className="px-3.5 py-1.5 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-black font-semibold text-xs transition-colors cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
-                        >
-                          {isSubmittingApi ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
-                          <span>{editingApiId ? 'Update Provider' : 'Save Provider'}</span>
-                        </button>
-                      </div>
-                    </form>
-                  )}
-
-                  {/* List of Custom API Providers */}
-                  {(() => {
-                    const apiProviders = Object.values(servicesManifest?.services || {}).filter(
-                      (s) => s.providerType === 'api' || s.id.startsWith('api_')
-                    );
-
-                    if (apiProviders.length === 0 && !showApiForm) {
-                      return (
-                        <div className="p-8 text-center rounded-xl bg-white/[0.02] border border-dashed border-white/10 space-y-2.5">
-                          <Braces className="w-8 h-8 text-slate-500 mx-auto" />
-                          <p className="text-xs font-semibold text-slate-300">No Custom API Providers</p>
-                          <p className="text-[11px] text-slate-500 max-w-sm mx-auto">
-                            Add any OpenAI-compatible API endpoint (DeepSeek, Groq, OpenRouter, vLLM, etc.) to use alongside native providers.
-                          </p>
+                    {/* Add / Edit Form Card */}
+                    {showApiForm && (
+                      <form onSubmit={handleSaveApiProvider} className="p-4 rounded-xl bg-black/40 border border-cyan-500/30 space-y-3.5 animate-in fade-in duration-150">
+                        <div className="flex items-center justify-between pb-2 border-b border-white/5">
+                          <div className="flex items-center gap-2">
+                            <div className="p-1.5 rounded-lg bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 shadow-[0_0_10px_rgba(6,182,212,0.15)]">
+                              <Braces className="w-3.5 h-3.5" />
+                            </div>
+                            <span className="text-xs font-bold text-cyan-300 uppercase tracking-wide">
+                              {editingApiId ? 'Edit API Provider' : 'Add API Provider'}
+                            </span>
+                          </div>
                           <button
                             type="button"
                             onClick={() => {
                               soundFx.playClick();
-                              setShowApiForm(true);
+                              setShowApiForm(false);
+                              setEditingApiId(null);
                             }}
-                            className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-500/40 text-xs font-semibold transition-all cursor-pointer"
+                            className="p-1 rounded text-slate-400 hover:text-slate-200 cursor-pointer"
                           >
-                            <Plus className="w-3.5 h-3.5" />
-                            <span>Add Your First API Provider</span>
+                            <X className="w-4 h-4" />
                           </button>
                         </div>
-                      );
-                    }
 
-                    return (
-                      <div className="space-y-2.5">
-                        {apiProviders.map((srv) => (
-                          <div
-                            key={srv.id}
-                            className="p-3.5 rounded-xl bg-white/[0.02] border border-white/10 hover:border-white/20 transition-all flex items-center justify-between gap-3"
-                          >
-                            <div className="flex items-center gap-3 min-w-0">
-                              <div className="p-2 rounded-lg bg-cyan-500/10 border border-cyan-500/30 text-cyan-400">
-                                <Braces className="w-4 h-4" />
-                              </div>
-                              <div className="min-w-0">
-                                <div className="flex items-center gap-2">
-                                  <span className="text-xs font-bold text-slate-100 truncate">{srv.name}</span>
-                                  {srv.defaultModelId && (
-                                    <span className="text-[9.5px] font-mono text-slate-400 bg-white/5 px-1.5 py-0.5 rounded border border-white/10">
-                                      {srv.defaultModelId}
-                                    </span>
-                                  )}
-                                </div>
-                                <p className="text-[10px] font-mono text-slate-400 truncate mt-0.5">
-                                  {srv.baseUrl}
-                                </p>
-                              </div>
-                            </div>
-
-                            <div className="flex items-center gap-2 shrink-0">
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  soundFx.playClick();
-                                  setEditingApiId(srv.id);
-                                  setApiFormName(srv.name);
-                                  setApiFormBaseUrl(srv.baseUrl || '');
-                                  setApiFormApiKey(srv.apiKey || '');
-                                  setApiFormModel(srv.defaultModelId || '');
-                                  setApiFormAttachmentKinds([...(srv.attachmentKinds || [])]);
-                                  setApiFormError(null);
-                                  setShowApiForm(true);
-                                }}
-                                className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 hover:text-cyan-300 transition-colors cursor-pointer"
-                                title="Edit Provider"
-                              >
-                                <Pencil className="w-3.5 h-3.5" />
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => handlePromptDeleteProvider(srv.id, srv.name, false)}
-                                className="p-1.5 rounded-lg bg-white/5 hover:bg-rose-500/20 text-slate-400 hover:text-rose-400 transition-colors cursor-pointer"
-                                title="Delete Provider"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                            </div>
+                        {apiFormError && (
+                          <div className="p-2.5 rounded-lg bg-rose-500/10 border border-rose-500/30 text-rose-300 text-[11px] flex items-center gap-2">
+                            <AlertCircle className="w-4 h-4 shrink-0" />
+                            <span>{apiFormError}</span>
                           </div>
-                        ))}
-                      </div>
-                    );
-                  })()}
-                </div>
-              )}
+                        )}
 
-              {/* TAB 2: WEBVIEW PROVIDERS */}
-              {moreProvidersTab === 'webview' && (
-                <div className="space-y-4">
-                  {(() => {
-                    const webviewProviders = Object.values(servicesManifest?.services || {}).filter(
-                      (s) => s.providerType === 'webview' || s.id.startsWith('webview_') || (s.experimental && s.id !== 'localllm')
-                    );
-
-                    return (
-                      <>
-                        {/* Top Bar */}
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <h4 className="text-xs font-semibold text-slate-200">
-                              Custom Webview Providers ({webviewProviders.length})
-                            </h4>
-                            <p className="text-[10.5px] text-slate-400">
-                              Connect Custom Recipe webview providers. Install recipe first, then sync session via Chrome extension.
-                            </p>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div className="space-y-1">
+                            <label className="text-[10px] font-mono uppercase text-slate-400">Provider Name *</label>
+                            <input
+                              type="text"
+                              required
+                              placeholder="e.g. DeepSeek, Groq Cloud, OpenRouter"
+                              value={apiFormName}
+                              onChange={(e) => setApiFormName(e.target.value)}
+                              className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-slate-200 focus:border-cyan-500/50 focus:outline-none"
+                            />
                           </div>
-                          {!showWebviewForm && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                soundFx.playClick();
-                                setWebviewFormRecipeJson('');
-                                setWebviewFormError(null);
-                                setWebviewFormSuccess(null);
-                                setShowWebviewForm(true);
-                              }}
-                              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-teal-500/20 hover:bg-teal-500/30 text-teal-300 border border-teal-500/40 text-xs font-semibold transition-all cursor-pointer shadow-sm"
-                            >
-                              <Plus className="w-3.5 h-3.5" />
-                              <span>Add Webview Provider</span>
-                            </button>
-                          )}
+                          <div className="space-y-1">
+                            <label className="text-[10px] font-mono uppercase text-slate-400">Default Model ID</label>
+                            <input
+                              type="text"
+                              placeholder="e.g. deepseek-chat, llama-3.3-70b-versatile"
+                              value={apiFormModel}
+                              onChange={(e) => setApiFormModel(e.target.value)}
+                              className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-slate-200 focus:border-cyan-500/50 focus:outline-none"
+                            />
+                          </div>
                         </div>
 
-                        {/* Add Recipe Form Card */}
-                        {showWebviewForm && (
-                          <div className="p-4 rounded-xl bg-black/40 border border-teal-500/40 space-y-3.5 animate-in fade-in duration-150 shadow-[0_0_20px_rgba(20,184,166,0.1)]">
-                            <div className="flex items-center justify-between pb-2 border-b border-white/5">
-                              <div className="flex items-center gap-2">
-                                <div className="p-1.5 rounded-lg bg-teal-500/10 border border-teal-500/30 text-teal-400 shadow-[0_0_10px_rgba(20,184,166,0.15)]">
-                                  <Globe className="w-3.5 h-3.5" />
-                                </div>
-                                <span className="text-xs font-bold text-teal-300 uppercase tracking-wide">
-                                  Add Webview Provider (Recipe)
-                                </span>
-                              </div>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  soundFx.playClick();
-                                  setShowWebviewForm(false);
-                                  setWebviewFormRecipeJson('');
-                                  setWebviewFormError(null);
-                                  setWebviewFormSuccess(null);
-                                }}
-                                className="p-1 rounded text-slate-400 hover:text-slate-200 cursor-pointer"
-                              >
-                                <X className="w-4 h-4" />
-                              </button>
-                            </div>
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-mono uppercase text-slate-400">Base URL * (OpenAI compatible)</label>
+                          <input
+                            type="text"
+                            required
+                            placeholder="e.g. https://api.deepseek.com/v1"
+                            value={apiFormBaseUrl}
+                            onChange={(e) => setApiFormBaseUrl(e.target.value)}
+                            className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-xs font-mono text-slate-200 focus:border-cyan-500/50 focus:outline-none"
+                          />
+                        </div>
 
-                            {/* Informational Callout explaining the workflow */}
-                            <div className="p-3 rounded-lg bg-teal-500/10 border border-teal-500/20 text-teal-200 text-[11px] leading-relaxed flex items-start gap-2.5">
-                              <Info className="w-4 h-4 text-teal-400 shrink-0 mt-0.5" />
-                              <div>
-                                <strong className="font-semibold text-teal-300 block mb-0.5">
-                                  Standalone Recipe Registration:
-                                </strong>
-                                <span>
-                                  Installing a recipe here registers the provider into Transgentic. Authenticated sessions must be synchronized via the <strong>Transgentic Sync</strong> Chrome extension. Once installed, navigating to the provider's domain in Chrome will display as <strong>Recipe Active</strong> (Direct Sync) instead of requiring a new recipe.
-                                </span>
-                              </div>
-                            </div>
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-mono uppercase text-slate-400">API Key (Optional / Stored in Vault)</label>
+                          <input
+                            type="password"
+                            placeholder="sk-..."
+                            value={apiFormApiKey}
+                            onChange={(e) => setApiFormApiKey(e.target.value)}
+                            className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-xs font-mono text-slate-200 focus:border-cyan-500/50 focus:outline-none"
+                          />
+                        </div>
 
-                            {/* File Upload & Load Template Actions */}
-                            <div className="flex items-center justify-between gap-3">
-                              <label className="relative inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-teal-500/15 hover:bg-teal-500/25 text-teal-300 border border-teal-500/30 text-xs font-semibold cursor-pointer transition-colors">
+                        <div className="space-y-1.5">
+                          <label className="text-[10px] font-mono uppercase text-slate-400">Declared attachment inputs</label>
+                          <div className="flex flex-wrap gap-2">
+                            {(['image', 'document', 'video'] as AttachmentKind[]).map(kind => (
+                              <label key={kind} className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-2.5 py-1.5 text-[10px] text-slate-300 cursor-pointer">
                                 <input
-                                  type="file"
-                                  accept=".json"
-                                  onChange={handleWebviewFileUpload}
-                                  className="absolute inset-0 opacity-0 cursor-pointer w-full"
+                                  type="checkbox"
+                                  checked={apiFormAttachmentKinds.includes(kind)}
+                                  onChange={(event) => setApiFormAttachmentKinds(current => event.target.checked ? [...current, kind] : current.filter(item => item !== kind))}
                                 />
-                                <FolderOpen className="w-3.5 h-3.5" />
-                                <span>Choose .json Recipe File</span>
+                                <span className="capitalize">{kind}</span>
                               </label>
-
-                              <button
-                                type="button"
-                                onClick={handleLoadRecipeTemplate}
-                                className="px-2.5 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white border border-white/10 text-xs transition-colors cursor-pointer flex items-center gap-1.5"
-                              >
-                                <FileCode className="w-3.5 h-3.5 text-slate-400" />
-                                <span>Load Template</span>
-                              </button>
-                            </div>
-
-                            {/* Recipe JSON Textarea */}
-                            <div className="space-y-1">
-                              <div className="flex items-center justify-between">
-                                <label className="text-[10px] font-mono uppercase text-slate-400">
-                                  Custom Recipe JSON *
-                                </label>
-                                <span className="text-[10px] text-slate-500 font-mono">
-                                  Paste schema or preconfig JSON
-                                </span>
-                              </div>
-                              <textarea
-                                rows={7}
-                                value={webviewFormRecipeJson}
-                                onChange={(e) => {
-                                  setWebviewFormRecipeJson(e.target.value);
-                                  validateWebviewRecipeInput(e.target.value);
-                                }}
-                                placeholder="Paste Custom Recipe JSON here..."
-                                className="w-full bg-black/60 border border-white/10 rounded-lg p-2.5 text-xs font-mono text-cyan-200 focus:border-teal-500/60 focus:outline-none leading-relaxed resize-y"
-                              />
-                            </div>
-
-                            {/* Validation & Status feedback */}
-                            {webviewFormError && (
-                              <div className="p-2.5 rounded-lg bg-rose-500/10 border border-rose-500/30 text-rose-300 text-[11px] flex items-center gap-2">
-                                <AlertCircle className="w-4 h-4 shrink-0" />
-                                <span>{webviewFormError}</span>
-                              </div>
-                            )}
-
-                            {webviewFormSuccess && (
-                              <div className="p-2.5 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-[11px] flex items-center gap-2">
-                                <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-400" />
-                                <span>{webviewFormSuccess}</span>
-                              </div>
-                            )}
-
-                            {/* Form Actions Footer */}
-                            <div className="flex items-center justify-end gap-2 pt-2 border-t border-white/5">
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  soundFx.playClick();
-                                  setShowWebviewForm(false);
-                                  setWebviewFormRecipeJson('');
-                                  setWebviewFormError(null);
-                                  setWebviewFormSuccess(null);
-                                }}
-                                className="px-3 py-1.5 rounded-lg text-xs text-slate-400 hover:text-slate-200 hover:bg-white/5 transition-colors cursor-pointer"
-                              >
-                                Cancel
-                              </button>
-                              <button
-                                type="button"
-                                onClick={handleSaveWebviewRecipe}
-                                disabled={isSubmittingWebview || !webviewFormRecipeJson.trim()}
-                                className="px-3.5 py-1.5 rounded-lg bg-teal-500 hover:bg-teal-400 text-black font-semibold text-xs transition-colors cursor-pointer flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
-                              >
-                                {isSubmittingWebview ? (
-                                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                                ) : (
-                                  <Check className="w-3.5 h-3.5" />
-                                )}
-                                <span>Save & Install Recipe</span>
-                              </button>
-                            </div>
+                            ))}
                           </div>
-                        )}
+                          <p className="text-[9.5px] text-slate-500">Enable only kinds accepted by this endpoint/model. Undeclared inputs are never sent.</p>
+                        </div>
 
-                        {/* List or Empty State */}
-                        {webviewProviders.length === 0 && !showWebviewForm ? (
-                          <div className="p-8 text-center rounded-xl bg-white/[0.02] border border-dashed border-white/10 space-y-3">
-                            <Globe className="w-8 h-8 text-slate-500 mx-auto" />
-                            <div>
-                              <p className="text-xs font-semibold text-slate-300">No Webview Providers Connected</p>
-                              <p className="text-[11px] text-slate-400 max-w-md mx-auto mt-1 leading-relaxed">
-                                Custom Recipe webview providers allow integrating any web AI service using custom selectors. Add a recipe here first or use the Transgentic Sync extension.
-                              </p>
-                            </div>
+                        <div className="flex items-center justify-end gap-2 pt-2 border-t border-white/5">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              soundFx.playClick();
+                              setShowApiForm(false);
+                              setEditingApiId(null);
+                            }}
+                            className="px-3 py-1.5 rounded-lg text-xs text-slate-400 hover:text-slate-200 hover:bg-white/5 transition-colors cursor-pointer"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="submit"
+                            disabled={isSubmittingApi}
+                            className="px-3.5 py-1.5 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-black font-semibold text-xs transition-colors cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
+                          >
+                            {isSubmittingApi ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                            <span>{editingApiId ? 'Update Provider' : 'Save Provider'}</span>
+                          </button>
+                        </div>
+                      </form>
+                    )}
+
+                    {/* List of Custom API Providers */}
+                    {(() => {
+                      const apiProviders = Object.values(servicesManifest?.services || {}).filter(
+                        (s) => s.providerType === 'api' || s.id.startsWith('api_')
+                      );
+
+                      if (apiProviders.length === 0 && !showApiForm) {
+                        return (
+                          <div className="p-8 text-center rounded-xl bg-white/[0.02] border border-dashed border-white/10 space-y-2.5">
+                            <Braces className="w-8 h-8 text-slate-500 mx-auto" />
+                            <p className="text-xs font-semibold text-slate-300">No Custom API Providers</p>
+                            <p className="text-[11px] text-slate-500 max-w-sm mx-auto">
+                              Add any OpenAI-compatible API endpoint (DeepSeek, Groq, OpenRouter, vLLM, etc.) to use alongside native providers.
+                            </p>
                             <button
                               type="button"
                               onClick={() => {
                                 soundFx.playClick();
-                                setShowWebviewForm(true);
+                                setShowApiForm(true);
                               }}
-                              className="mt-2 inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-teal-500/20 hover:bg-teal-500/30 text-teal-300 border border-teal-500/40 text-xs font-semibold transition-all cursor-pointer"
+                              className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-500/40 text-xs font-semibold transition-all cursor-pointer"
                             >
                               <Plus className="w-3.5 h-3.5" />
-                              <span>Add Webview Provider</span>
+                              <span>Add Your First API Provider</span>
                             </button>
-                            <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-200/90 text-[11px] max-w-md mx-auto text-left leading-relaxed flex items-start gap-2">
-                              <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
-                              <span>
-                                Using custom webview recipes is entirely at the user's own discretion and responsibility. Transgentic acts strictly as an independent client-side bridge on an as-is basis without warranties.
-                              </span>
-                            </div>
                           </div>
-                        ) : (
-                          <div className="space-y-3.5">
-                            {webviewProviders.map((srv) => {
-                              const isEditing = editingWebviewId === srv.id;
-                              const theme = getProviderTheme(srv.id, srv as any);
-                              const Icon = theme.icon;
-                              const isAuth = Boolean(providers[srv.id]?.isAuthenticated);
+                        );
+                      }
 
-                              return (
-                                <div
-                                  key={srv.id}
-                                  className="p-4 rounded-xl bg-teal-950/20 border border-teal-500/40 shadow-[0_0_20px_rgba(20,184,166,0.15)] space-y-3"
-                                >
-                                  <div className="flex items-center justify-between gap-3">
-                                    <div className="flex items-center gap-3 min-w-0">
-                                      <div className="p-2.5 rounded-xl bg-teal-500/10 border border-teal-500/30 text-teal-400">
-                                        <Icon className="w-5 h-5" />
-                                      </div>
-                                      <div className="min-w-0">
-                                        {isEditing ? (
-                                          <div className="flex items-center gap-2">
-                                            <input
-                                              type="text"
-                                              value={editingWebviewTitle}
-                                              onChange={(e) => setEditingWebviewTitle(e.target.value)}
-                                              className="bg-black/50 border border-teal-500/50 rounded px-2 py-0.5 text-xs text-white focus:outline-none"
-                                              autoFocus
-                                            />
-                                            <button
-                                              type="button"
-                                              onClick={() => handleSaveWebviewTitle(srv.id)}
-                                              className="px-2 py-0.5 rounded bg-teal-500 text-black text-[10px] font-bold cursor-pointer"
-                                            >
-                                              Save
-                                            </button>
-                                            <button
-                                              type="button"
-                                              onClick={() => setEditingWebviewId(null)}
-                                              className="px-2 py-0.5 rounded bg-white/10 text-slate-300 text-[10px] cursor-pointer"
-                                            >
-                                              Cancel
-                                            </button>
-                                          </div>
-                                        ) : (
-                                          <div className="flex items-center gap-2 flex-wrap">
-                                            <span className="text-sm font-bold text-slate-100">{srv.name}</span>
-                                            <button
-                                              type="button"
-                                              onClick={() => {
-                                                soundFx.playClick();
-                                                setEditingWebviewId(srv.id);
-                                                setEditingWebviewTitle(srv.name);
-                                              }}
-                                              className="p-1 rounded text-slate-400 hover:text-teal-300 transition-colors cursor-pointer"
-                                              title="Edit Provider Title"
-                                            >
-                                              <Pencil className="w-3 h-3" />
-                                            </button>
-                                            <span className="text-[9px] font-mono text-slate-400 bg-white/5 px-2 py-0.5 rounded border border-white/10 truncate max-w-[200px]">
-                                              {srv.id}
-                                            </span>
-                                            {isAuth ? (
-                                              <span className="text-emerald-400 font-mono flex items-center gap-1.5 text-[9.5px] bg-emerald-500/10 border border-emerald-500/30 px-2 py-0.5 rounded-full">
-                                                <span className="w-1.5 h-1.5 shrink-0 rounded-full bg-emerald-400" /> Connected
-                                              </span>
-                                            ) : (
-                                              <span className="text-amber-400 font-mono flex items-center gap-1.5 text-[9.5px] bg-amber-500/10 border border-amber-500/30 px-2 py-0.5 rounded-full" title="Sync auth cookies via Chrome extension">
-                                                <span className="w-1.5 h-1.5 shrink-0 rounded-full bg-amber-400" /> Requires Chrome Sync
-                                              </span>
-                                            )}
-                                            {srv.url && (
-                                              <a
-                                                href={srv.url}
-                                                target="_blank"
-                                                rel="noreferrer"
-                                                className="flex items-center gap-1 text-[10px] text-cyan-400 hover:text-cyan-300 font-mono underline underline-offset-2"
-                                              >
-                                                <span>{srv.url}</span>
-                                                <ExternalLink className="w-2.5 h-2.5" />
-                                              </a>
-                                            )}
-                                          </div>
-                                        )}
-                                        <p className="text-[10.5px] text-slate-400 mt-0.5">
-                                          {isAuth
-                                            ? 'Custom Recipe webview provider • Session synced.'
-                                            : 'Recipe installed • Open site in Chrome and sync via Transgentic Sync extension to authenticate.'}
-                                        </p>
-                                      </div>
-                                    </div>
-
-                                    <div className="flex items-center gap-2 shrink-0">
-                                      <button
-                                        type="button"
-                                        onClick={() => handlePromptDeleteProvider(srv.id, srv.name || srv.company, true)}
-                                        className="p-2 rounded-lg bg-white/5 hover:bg-rose-500/20 text-slate-400 hover:text-rose-400 border border-white/10 transition-colors cursor-pointer"
-                                        title="Remove Webview Provider"
-                                      >
-                                        <Trash2 className="w-3.5 h-3.5" />
-                                      </button>
-                                    </div>
-                                  </div>
-
-                                  {/* Disclaimer */}
-                                  <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-200/90 text-[11px] leading-relaxed flex items-start gap-2.5">
-                                    <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
-                                    <div>
-                                      <strong className="text-amber-300 font-semibold block mb-0.5">
-                                        User Responsibility Notice:
-                                      </strong>
-                                      <span>
-                                        {srv.disclaimer || 'This recipe automates a third-party web interface. Transgentic is independent of the provider and grants no provider permission. Use only where authorized by the provider’s terms.'}
-                                      </span>
-                                    </div>
-                                  </div>
-
-                                  {/* Navigation button */}
-                                  <div className="flex items-center justify-between pt-2 border-t border-white/5 text-[11px]">
-                                    <span className="text-teal-400 font-mono flex items-center gap-1.5">
-                                      <Check className="w-3.5 h-3.5 text-teal-400" />
-                                      <span>Active in Hub, Routes, and Settings</span>
-                                    </span>
-                                    <button
-                                      onClick={() => {
-                                        soundFx.playClick();
-                                        setShowExperimentalPage(false);
-                                        setSelectedProvider(srv.id);
-                                        setSelectedProviders(previous => ({ ...previous, webview: srv.id }));
-                                      }}
-                                      className="px-3 py-1 rounded-lg bg-teal-500/20 hover:bg-teal-500/30 text-teal-300 border border-teal-500/40 text-xs font-semibold transition-all cursor-pointer"
-                                    >
-                                      Configure Provider Settings →
-                                    </button>
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        )}
-                      </>
-                    );
-                  })()}
-                </div>
-              )}
-            </div>
-          ) : providerCategory === 'cli' && isCliProvider(selectedProvider) ? (
-            <CliServicesSettings manifest={servicesManifest} selectedProvider={selectedProvider as CliProviderId} onToggleService={onToggleService} />
-          ) : providerCategory === 'api' ? (
-            selectedProvider && servicesManifest?.services?.[selectedProvider] ? (() => {
-              const service = servicesManifest.services[selectedProvider];
-              return <div className="tactile-core-card overflow-hidden rounded-2xl border border-cyan-500/15 shadow-[0_0_24px_rgba(6,182,212,0.055)]">
-                <div className="relative flex items-center justify-between gap-3 p-3.5 after:absolute after:bottom-0 after:left-3.5 after:right-3.5 after:h-px after:bg-white/5">
-                  <div className="flex min-w-0 items-center gap-3">
-                    <div className="service-icon-box flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-cyan-300"><Braces className="h-4 w-4" /></div>
-                    <div className="min-w-0">
-                      <div className="flex min-w-0 items-center gap-2"><h3 className="truncate text-xs font-bold uppercase tracking-wide text-slate-100">{service.name}</h3></div>
-                      <div className={`mt-1 flex items-center gap-1.5 text-[9.5px] font-mono ${
-                        !currentProvConfig.serviceEnabled
-                          ? 'text-slate-500'
-                          : service.baseUrl
-                          ? 'text-emerald-400'
-                          : 'text-amber-400/80'
-                      }`}>
-                        <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${
-                          !currentProvConfig.serviceEnabled
-                            ? 'bg-slate-500'
-                            : service.baseUrl
-                            ? 'bg-emerald-400'
-                            : 'bg-amber-400'
-                        }`} />
-                        <span>
-                          {!currentProvConfig.serviceEnabled
-                            ? 'Disabled'
-                            : service.baseUrl
-                            ? 'Connected'
-                            : 'Not Configured'}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                  <label className="relative inline-flex shrink-0 cursor-pointer items-center gap-2 select-none" title={`${currentProvConfig.serviceEnabled ? 'Disable' : 'Enable'} ${service.name}`}>
-                    <span className="text-[10px] font-mono uppercase tracking-wider text-slate-400">Enabled</span>
-                    <input type="checkbox" className="peer sr-only" checked={currentProvConfig.serviceEnabled} onChange={event => { soundFx.playClick(); onToggleService(selectedProvider, event.target.checked); }} aria-label={`${currentProvConfig.serviceEnabled ? 'Disable' : 'Enable'} ${service.name}`} />
-                    <span className="relative h-5 w-9 rounded-full border border-white/10 bg-slate-800 shadow-inner transition-colors peer-checked:border-cyan-400/40 peer-checked:bg-cyan-500/70 peer-focus-visible:ring-2 peer-focus-visible:ring-cyan-400/50 after:absolute after:left-[2px] after:top-[2px] after:h-3.5 after:w-3.5 after:rounded-full after:bg-slate-300 after:shadow after:transition-transform peer-checked:after:translate-x-4 peer-checked:after:bg-white" />
-                  </label>
-                </div>
-                <div className="space-y-3 p-4">
-                  <div className="grid gap-3 sm:grid-cols-2"><div className="rounded-xl border border-white/[0.07] bg-black/25 p-3"><div className="text-[9px] font-mono uppercase tracking-wider text-slate-500">Base URL</div><div className="mt-1 truncate font-mono text-[10.5px] text-cyan-200" title={service.baseUrl}>{service.baseUrl}</div></div><div className="rounded-xl border border-white/[0.07] bg-black/25 p-3"><div className="text-[9px] font-mono uppercase tracking-wider text-slate-500">Default model</div><div className="mt-1 truncate font-mono text-[10.5px] text-slate-200">{service.defaultModelId || 'default'}</div></div></div>
-                  {/* Edit Action */}
-                  <div className="flex items-center justify-end pt-1">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        soundFx.playClick();
-                        setEditingApiId(service.id);
-                        setApiFormName(service.name);
-                        setApiFormBaseUrl(service.baseUrl || '');
-                        setApiFormApiKey(service.apiKey || '');
-                        setApiFormModel(service.defaultModelId || '');
-                        setApiFormAttachmentKinds([...(service.attachmentKinds || [])]);
-                        setApiFormError(null);
-                        setShowApiForm(true);
-                        setMoreProvidersTab('api');
-                        setShowExperimentalPage(true);
-                      }}
-                      className="group inline-flex w-full sm:w-auto items-center justify-center gap-2 rounded-xl border border-cyan-500/30 bg-cyan-500/10 px-3.5 py-2 text-xs font-semibold text-cyan-200 shadow-[0_0_12px_rgba(6,182,212,0.12)] transition-all hover:border-cyan-500/50 hover:bg-cyan-500/20 hover:text-white hover:shadow-[0_0_16px_rgba(6,182,212,0.22)] cursor-pointer"
-                      title="Edit endpoint URL, API key, or default model"
-                    >
-                      <Pencil className="h-3.5 w-3.5 text-cyan-300" />
-                      <span>Configure Provider</span>
-                      <ArrowRight className="h-3 w-3 text-cyan-400/70" />
-                    </button>
-                  </div>
-                </div>
-              </div>;
-            })() : null
-          ) : (
-            /* VIEW B: STANDARD PROVIDER CONFIG CARD */
-            <div className="tactile-core-card p-3.5 rounded-2xl space-y-4">
-              {/* Service-Level Toggle & Re-sync */}
-              <div className="flex items-center justify-between gap-3 border-b border-white/5 pb-3">
-                <div className="flex min-w-0 items-center gap-3">
-                  <div className="service-icon-box flex h-9 w-9 shrink-0 items-center justify-center rounded-xl">
-                    {getProviderIcon(selectedProvider)}
-                  </div>
-                  <div className="min-w-0">
-                    <div className="flex min-w-0 items-center gap-2">
-                      <span className="truncate text-xs font-bold uppercase tracking-wide text-slate-100">
-                        {getProviderLabel(selectedProvider)}
-                      </span>
-                      {isBuiltinProvider(selectedProvider) && (
-                        <span className="rounded-md border border-cyan-500/25 bg-cyan-500/10 px-1.5 py-0.5 text-[8px] font-mono font-bold uppercase tracking-wider text-cyan-300">
-                          Built In
-                        </span>
-                      )}
-                    </div>
-                    {(() => {
-                      const isAuth = providers[selectedProvider]?.isAuthenticated;
-                      const provState = providers[selectedProvider]?.state;
-                      const isBusy = isResyncing || provState === 'busy';
-                      const isWarning = provState === 'rate_limited' || provState === 'cooling_down';
-                      const tone = !currentProvConfig.serviceEnabled
-                        ? 'text-slate-500'
-                        : isBusy
-                        ? 'text-cyan-300'
-                        : isWarning
-                        ? 'text-rose-300'
-                        : isAuth
-                        ? 'text-emerald-400'
-                        : 'text-slate-500';
-                      const dotBg = !currentProvConfig.serviceEnabled
-                        ? 'bg-slate-500'
-                        : isBusy
-                        ? 'bg-cyan-400 animate-ping'
-                        : provState === 'rate_limited'
-                        ? 'bg-rose-400'
-                        : provState === 'cooling_down'
-                        ? 'bg-amber-400'
-                        : isAuth
-                        ? 'bg-emerald-400'
-                        : 'bg-slate-500';
                       return (
-                        <div className={`mt-1 flex items-center gap-1.5 text-[9.5px] font-mono ${tone}`}>
-                          <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${dotBg}`} />
-                          <span>
-                            {!currentProvConfig.serviceEnabled
-                              ? 'Disabled'
-                              : isResyncing
-                              ? 'Syncing Models'
-                              : provState === 'busy'
-                              ? 'Busy'
-                              : provState === 'rate_limited'
-                              ? 'Rate Limited'
-                              : provState === 'cooling_down'
-                              ? 'Cooling Down'
-                              : isAuth
-                              ? 'Connected'
-                              : 'Not Logged In'}
-                          </span>
+                        <div className="space-y-2.5">
+                          {apiProviders.map((srv) => (
+                            <div
+                              key={srv.id}
+                              className="p-3.5 rounded-xl bg-white/[0.02] border border-white/10 hover:border-white/20 transition-all flex items-center justify-between gap-3"
+                            >
+                              <div className="flex items-center gap-3 min-w-0">
+                                <div className="p-2 rounded-lg bg-cyan-500/10 border border-cyan-500/30 text-cyan-400">
+                                  <Braces className="w-4 h-4" />
+                                </div>
+                                <div className="min-w-0">
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-xs font-bold text-slate-100 truncate">{srv.name}</span>
+                                    {srv.defaultModelId && (
+                                      <span className="text-[9.5px] font-mono text-slate-400 bg-white/5 px-1.5 py-0.5 rounded border border-white/10">
+                                        {srv.defaultModelId}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <p className="text-[10px] font-mono text-slate-400 truncate mt-0.5">
+                                    {srv.baseUrl}
+                                  </p>
+                                </div>
+                              </div>
+
+                              <div className="flex items-center gap-2 shrink-0">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    soundFx.playClick();
+                                    setEditingApiId(srv.id);
+                                    setApiFormName(srv.name);
+                                    setApiFormBaseUrl(srv.baseUrl || '');
+                                    setApiFormApiKey(srv.apiKey || '');
+                                    setApiFormModel(srv.defaultModelId || '');
+                                    setApiFormAttachmentKinds([...(srv.attachmentKinds || [])]);
+                                    setApiFormError(null);
+                                    setShowApiForm(true);
+                                  }}
+                                  className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 hover:text-cyan-300 transition-colors cursor-pointer"
+                                  title="Edit Provider"
+                                >
+                                  <Pencil className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handlePromptDeleteProvider(srv.id, srv.name, false)}
+                                  className="p-1.5 rounded-lg bg-white/5 hover:bg-rose-500/20 text-slate-400 hover:text-rose-400 transition-colors cursor-pointer"
+                                  title="Delete Provider"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </div>
+                          ))}
                         </div>
                       );
                     })()}
                   </div>
-                </div>
+                )}
 
-                {/* Action Buttons */}
-                <div className="flex shrink-0 items-center gap-2">
-                  <button
-                    onClick={() => {
-                      soundFx.playClick();
-                      setShowAuthModalProvider(selectedProvider);
-                    }}
-                    className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-teal-500/15 hover:bg-teal-500/25 text-teal-300 border border-teal-500/30 text-[10px] font-mono font-semibold transition-all cursor-pointer shadow-[0_0_10px_rgba(20,184,166,0.15)]"
-                    title="Sync authenticated session from System Google Chrome"
-                  >
-                    <Link className="w-3 h-3 text-teal-400" />
-                    <span>Chrome Sync</span>
-                  </button>
+                {/* TAB 2: WEBVIEW PROVIDERS */}
+                {moreProvidersTab === 'webview' && (
+                  <div className="space-y-4">
+                    {(() => {
+                      const webviewProviders = Object.values(servicesManifest?.services || {}).filter(
+                        (s) => s.providerType === 'webview' || s.id.startsWith('webview_') || (s.experimental && s.id !== 'localllm')
+                      );
 
-                  <label
-                    className="relative inline-flex shrink-0 cursor-pointer items-center gap-2 select-none"
-                    title={`${currentProvConfig.serviceEnabled ? 'Disable' : 'Enable'} ${getProviderLabel(selectedProvider)}`}
-                  >
-                    <span className="text-[10px] font-mono uppercase tracking-wider text-slate-400">Enabled</span>
-                    <input
-                      type="checkbox"
-                      checked={currentProvConfig.serviceEnabled}
-                      onChange={(e) => {
-                        soundFx.playClick();
-                        onToggleService(selectedProvider, e.target.checked);
-                      }}
-                      className="peer sr-only"
-                      aria-label={`${currentProvConfig.serviceEnabled ? 'Disable' : 'Enable'} ${getProviderLabel(selectedProvider)}`}
-                    />
-                    <span className="relative h-5 w-9 rounded-full border border-white/10 bg-slate-800 shadow-inner transition-colors peer-checked:border-cyan-400/40 peer-checked:bg-cyan-500/70 peer-focus-visible:ring-2 peer-focus-visible:ring-cyan-400/50 after:absolute after:left-[2px] after:top-[2px] after:h-3.5 after:w-3.5 after:rounded-full after:bg-slate-300 after:shadow after:transition-transform peer-checked:after:translate-x-4 peer-checked:after:bg-white" />
-                  </label>
-                </div>
+                      return (
+                        <>
+                          {/* Top Bar */}
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <h4 className="text-xs font-semibold text-slate-200">
+                                Custom Webview Providers ({webviewProviders.length})
+                              </h4>
+                              <p className="text-[10.5px] text-slate-400">
+                                Connect Custom Recipe webview providers. Install recipe first, then sync session via Chrome extension.
+                              </p>
+                            </div>
+                            {!showWebviewForm && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  soundFx.playClick();
+                                  setWebviewFormRecipeJson('');
+                                  setWebviewFormError(null);
+                                  setWebviewFormSuccess(null);
+                                  setShowWebviewForm(true);
+                                }}
+                                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-teal-500/20 hover:bg-teal-500/30 text-teal-300 border border-teal-500/40 text-xs font-semibold transition-all cursor-pointer shadow-sm"
+                              >
+                                <Plus className="w-3.5 h-3.5" />
+                                <span>Add Webview Provider</span>
+                              </button>
+                            )}
+                          </div>
+
+                          {/* Add Recipe Form Card */}
+                          {showWebviewForm && (
+                            <div className="p-4 rounded-xl bg-black/40 border border-teal-500/40 space-y-3.5 animate-in fade-in duration-150 shadow-[0_0_20px_rgba(20,184,166,0.1)]">
+                              <div className="flex items-center justify-between pb-2 border-b border-white/5">
+                                <div className="flex items-center gap-2">
+                                  <div className="p-1.5 rounded-lg bg-teal-500/10 border border-teal-500/30 text-teal-400 shadow-[0_0_10px_rgba(20,184,166,0.15)]">
+                                    <Globe className="w-3.5 h-3.5" />
+                                  </div>
+                                  <span className="text-xs font-bold text-teal-300 uppercase tracking-wide">
+                                    Add Webview Provider (Recipe)
+                                  </span>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    soundFx.playClick();
+                                    setShowWebviewForm(false);
+                                    setWebviewFormRecipeJson('');
+                                    setWebviewFormError(null);
+                                    setWebviewFormSuccess(null);
+                                  }}
+                                  className="p-1 rounded text-slate-400 hover:text-slate-200 cursor-pointer"
+                                >
+                                  <X className="w-4 h-4" />
+                                </button>
+                              </div>
+
+                              {/* Informational Callout explaining the workflow */}
+                              <div className="p-3 rounded-lg bg-teal-500/10 border border-teal-500/20 text-teal-200 text-[11px] leading-relaxed flex items-start gap-2.5">
+                                <Info className="w-4 h-4 text-teal-400 shrink-0 mt-0.5" />
+                                <div>
+                                  <strong className="font-semibold text-teal-300 block mb-0.5">
+                                    Standalone Recipe Registration:
+                                  </strong>
+                                  <span>
+                                    Installing a recipe here registers the provider into Transgentic. Authenticated sessions must be synchronized via the <strong>Transgentic Sync</strong> Chrome extension. Once installed, navigating to the provider's domain in Chrome will display as <strong>Recipe Active</strong> (Direct Sync) instead of requiring a new recipe.
+                                  </span>
+                                </div>
+                              </div>
+
+                              {/* File Upload & Load Template Actions */}
+                              <div className="flex items-center justify-between gap-3">
+                                <label className="relative inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-teal-500/15 hover:bg-teal-500/25 text-teal-300 border border-teal-500/30 text-xs font-semibold cursor-pointer transition-colors">
+                                  <input
+                                    type="file"
+                                    accept=".json"
+                                    onChange={handleWebviewFileUpload}
+                                    className="absolute inset-0 opacity-0 cursor-pointer w-full"
+                                  />
+                                  <FolderOpen className="w-3.5 h-3.5" />
+                                  <span>Choose .json Recipe File</span>
+                                </label>
+
+                                <button
+                                  type="button"
+                                  onClick={handleLoadRecipeTemplate}
+                                  className="px-2.5 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white border border-white/10 text-xs transition-colors cursor-pointer flex items-center gap-1.5"
+                                >
+                                  <FileCode className="w-3.5 h-3.5 text-slate-400" />
+                                  <span>Load Template</span>
+                                </button>
+                              </div>
+
+                              {/* Recipe JSON Textarea */}
+                              <div className="space-y-1">
+                                <div className="flex items-center justify-between">
+                                  <label className="text-[10px] font-mono uppercase text-slate-400">
+                                    Custom Recipe JSON *
+                                  </label>
+                                  <span className="text-[10px] text-slate-500 font-mono">
+                                    Paste schema or preconfig JSON
+                                  </span>
+                                </div>
+                                <textarea
+                                  rows={7}
+                                  value={webviewFormRecipeJson}
+                                  onChange={(e) => {
+                                    setWebviewFormRecipeJson(e.target.value);
+                                    validateWebviewRecipeInput(e.target.value);
+                                  }}
+                                  placeholder="Paste Custom Recipe JSON here..."
+                                  className="w-full bg-black/60 border border-white/10 rounded-lg p-2.5 text-xs font-mono text-cyan-200 focus:border-teal-500/60 focus:outline-none leading-relaxed resize-y"
+                                />
+                              </div>
+
+                              {/* Validation & Status feedback */}
+                              {webviewFormError && (
+                                <div className="p-2.5 rounded-lg bg-rose-500/10 border border-rose-500/30 text-rose-300 text-[11px] flex items-center gap-2">
+                                  <AlertCircle className="w-4 h-4 shrink-0" />
+                                  <span>{webviewFormError}</span>
+                                </div>
+                              )}
+
+                              {webviewFormSuccess && (
+                                <div className="p-2.5 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-[11px] flex items-center gap-2">
+                                  <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-400" />
+                                  <span>{webviewFormSuccess}</span>
+                                </div>
+                              )}
+
+                              {/* Form Actions Footer */}
+                              <div className="flex items-center justify-end gap-2 pt-2 border-t border-white/5">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    soundFx.playClick();
+                                    setShowWebviewForm(false);
+                                    setWebviewFormRecipeJson('');
+                                    setWebviewFormError(null);
+                                    setWebviewFormSuccess(null);
+                                  }}
+                                  className="px-3 py-1.5 rounded-lg text-xs text-slate-400 hover:text-slate-200 hover:bg-white/5 transition-colors cursor-pointer"
+                                >
+                                  Cancel
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={handleSaveWebviewRecipe}
+                                  disabled={isSubmittingWebview || !webviewFormRecipeJson.trim()}
+                                  className="px-3.5 py-1.5 rounded-lg bg-teal-500 hover:bg-teal-400 text-black font-semibold text-xs transition-colors cursor-pointer flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
+                                >
+                                  {isSubmittingWebview ? (
+                                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                                  ) : (
+                                    <Check className="w-3.5 h-3.5" />
+                                  )}
+                                  <span>Save & Install Recipe</span>
+                                </button>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* List or Empty State */}
+                          {webviewProviders.length === 0 && !showWebviewForm ? (
+                            <div className="p-8 text-center rounded-xl bg-white/[0.02] border border-dashed border-white/10 space-y-3">
+                              <Globe className="w-8 h-8 text-slate-500 mx-auto" />
+                              <div>
+                                <p className="text-xs font-semibold text-slate-300">No Webview Providers Connected</p>
+                                <p className="text-[11px] text-slate-400 max-w-md mx-auto mt-1 leading-relaxed">
+                                  Custom Recipe webview providers allow integrating any web AI service using custom selectors. Add a recipe here first or use the Transgentic Sync extension.
+                                </p>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  soundFx.playClick();
+                                  setShowWebviewForm(true);
+                                }}
+                                className="mt-2 inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-teal-500/20 hover:bg-teal-500/30 text-teal-300 border border-teal-500/40 text-xs font-semibold transition-all cursor-pointer"
+                              >
+                                <Plus className="w-3.5 h-3.5" />
+                                <span>Add Webview Provider</span>
+                              </button>
+                              <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-200/90 text-[11px] max-w-md mx-auto text-left leading-relaxed flex items-start gap-2">
+                                <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                                <span>
+                                  Using custom webview recipes is entirely at the user's own discretion and responsibility. Transgentic acts strictly as an independent client-side bridge on an as-is basis without warranties.
+                                </span>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="space-y-3.5">
+                              {webviewProviders.map((srv) => {
+                                const isEditing = editingWebviewId === srv.id;
+                                const theme = getProviderTheme(srv.id, srv as any);
+                                const Icon = theme.icon;
+                                const isAuth = Boolean(providers[srv.id]?.isAuthenticated);
+
+                                return (
+                                  <div
+                                    key={srv.id}
+                                    className="p-4 rounded-xl bg-teal-950/20 border border-teal-500/40 shadow-[0_0_20px_rgba(20,184,166,0.15)] space-y-3"
+                                  >
+                                    <div className="flex items-center justify-between gap-3">
+                                      <div className="flex items-center gap-3 min-w-0">
+                                        <div className="p-2.5 rounded-xl bg-teal-500/10 border border-teal-500/30 text-teal-400">
+                                          <Icon className="w-5 h-5" />
+                                        </div>
+                                        <div className="min-w-0">
+                                          {isEditing ? (
+                                            <div className="flex items-center gap-2">
+                                              <input
+                                                type="text"
+                                                value={editingWebviewTitle}
+                                                onChange={(e) => setEditingWebviewTitle(e.target.value)}
+                                                className="bg-black/50 border border-teal-500/50 rounded px-2 py-0.5 text-xs text-white focus:outline-none"
+                                                autoFocus
+                                              />
+                                              <button
+                                                type="button"
+                                                onClick={() => handleSaveWebviewTitle(srv.id)}
+                                                className="px-2 py-0.5 rounded bg-teal-500 text-black text-[10px] font-bold cursor-pointer"
+                                              >
+                                                Save
+                                              </button>
+                                              <button
+                                                type="button"
+                                                onClick={() => setEditingWebviewId(null)}
+                                                className="px-2 py-0.5 rounded bg-white/10 text-slate-300 text-[10px] cursor-pointer"
+                                              >
+                                                Cancel
+                                              </button>
+                                            </div>
+                                          ) : (
+                                            <div className="flex items-center gap-2 flex-wrap">
+                                              <span className="text-sm font-bold text-slate-100">{srv.name}</span>
+                                              <button
+                                                type="button"
+                                                onClick={() => {
+                                                  soundFx.playClick();
+                                                  setEditingWebviewId(srv.id);
+                                                  setEditingWebviewTitle(srv.name);
+                                                }}
+                                                className="p-1 rounded text-slate-400 hover:text-teal-300 transition-colors cursor-pointer"
+                                                title="Edit Provider Title"
+                                              >
+                                                <Pencil className="w-3 h-3" />
+                                              </button>
+                                              <span className="text-[9px] font-mono text-slate-400 bg-white/5 px-2 py-0.5 rounded border border-white/10 truncate max-w-[200px]">
+                                                {srv.id}
+                                              </span>
+                                              {isAuth ? (
+                                                <span className="text-emerald-400 font-mono flex items-center gap-1.5 text-[9.5px] bg-emerald-500/10 border border-emerald-500/30 px-2 py-0.5 rounded-full">
+                                                  <span className="w-1.5 h-1.5 shrink-0 rounded-full bg-emerald-400" /> Connected
+                                                </span>
+                                              ) : (
+                                                <span className="text-amber-400 font-mono flex items-center gap-1.5 text-[9.5px] bg-amber-500/10 border border-amber-500/30 px-2 py-0.5 rounded-full" title="Sync auth cookies via Chrome extension">
+                                                  <span className="w-1.5 h-1.5 shrink-0 rounded-full bg-amber-400" /> Requires Chrome Sync
+                                                </span>
+                                              )}
+                                              {srv.url && (
+                                                <a
+                                                  href={srv.url}
+                                                  target="_blank"
+                                                  rel="noreferrer"
+                                                  className="flex items-center gap-1 text-[10px] text-cyan-400 hover:text-cyan-300 font-mono underline underline-offset-2"
+                                                >
+                                                  <span>{srv.url}</span>
+                                                  <ExternalLink className="w-2.5 h-2.5" />
+                                                </a>
+                                              )}
+                                            </div>
+                                          )}
+                                          <p className="text-[10.5px] text-slate-400 mt-0.5">
+                                            {isAuth
+                                              ? 'Custom Recipe webview provider • Session synced.'
+                                              : 'Recipe installed • Open site in Chrome and sync via Transgentic Sync extension to authenticate.'}
+                                          </p>
+                                        </div>
+                                      </div>
+
+                                      <div className="flex items-center gap-2 shrink-0">
+                                        <button
+                                          type="button"
+                                          onClick={() => handlePromptDeleteProvider(srv.id, srv.name || srv.company, true)}
+                                          className="p-2 rounded-lg bg-white/5 hover:bg-rose-500/20 text-slate-400 hover:text-rose-400 border border-white/10 transition-colors cursor-pointer"
+                                          title="Remove Webview Provider"
+                                        >
+                                          <Trash2 className="w-3.5 h-3.5" />
+                                        </button>
+                                      </div>
+                                    </div>
+
+                                    {/* Disclaimer */}
+                                    <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-200/90 text-[11px] leading-relaxed flex items-start gap-2.5">
+                                      <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                                      <div>
+                                        <strong className="text-amber-300 font-semibold block mb-0.5">
+                                          User Responsibility Notice:
+                                        </strong>
+                                        <span>
+                                          {srv.disclaimer || 'This recipe automates a third-party web interface. Transgentic is independent of the provider and grants no provider permission. Use only where authorized by the provider’s terms.'}
+                                        </span>
+                                      </div>
+                                    </div>
+
+                                    {/* Navigation button */}
+                                    <div className="flex items-center justify-between pt-2 border-t border-white/5 text-[11px]">
+                                      <span className="text-teal-400 font-mono flex items-center gap-1.5">
+                                        <Check className="w-3.5 h-3.5 text-teal-400" />
+                                        <span>Active in Hub, Routes, and Settings</span>
+                                      </span>
+                                      <button
+                                        onClick={() => {
+                                          soundFx.playClick();
+                                          setShowExperimentalPage(false);
+                                          setSelectedProvider(srv.id);
+                                          setSelectedProviders(previous => ({ ...previous, webview: srv.id }));
+                                        }}
+                                        className="px-3 py-1 rounded-lg bg-teal-500/20 hover:bg-teal-500/30 text-teal-300 border border-teal-500/40 text-xs font-semibold transition-all cursor-pointer"
+                                      >
+                                        Configure Provider Settings →
+                                      </button>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </>
+                      );
+                    })()}
+                  </div>
+                )}
               </div>
-
-              {resyncSuccess && (
-                <div className="text-[10px] font-mono text-emerald-400 bg-emerald-500/10 px-2 py-1 rounded-lg border border-emerald-500/20 flex items-center gap-1.5">
-                  <CheckCircle2 className="w-3.5 h-3.5" />
-                  <span>Model scan finished. Available choices appear below when the provider picker exposes them.</span>
-                </div>
-              )}
-
-              {(() => {
-                const capability = providers[selectedProvider]?.temporaryChat;
-                const supported = capability?.supported === true;
-                const liveSessions = temporaryChatSessions.filter(session => session.providerId === selectedProvider);
-                return (
-                  <div className="space-y-2 rounded-xl border border-indigo-500/20 bg-indigo-500/[0.06] p-3">
-                    <div className="flex items-start justify-between gap-3">
+            ) : providerCategory === 'cli' && isCliProvider(selectedProvider) ? (
+              <CliServicesSettings manifest={servicesManifest} selectedProvider={selectedProvider as CliProviderId} onToggleService={onToggleService} />
+            ) : providerCategory === 'api' ? (
+              selectedProvider && servicesManifest?.services?.[selectedProvider] ? (() => {
+                const service = servicesManifest.services[selectedProvider];
+                return <div className="tactile-core-card overflow-hidden rounded-2xl border border-cyan-500/15 shadow-[0_0_24px_rgba(6,182,212,0.055)]">
+                  <div className="relative flex items-center justify-between gap-3 p-3.5 after:absolute after:bottom-0 after:left-3.5 after:right-3.5 after:h-px after:bg-white/5">
+                    <div className="flex min-w-0 items-center gap-3">
+                      <div className="service-icon-box flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-cyan-300"><Braces className="h-4 w-4" /></div>
                       <div className="min-w-0">
-                        <div className="flex items-center gap-2 text-[10px] font-mono font-bold uppercase tracking-wider text-indigo-200">
-                          <Shield className="h-3.5 w-3.5 text-indigo-300" />
-                          Temporary Chat
+                        <div className="flex min-w-0 items-center gap-2"><h3 className="truncate text-xs font-bold uppercase tracking-wide text-slate-100">{service.name}</h3></div>
+                        <div className={`mt-1 flex items-center gap-1.5 text-[9.5px] font-mono ${!currentProvConfig.serviceEnabled
+                          ? 'text-slate-500'
+                          : service.baseUrl
+                            ? 'text-emerald-400'
+                            : 'text-amber-400/80'
+                          }`}>
+                          <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${!currentProvConfig.serviceEnabled
+                            ? 'bg-slate-500'
+                            : service.baseUrl
+                              ? 'bg-emerald-400'
+                              : 'bg-amber-400'
+                            }`} />
+                          <span>
+                            {!currentProvConfig.serviceEnabled
+                              ? 'Disabled'
+                              : service.baseUrl
+                                ? 'Connected'
+                                : 'Not Configured'}
+                          </span>
                         </div>
-                        <p className="mt-1 text-[9.5px] leading-relaxed text-slate-400">
-                          {supported
-                            ? 'This provider supports native Temporary Chat. Per-mode preferences are in General Settings. Transgentic saves conversation logs locally; generated files still save to your Library.'
-                            : 'Native Temporary Chat is unavailable for this provider. Preferred temporary requests use normal chat and report that fallback.'}
-                        </p>
-                        {supported && capability?.availability === 'unavailable' && (
-                          <p className="mt-1 text-[9px] font-mono text-amber-300">{capability.reason || 'Unavailable for the active account.'}</p>
+                      </div>
+                    </div>
+                    <label className="relative inline-flex shrink-0 cursor-pointer items-center gap-2 select-none" title={`${currentProvConfig.serviceEnabled ? 'Disable' : 'Enable'} ${service.name}`}>
+                      <span className="text-[10px] font-mono uppercase tracking-wider text-slate-400">Enabled</span>
+                      <input type="checkbox" className="peer sr-only" checked={currentProvConfig.serviceEnabled} onChange={event => { soundFx.playClick(); onToggleService(selectedProvider, event.target.checked); }} aria-label={`${currentProvConfig.serviceEnabled ? 'Disable' : 'Enable'} ${service.name}`} />
+                      <span className="relative h-5 w-9 rounded-full border border-white/10 bg-slate-800 shadow-inner transition-colors peer-checked:border-cyan-400/40 peer-checked:bg-cyan-500/70 peer-focus-visible:ring-2 peer-focus-visible:ring-cyan-400/50 after:absolute after:left-[2px] after:top-[2px] after:h-3.5 after:w-3.5 after:rounded-full after:bg-slate-300 after:shadow after:transition-transform peer-checked:after:translate-x-4 peer-checked:after:bg-white" />
+                    </label>
+                  </div>
+                  <div className="space-y-3 p-4">
+                    <div className="grid gap-3 sm:grid-cols-2"><div className="rounded-xl border border-white/[0.07] bg-black/25 p-3"><div className="text-[9px] font-mono uppercase tracking-wider text-slate-500">Base URL</div><div className="mt-1 truncate font-mono text-[10.5px] text-cyan-200" title={service.baseUrl}>{service.baseUrl}</div></div><div className="rounded-xl border border-white/[0.07] bg-black/25 p-3"><div className="text-[9px] font-mono uppercase tracking-wider text-slate-500">Default model</div><div className="mt-1 truncate font-mono text-[10.5px] text-slate-200">{service.defaultModelId || 'default'}</div></div></div>
+                    {/* Edit Action */}
+                    <div className="flex items-center justify-end pt-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          soundFx.playClick();
+                          setEditingApiId(service.id);
+                          setApiFormName(service.name);
+                          setApiFormBaseUrl(service.baseUrl || '');
+                          setApiFormApiKey(service.apiKey || '');
+                          setApiFormModel(service.defaultModelId || '');
+                          setApiFormAttachmentKinds([...(service.attachmentKinds || [])]);
+                          setApiFormError(null);
+                          setShowApiForm(true);
+                          setMoreProvidersTab('api');
+                          setShowExperimentalPage(true);
+                        }}
+                        className="group inline-flex w-full sm:w-auto items-center justify-center gap-2 rounded-xl border border-cyan-500/30 bg-cyan-500/10 px-3.5 py-2 text-xs font-semibold text-cyan-200 shadow-[0_0_12px_rgba(6,182,212,0.12)] transition-all hover:border-cyan-500/50 hover:bg-cyan-500/20 hover:text-white hover:shadow-[0_0_16px_rgba(6,182,212,0.22)] cursor-pointer"
+                        title="Edit endpoint URL, API key, or default model"
+                      >
+                        <Pencil className="h-3.5 w-3.5 text-cyan-300" />
+                        <span>Configure Provider</span>
+                        <ArrowRight className="h-3 w-3 text-cyan-400/70" />
+                      </button>
+                    </div>
+                  </div>
+                </div>;
+              })() : null
+            ) : (
+              /* VIEW B: STANDARD PROVIDER CONFIG CARD */
+              <div className="tactile-core-card p-3.5 rounded-2xl space-y-4">
+                {/* Service-Level Toggle & Re-sync */}
+                <div className="flex items-center justify-between gap-3 border-b border-white/5 pb-3">
+                  <div className="flex min-w-0 items-center gap-3">
+                    <div className="service-icon-box flex h-9 w-9 shrink-0 items-center justify-center rounded-xl">
+                      {getProviderIcon(selectedProvider)}
+                    </div>
+                    <div className="min-w-0">
+                      <div className="flex min-w-0 items-center gap-2">
+                        <span className="truncate text-xs font-bold uppercase tracking-wide text-slate-100">
+                          {getProviderLabel(selectedProvider)}
+                        </span>
+                        {isBuiltinProvider(selectedProvider) && (
+                          <span className="rounded-md border border-cyan-500/25 bg-cyan-500/10 px-1.5 py-0.5 text-[8px] font-mono font-bold uppercase tracking-wider text-cyan-300">
+                            Built In
+                          </span>
                         )}
                       </div>
-                    </div>
-                    {liveSessions.length > 0 && (
-                      <div className="space-y-1.5 border-t border-white/5 pt-2">
-                        <div className="text-[9px] font-mono uppercase tracking-wider text-slate-500">Live Conversations</div>
-                        {liveSessions.map(session => (
-                          <div key={session.key} className="flex items-center justify-between gap-2 rounded-lg border border-white/[0.06] bg-black/25 px-2.5 py-2">
-                            <span className="truncate text-[9.5px] font-mono text-indigo-200">{session.mode === 'normal' ? 'Normal' : 'Temporary'} session {session.generation}</span>
-                            <div className="flex gap-1.5">
-                              <button type="button" onClick={() => void onOpenTemporaryChat?.(session.key)} className="rounded-md border border-cyan-500/25 bg-cyan-500/10 px-2 py-1 text-[9px] font-mono text-cyan-200">Open</button>
-                              <button type="button" onClick={() => void onEndTemporaryChat?.(session.key)} className="rounded-md border border-rose-500/25 bg-rose-500/10 px-2 py-1 text-[9px] font-mono text-rose-200">End</button>
-                            </div>
+                      {(() => {
+                        const isAuth = providers[selectedProvider]?.isAuthenticated;
+                        const provState = providers[selectedProvider]?.state;
+                        const isBusy = isResyncing || provState === 'busy';
+                        const isWarning = provState === 'rate_limited' || provState === 'cooling_down';
+                        const tone = !currentProvConfig.serviceEnabled
+                          ? 'text-slate-500'
+                          : isBusy
+                            ? 'text-cyan-300'
+                            : isWarning
+                              ? 'text-rose-300'
+                              : isAuth
+                                ? 'text-emerald-400'
+                                : 'text-slate-500';
+                        const dotBg = !currentProvConfig.serviceEnabled
+                          ? 'bg-slate-500'
+                          : isBusy
+                            ? 'bg-cyan-400 animate-ping'
+                            : provState === 'rate_limited'
+                              ? 'bg-rose-400'
+                              : provState === 'cooling_down'
+                                ? 'bg-amber-400'
+                                : isAuth
+                                  ? 'bg-emerald-400'
+                                  : 'bg-slate-500';
+                        return (
+                          <div className={`mt-1 flex items-center gap-1.5 text-[9.5px] font-mono ${tone}`}>
+                            <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${dotBg}`} />
+                            <span>
+                              {!currentProvConfig.serviceEnabled
+                                ? 'Disabled'
+                                : isResyncing
+                                  ? 'Syncing Models'
+                                  : provState === 'busy'
+                                    ? 'Busy'
+                                    : provState === 'rate_limited'
+                                      ? 'Rate Limited'
+                                      : provState === 'cooling_down'
+                                        ? 'Cooling Down'
+                                        : isAuth
+                                          ? 'Connected'
+                                          : 'Not Logged In'}
+                            </span>
                           </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                );
-              })()}
-
-              {/* Provider Safe Hourly Quota & Subscription Limit Settings */}
-              <div className="space-y-2 bg-black/40 p-3 rounded-xl border border-white/5">
-                <div className="flex items-center justify-between">
-                  <label className="text-[10px] font-mono uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
-                    <Timer className="w-3.5 h-3.5 text-cyan-400" />
-                    <span>Safe Hourly Quota Ceiling:</span>
-                  </label>
-                  <span className="text-xs font-mono font-bold text-cyan-300">
-                    {currentProvConfig.hourlyLimit || 30} reqs / hr
-                  </span>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <input
-                    type="number"
-                    min="5"
-                    max="200"
-                    value={currentProvConfig.hourlyLimit || 30}
-                    onChange={(e) => {
-                      const val = parseInt(e.target.value, 10);
-                      if (!isNaN(val) && val > 0) {
-                        onUpdateProviderConfig(selectedProvider, { hourlyLimit: val });
-                      }
-                    }}
-                    className="w-24 bg-black/50 border border-white/10 rounded-lg px-2 py-1 text-xs text-cyan-300 font-mono text-center"
-                  />
-
-                  {/* Subscription Tier Quick Preset Buttons */}
-                  <div className="flex items-center gap-1 flex-1">
-                    <button
-                      onClick={() => {
-                        soundFx.playClick();
-                        onUpdateProviderConfig(selectedProvider, { hourlyLimit: 15 });
-                      }}
-                      className="px-2 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 text-[9.5px] font-mono border border-white/5 transition-colors cursor-pointer"
-                    >
-                      Free (15/hr)
-                    </button>
-                    <button
-                      onClick={() => {
-                        soundFx.playClick();
-                        onUpdateProviderConfig(selectedProvider, { hourlyLimit: 30 });
-                      }}
-                      className="px-2 py-1 rounded-lg bg-cyan-500/15 hover:bg-cyan-500/25 text-cyan-300 text-[9.5px] font-mono border border-cyan-500/30 transition-colors cursor-pointer"
-                    >
-                      Plus/Pro (30/hr)
-                    </button>
-                    <button
-                      onClick={() => {
-                        soundFx.playClick();
-                        onUpdateProviderConfig(selectedProvider, { hourlyLimit: 50 });
-                      }}
-                      className="px-2 py-1 rounded-lg bg-purple-500/15 hover:bg-purple-500/25 text-purple-300 text-[9.5px] font-mono border border-purple-500/30 transition-colors cursor-pointer"
-                    >
-                      Team/Ultra (50/hr)
-                    </button>
-                  </div>
-                </div>
-                <p className="text-[9px] text-slate-400 font-sans">
-                  When requests reach this limit, Transgentic immediately switches to your next fallback provider in Routes, preserving your subscription quota.
-                </p>
-              </div>
-
-              {/* Selection Strategy Hierarchy */}
-              <div className="space-y-2.5">
-                <label className="text-[10px] font-mono uppercase tracking-wider text-slate-400">
-                  Model Selection Strategy:
-                </label>
-
-                <div className="grid grid-cols-2 gap-2">
-                  {/* Hybrid Mode */}
-                  <button
-                    onClick={() => {
-                      soundFx.playClick();
-                      onUpdateProviderConfig(selectedProvider, { activeSelectionMode: 'hybrid' });
-                    }}
-                    className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer ${currentProvConfig.activeSelectionMode === 'hybrid'
-                        ? 'bg-cyan-500/15 border-cyan-500/50 text-slate-100 shadow-[0_0_12px_rgba(6,182,212,0.15)]'
-                        : 'bg-white/5 border-white/5 hover:border-white/15 text-slate-400'
-                      }`}
-                  >
-                    <div className="flex items-center gap-1.5 text-xs font-bold text-cyan-300">
-                      <Sparkles className="w-3.5 h-3.5" />
-                      <span>Smart Hybrid Selection</span>
+                        );
+                      })()}
                     </div>
-                    <p className="text-[9px] text-slate-400 mt-1">
-                      Automates model switching in Webview according to default preset and MCP tool requests.
-                    </p>
-                  </button>
-
-                  {/* Lock Active Session */}
-                  <button
-                    onClick={() => {
-                      soundFx.playClick();
-                      onUpdateProviderConfig(selectedProvider, { activeSelectionMode: 'lock_active_session' });
-                    }}
-                    className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer ${currentProvConfig.activeSelectionMode === 'lock_active_session'
-                        ? 'bg-purple-500/15 border-purple-500/50 text-slate-100 shadow-[0_0_12px_rgba(168,85,247,0.15)]'
-                        : 'bg-white/5 border-white/5 hover:border-white/15 text-slate-400'
-                      }`}
-                  >
-                    <div className="flex items-center gap-1.5 text-xs font-bold text-purple-300">
-                      <Lock className="w-3.5 h-3.5" />
-                      <span>Lock Active Session</span>
-                    </div>
-                    <p className="text-[9px] text-slate-400 mt-1">
-                      Bypasses DOM switching completely. Prompts are dispatched to whatever model is open in Webview.
-                    </p>
-                  </button>
-                </div>
-
-                {/* Dynamic MCP Override Toggle */}
-                <div className="flex items-center justify-between bg-black/40 p-2.5 rounded-xl border border-white/5">
-                  <div>
-                    <span className="text-[11px] font-semibold text-slate-200">
-                      Allow MCP Tool Model Override
-                    </span>
-                    <p className="text-[9px] text-slate-500 font-mono">
-                      Enables a client to request a model currently available in the provider picker.
-                    </p>
                   </div>
-                  <label className="relative inline-flex items-center cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={currentProvConfig.allowMcpOverride}
-                      onChange={(e) => {
-                        soundFx.playClick();
-                        onUpdateProviderConfig(selectedProvider, { allowMcpOverride: e.target.checked });
-                      }}
-                      className="sr-only peer"
-                    />
-                    <span className="relative h-5 w-9 rounded-full border border-white/10 bg-slate-700/80 shadow-inner transition-colors peer-checked:border-cyan-400/40 peer-checked:bg-cyan-500 after:absolute after:left-[2px] after:top-[2px] after:h-3.5 after:w-3.5 after:rounded-full after:bg-slate-300 after:shadow after:transition-transform peer-checked:after:translate-x-4 peer-checked:after:bg-white" />
-                  </label>
-                </div>
 
-                {/* Default Model Selector */}
-                <div className="space-y-1">
-                  <div className="flex items-center justify-between gap-2">
-                    <label className="text-[10px] font-mono uppercase tracking-wider text-slate-400">
-                      Default Fallback Model:
+                  {/* Action Buttons */}
+                  <div className="flex shrink-0 items-center gap-2">
+                    <button
+                      onClick={() => {
+                        soundFx.playClick();
+                        setShowAuthModalProvider(selectedProvider);
+                      }}
+                      className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-teal-500/15 hover:bg-teal-500/25 text-teal-300 border border-teal-500/30 text-[10px] font-mono font-semibold transition-all cursor-pointer shadow-[0_0_10px_rgba(20,184,166,0.15)]"
+                      title="Sync authenticated session from System Google Chrome"
+                    >
+                      <Link className="w-3 h-3 text-teal-400" />
+                      <span>Chrome Sync</span>
+                    </button>
+
+                    <label
+                      className="relative inline-flex shrink-0 cursor-pointer items-center gap-2 select-none"
+                      title={`${currentProvConfig.serviceEnabled ? 'Disable' : 'Enable'} ${getProviderLabel(selectedProvider)}`}
+                    >
+                      <span className="text-[10px] font-mono uppercase tracking-wider text-slate-400">Enabled</span>
+                      <input
+                        type="checkbox"
+                        checked={currentProvConfig.serviceEnabled}
+                        onChange={(e) => {
+                          soundFx.playClick();
+                          onToggleService(selectedProvider, e.target.checked);
+                        }}
+                        className="peer sr-only"
+                        aria-label={`${currentProvConfig.serviceEnabled ? 'Disable' : 'Enable'} ${getProviderLabel(selectedProvider)}`}
+                      />
+                      <span className="relative h-5 w-9 rounded-full border border-white/10 bg-slate-800 shadow-inner transition-colors peer-checked:border-cyan-400/40 peer-checked:bg-cyan-500/70 peer-focus-visible:ring-2 peer-focus-visible:ring-cyan-400/50 after:absolute after:left-[2px] after:top-[2px] after:h-3.5 after:w-3.5 after:rounded-full after:bg-slate-300 after:shadow after:transition-transform peer-checked:after:translate-x-4 peer-checked:after:bg-white" />
                     </label>
-                    <button
-                      type="button"
-                      disabled={isResyncing}
-                      onClick={handleResync}
-                      className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-slate-400 hover:bg-cyan-500/10 hover:text-cyan-300 transition-colors disabled:cursor-wait disabled:opacity-45 text-[9.5px] font-mono cursor-pointer"
-                      title="Scan live web session for available models"
-                      aria-label="Scan live web session for available models"
-                    >
-                      <RefreshCw className={`w-3 h-3 ${isResyncing ? 'animate-spin text-cyan-400' : ''}`} />
-                      <span>{isResyncing ? 'Scanning…' : 'Sync Models'}</span>
-                    </button>
                   </div>
-                  <select
-                    value={currentProvConfig.defaultModelId}
-                    onChange={(e) => {
-                      soundFx.playClick();
-                      onUpdateProviderConfig(selectedProvider, { defaultModelId: e.target.value });
-                    }}
-                    className="w-full bg-black/50 border border-white/10 rounded-xl px-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-cyan-500/50 cursor-pointer"
-                  >
-                    {currentProvConfig.models.map((m) => (
-                      <option key={m.id} value={m.id}>
-                        {m.displayName} {m.requiresTier ? `(${m.requiresTier})` : ''}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              {/* Model-Level Availability Checkboxes */}
-              <div className="space-y-2 pt-2 border-t border-white/5">
-                <div className="flex items-center justify-between">
-                  <label className="text-[10px] font-mono uppercase tracking-wider text-slate-400">
-                    Discovered & Usable Models:
-                  </label>
-                  <span className="text-[9px] text-slate-500 font-mono">
-                    IsUsable = ServiceEnabled ∧ UserEnabled ∧ Discovered
-                  </span>
                 </div>
 
-                <div className="space-y-1.5">
-                  {currentProvConfig.models.map((model) => {
-                    const isModelDevDisabled =
-                      servicesManifest?.services?.[selectedProvider]?.models?.find(
-                        (m) => m.id === model.id
-                      )?.enabled === false ||
-                      servicesManifest?.services?.[selectedProvider]?.enabled === false;
+                {resyncSuccess && (
+                  <div className="text-[10px] font-mono text-emerald-400 bg-emerald-500/10 px-2 py-1 rounded-lg border border-emerald-500/20 flex items-center gap-1.5">
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    <span>Model scan finished. Available choices appear below when the provider picker exposes them.</span>
+                  </div>
+                )}
 
-                    const isUsable =
-                      !isModelDevDisabled &&
-                      currentProvConfig.serviceEnabled &&
-                      model.userEnabled &&
-                      model.discoveredAvailable;
-
-                    return (
-                      <div
-                        key={model.id}
-                        className={`flex items-center justify-between p-2 rounded-xl border transition-colors ${isModelDevDisabled
-                            ? 'bg-rose-500/[0.03] border-rose-500/20 opacity-70'
-                            : 'bg-white/5 border-white/5 hover:border-white/10'
-                          }`}
-                      >
-                        <label className="flex items-center gap-2.5 cursor-pointer flex-1">
-                          <input
-                            type="checkbox"
-                            disabled={isModelDevDisabled}
-                            checked={model.userEnabled && !isModelDevDisabled}
-                            onChange={(e) => {
-                              soundFx.playClick();
-                              onToggleModel(selectedProvider, model.id, e.target.checked);
-                            }}
-                            className="rounded border-white/20 bg-black/40 text-cyan-500 focus:ring-0 disabled:opacity-40"
-                          />
-                          <div>
-                            <div className="flex items-center gap-1.5">
-                              <span className="text-xs font-semibold text-slate-200">
-                                {model.displayName}
-                              </span>
-                              {isModelDevDisabled && (
-                                <span className="text-[8.5px] font-mono text-rose-400 bg-rose-500/10 px-1 py-0.2 rounded border border-rose-500/20">
-                                  Manifest Disabled
-                                </span>
-                              )}
-                              {model.requiresTier && (
-                                <span className="text-[9px] font-mono text-purple-400 bg-purple-500/10 px-1.5 py-0.2 rounded border border-purple-500/20">
-                                  {model.requiresTier}
-                                </span>
-                              )}
-                            </div>
-                            <span className="text-[9px] font-mono text-slate-500">
-                              ID: {model.id} {model.discoveredAvailable ? '• Discovered Live' : '• Cached'}
-                            </span>
+                {(() => {
+                  const capability = providers[selectedProvider]?.temporaryChat;
+                  const supported = capability?.supported === true;
+                  const liveSessions = temporaryChatSessions.filter(session => session.providerId === selectedProvider);
+                  return (
+                    <div className="space-y-2 rounded-xl border border-indigo-500/20 bg-indigo-500/[0.06] p-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2 text-[10px] font-mono font-bold uppercase tracking-wider text-indigo-200">
+                            <Shield className="h-3.5 w-3.5 text-indigo-300" />
+                            Temporary Chat
                           </div>
-                        </label>
-
-                        <div>
-                          {isModelDevDisabled ? (
-                            <span className="text-[9px] font-mono text-rose-400 bg-rose-500/10 px-1.5 py-0.5 rounded border border-rose-500/20">
-                              BYPASSED
-                            </span>
-                          ) : isUsable ? (
-                            <span className="text-[9px] font-mono text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20">
-                              ACTIVE
-                            </span>
-                          ) : (
-                            <span className="text-[9px] font-mono text-slate-500 bg-white/5 px-1.5 py-0.5 rounded">
-                              OFF
-                            </span>
+                          <p className="mt-1 text-[9.5px] leading-relaxed text-slate-400">
+                            {supported
+                              ? 'This provider supports native Temporary Chat. Per-mode preferences are in General Settings. Transgentic saves conversation logs locally; generated files still save to your Library.'
+                              : 'Native Temporary Chat is unavailable for this provider. Preferred temporary requests use normal chat and report that fallback.'}
+                          </p>
+                          {supported && capability?.availability === 'unavailable' && (
+                            <p className="mt-1 text-[9px] font-mono text-amber-300">{capability.reason || 'Unavailable for the active account.'}</p>
                           )}
                         </div>
                       </div>
-                    );
-                  })}
+                      {liveSessions.length > 0 && (
+                        <div className="space-y-1.5 border-t border-white/5 pt-2">
+                          <div className="text-[9px] font-mono uppercase tracking-wider text-slate-500">Live Conversations</div>
+                          {liveSessions.map(session => (
+                            <div key={session.key} className="flex items-center justify-between gap-2 rounded-lg border border-white/[0.06] bg-black/25 px-2.5 py-2">
+                              <span className="truncate text-[9.5px] font-mono text-indigo-200">{session.mode === 'normal' ? 'Normal' : 'Temporary'} session {session.generation}</span>
+                              <div className="flex gap-1.5">
+                                <button type="button" onClick={() => void onOpenTemporaryChat?.(session.key)} className="rounded-md border border-cyan-500/25 bg-cyan-500/10 px-2 py-1 text-[9px] font-mono text-cyan-200">Open</button>
+                                <button type="button" onClick={() => void onEndTemporaryChat?.(session.key)} className="rounded-md border border-rose-500/25 bg-rose-500/10 px-2 py-1 text-[9px] font-mono text-rose-200">End</button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
+
+                {/* Provider Safe Hourly Quota & Subscription Limit Settings */}
+                <div className="space-y-2 bg-black/40 p-3 rounded-xl border border-white/5">
+                  <div className="flex items-center justify-between">
+                    <label className="text-[10px] font-mono uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
+                      <Timer className="w-3.5 h-3.5 text-cyan-400" />
+                      <span>Safe Hourly Quota Ceiling:</span>
+                    </label>
+                    <span className="text-xs font-mono font-bold text-cyan-300">
+                      {currentProvConfig.hourlyLimit || 30} reqs / hr
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      min="5"
+                      max="200"
+                      value={currentProvConfig.hourlyLimit || 30}
+                      onChange={(e) => {
+                        const val = parseInt(e.target.value, 10);
+                        if (!isNaN(val) && val > 0) {
+                          onUpdateProviderConfig(selectedProvider, { hourlyLimit: val });
+                        }
+                      }}
+                      className="w-24 bg-black/50 border border-white/10 rounded-lg px-2 py-1 text-xs text-cyan-300 font-mono text-center"
+                    />
+
+                    {/* Subscription Tier Quick Preset Buttons */}
+                    <div className="flex items-center gap-1 flex-1">
+                      <button
+                        onClick={() => {
+                          soundFx.playClick();
+                          onUpdateProviderConfig(selectedProvider, { hourlyLimit: 15 });
+                        }}
+                        className="px-2 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 text-[9.5px] font-mono border border-white/5 transition-colors cursor-pointer"
+                      >
+                        Free (15/hr)
+                      </button>
+                      <button
+                        onClick={() => {
+                          soundFx.playClick();
+                          onUpdateProviderConfig(selectedProvider, { hourlyLimit: 30 });
+                        }}
+                        className="px-2 py-1 rounded-lg bg-cyan-500/15 hover:bg-cyan-500/25 text-cyan-300 text-[9.5px] font-mono border border-cyan-500/30 transition-colors cursor-pointer"
+                      >
+                        Plus/Pro (30/hr)
+                      </button>
+                      <button
+                        onClick={() => {
+                          soundFx.playClick();
+                          onUpdateProviderConfig(selectedProvider, { hourlyLimit: 50 });
+                        }}
+                        className="px-2 py-1 rounded-lg bg-purple-500/15 hover:bg-purple-500/25 text-purple-300 text-[9.5px] font-mono border border-purple-500/30 transition-colors cursor-pointer"
+                      >
+                        Team/Ultra (50/hr)
+                      </button>
+                    </div>
+                  </div>
+                  <p className="text-[9px] text-slate-400 font-sans">
+                    When requests reach this limit, Transgentic immediately switches to your next fallback provider in Routes, preserving your subscription quota.
+                  </p>
+                </div>
+
+                {/* Selection Strategy Hierarchy */}
+                <div className="space-y-2.5">
+                  <label className="text-[10px] font-mono uppercase tracking-wider text-slate-400">
+                    Model Selection Strategy:
+                  </label>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    {/* Hybrid Mode */}
+                    <button
+                      onClick={() => {
+                        soundFx.playClick();
+                        onUpdateProviderConfig(selectedProvider, { activeSelectionMode: 'hybrid' });
+                      }}
+                      className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer ${currentProvConfig.activeSelectionMode === 'hybrid'
+                        ? 'bg-cyan-500/15 border-cyan-500/50 text-slate-100 shadow-[0_0_12px_rgba(6,182,212,0.15)]'
+                        : 'bg-white/5 border-white/5 hover:border-white/15 text-slate-400'
+                        }`}
+                    >
+                      <div className="flex items-center gap-1.5 text-xs font-bold text-cyan-300">
+                        <Sparkles className="w-3.5 h-3.5" />
+                        <span>Smart Hybrid Selection</span>
+                      </div>
+                      <p className="text-[9px] text-slate-400 mt-1">
+                        Automates model switching in Webview according to default preset and MCP tool requests.
+                      </p>
+                    </button>
+
+                    {/* Lock Active Session */}
+                    <button
+                      onClick={() => {
+                        soundFx.playClick();
+                        onUpdateProviderConfig(selectedProvider, { activeSelectionMode: 'lock_active_session' });
+                      }}
+                      className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer ${currentProvConfig.activeSelectionMode === 'lock_active_session'
+                        ? 'bg-purple-500/15 border-purple-500/50 text-slate-100 shadow-[0_0_12px_rgba(168,85,247,0.15)]'
+                        : 'bg-white/5 border-white/5 hover:border-white/15 text-slate-400'
+                        }`}
+                    >
+                      <div className="flex items-center gap-1.5 text-xs font-bold text-purple-300">
+                        <Lock className="w-3.5 h-3.5" />
+                        <span>Lock Active Session</span>
+                      </div>
+                      <p className="text-[9px] text-slate-400 mt-1">
+                        Bypasses DOM switching completely. Prompts are dispatched to whatever model is open in Webview.
+                      </p>
+                    </button>
+                  </div>
+
+                  {/* Dynamic MCP Override Toggle */}
+                  <div className="flex items-center justify-between bg-black/40 p-2.5 rounded-xl border border-white/5">
+                    <div>
+                      <span className="text-[11px] font-semibold text-slate-200">
+                        Allow MCP Tool Model Override
+                      </span>
+                      <p className="text-[9px] text-slate-500 font-mono">
+                        Enables a client to request a model currently available in the provider picker.
+                      </p>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={currentProvConfig.allowMcpOverride}
+                        onChange={(e) => {
+                          soundFx.playClick();
+                          onUpdateProviderConfig(selectedProvider, { allowMcpOverride: e.target.checked });
+                        }}
+                        className="sr-only peer"
+                      />
+                      <span className="relative h-5 w-9 rounded-full border border-white/10 bg-slate-700/80 shadow-inner transition-colors peer-checked:border-cyan-400/40 peer-checked:bg-cyan-500 after:absolute after:left-[2px] after:top-[2px] after:h-3.5 after:w-3.5 after:rounded-full after:bg-slate-300 after:shadow after:transition-transform peer-checked:after:translate-x-4 peer-checked:after:bg-white" />
+                    </label>
+                  </div>
+
+                  {/* Default Model Selector */}
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between gap-2">
+                      <label className="text-[10px] font-mono uppercase tracking-wider text-slate-400">
+                        Default Fallback Model:
+                      </label>
+                      <button
+                        type="button"
+                        disabled={isResyncing}
+                        onClick={handleResync}
+                        className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-slate-400 hover:bg-cyan-500/10 hover:text-cyan-300 transition-colors disabled:cursor-wait disabled:opacity-45 text-[9.5px] font-mono cursor-pointer"
+                        title="Scan live web session for available models"
+                        aria-label="Scan live web session for available models"
+                      >
+                        <RefreshCw className={`w-3 h-3 ${isResyncing ? 'animate-spin text-cyan-400' : ''}`} />
+                        <span>{isResyncing ? 'Scanning…' : 'Sync Models'}</span>
+                      </button>
+                    </div>
+                    <PopoverSelect
+                      value={currentProvConfig.defaultModelId}
+                      onChange={(e) => {
+                        soundFx.playClick();
+                        onUpdateProviderConfig(selectedProvider, { defaultModelId: e.target.value });
+                      }}
+                      className="w-full bg-black/50 border border-white/10 rounded-xl px-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-cyan-500/50 cursor-pointer"
+                    >
+                      {currentProvConfig.models.map((m) => (
+                        <option key={m.id} value={m.id}>
+                          {m.displayName} {m.requiresTier ? `(${m.requiresTier})` : ''}
+                        </option>
+                      ))}
+                    </PopoverSelect>
+                  </div>
+                </div>
+
+                {/* Model-Level Availability Checkboxes */}
+                <div className="space-y-2 pt-2 border-t border-white/5">
+                  <div className="flex items-center justify-between">
+                    <label className="text-[10px] font-mono uppercase tracking-wider text-slate-400">
+                      Discovered & Usable Models:
+                    </label>
+                    <span className="text-[9px] text-slate-500 font-mono">
+                      IsUsable = ServiceEnabled ∧ UserEnabled ∧ Discovered
+                    </span>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    {currentProvConfig.models.map((model) => {
+                      const isModelDevDisabled =
+                        servicesManifest?.services?.[selectedProvider]?.models?.find(
+                          (m) => m.id === model.id
+                        )?.enabled === false ||
+                        servicesManifest?.services?.[selectedProvider]?.enabled === false;
+
+                      const isUsable =
+                        !isModelDevDisabled &&
+                        currentProvConfig.serviceEnabled &&
+                        model.userEnabled &&
+                        model.discoveredAvailable;
+
+                      return (
+                        <div
+                          key={model.id}
+                          className={`flex items-center justify-between p-2 rounded-xl border transition-colors ${isModelDevDisabled
+                            ? 'bg-rose-500/[0.03] border-rose-500/20 opacity-70'
+                            : 'bg-white/5 border-white/5 hover:border-white/10'
+                            }`}
+                        >
+                          <label className="flex items-center gap-2.5 cursor-pointer flex-1">
+                            <input
+                              type="checkbox"
+                              disabled={isModelDevDisabled}
+                              checked={model.userEnabled && !isModelDevDisabled}
+                              onChange={(e) => {
+                                soundFx.playClick();
+                                onToggleModel(selectedProvider, model.id, e.target.checked);
+                              }}
+                              className="rounded border-white/20 bg-black/40 text-cyan-500 focus:ring-0 disabled:opacity-40"
+                            />
+                            <div>
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-xs font-semibold text-slate-200">
+                                  {model.displayName}
+                                </span>
+                                {isModelDevDisabled && (
+                                  <span className="text-[8.5px] font-mono text-rose-400 bg-rose-500/10 px-1 py-0.2 rounded border border-rose-500/20">
+                                    Manifest Disabled
+                                  </span>
+                                )}
+                                {model.requiresTier && (
+                                  <span className="text-[9px] font-mono text-purple-400 bg-purple-500/10 px-1.5 py-0.2 rounded border border-purple-500/20">
+                                    {model.requiresTier}
+                                  </span>
+                                )}
+                              </div>
+                              <span className="text-[9px] font-mono text-slate-500">
+                                ID: {model.id} {model.discoveredAvailable ? '• Discovered Live' : '• Cached'}
+                              </span>
+                            </div>
+                          </label>
+
+                          <div>
+                            {isModelDevDisabled ? (
+                              <span className="text-[9px] font-mono text-rose-400 bg-rose-500/10 px-1.5 py-0.5 rounded border border-rose-500/20">
+                                BYPASSED
+                              </span>
+                            ) : isUsable ? (
+                              <span className="text-[9px] font-mono text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20">
+                                ACTIVE
+                              </span>
+                            ) : (
+                              <span className="text-[9px] font-mono text-slate-500 bg-white/5 px-1.5 py-0.5 rounded">
+                                OFF
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
               </div>
-            </div>
-          )}
+            )}
           </div>
         </div>
       )}

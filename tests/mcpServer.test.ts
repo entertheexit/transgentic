@@ -35,6 +35,7 @@ describe('TransgenticMcpServer Integration', () => {
 
     const provRes = await fetch(`http://127.0.0.1:${testPort}/claude/sse`);
     expect(provRes.status).toBe(401);
+    expect((await fetch(`http://127.0.0.1:${testPort}/meta/sse`)).status).toBe(401);
   });
 
   it('should provide standard MCP tools in tools/list on authenticated unified /sse', async () => {
@@ -77,6 +78,7 @@ describe('TransgenticMcpServer Integration', () => {
     const toolNames = parsed.result.tools.map((t: any) => t.name);
     expect(toolNames).toContain('prompt_model');
     expect(toolNames).toContain('ask_meta');
+    expect(parsed.result.tools.find((tool: any) => tool.name === 'ask_meta').inputSchema.properties.files).toBeDefined();
     expect(toolNames).toContain('generate_image');
     expect(toolNames).toContain('generate_video');
     expect(toolNames).toContain('edit_image');
@@ -96,6 +98,24 @@ describe('TransgenticMcpServer Integration', () => {
     expect(parsed.result.tools.find((tool: any) => tool.name === 'generate_image').inputSchema.properties.files.items.oneOf).toHaveLength(3);
 
     reader?.cancel();
+  });
+
+  it('opens the authenticated Meta AI provider-specific SSE endpoint', async () => {
+    const response = await fetch(`http://127.0.0.1:${testPort}/meta/sse`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(response.status).toBe(200);
+    const reader = response.body!.getReader();
+    const { value } = await reader.read();
+    expect(new TextDecoder().decode(value)).toContain('/meta/messages');
+    await reader.cancel();
+    const mcp = await fetch(`http://127.0.0.1:${testPort}/meta/mcp`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(mcp.status).toBe(200);
+    const mcpReader = mcp.body!.getReader();
+    expect(new TextDecoder().decode((await mcpReader.read()).value)).toContain('/meta/mcp');
+    await mcpReader.cancel();
   });
 
   it('should support MCP Prompts (prompts/list and prompts/get)', async () => {

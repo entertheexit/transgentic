@@ -45,8 +45,10 @@ The shared extension is now 1.2.1, with matching local ZIP build, desktop downlo
 
 ## Local use
 
-Run the rebuilt application, reload the updated Transgentic Sync extension, then sync an authenticated `https://www.meta.ai/` tab. Select Meta AI explicitly in Providers, a route, or an MCP request. Discover the current account's native choices before requesting Instant or Thinking. Use text/image generation with one PNG/JPEG/WebP reference, or video generation without references. Video-reference support remains gated by its separate live verification.
+Run the rebuilt application, reload the updated Transgentic Sync extension, then sync an authenticated `https://www.meta.ai/` tab. Select Meta AI explicitly in Providers, a route, or an MCP request. Discover the current account's native choices before requesting Instant or Thinking. Text, image, and video requests accept one PNG/JPEG/WebP reference; image-to-video was enabled after the follow-up verification below.
 
 ## 2026-11-05 follow-up
 
 Image-to-video was subsequently verified with larger reference images and enabled in recipe 1.1.1. See [the investigation and final verification](meta-ai-image-to-video-2026-11-05.md). The disabled-reference statements above record the November 4 verification boundary.
+
+Later on November 5, a reconnected Meta AI session completed fresh text requests through `ask_meta` and `/v1/chat/completions` using `transgentic/provider/meta`. Both image and video were available in HTTP capability discovery. A fresh Meta image job completed through `/v1/media/jobs`, and its WebP artifact was downloaded successfully through the authenticated artifact endpoint. This check did not repeat live video generation; the separate image-to-video report records that earlier verification.

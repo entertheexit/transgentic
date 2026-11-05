@@ -1,3 +1,4 @@
+import { PopoverSelect } from './PopoverSelect.js';
 import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { MediaCapability, MediaPreferences, MediaSettings } from '../../shared/media.js';
@@ -92,10 +93,10 @@ export function MediaSettingsModal({ mode, routeIdentity, onClose }: { mode: Tas
               const id = `media-${index}-${setting.key}`;
               return <div key={setting.key} className="space-y-1">
                 <div className="flex flex-wrap items-center justify-between gap-2"><label htmlFor={id} className="text-sm">{setting.label}</label>{index > 0 && <label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={overridden} onChange={e => update(c, setting.key, valid ? value : setting.default, e.target.checked)} />Override inherited choice</label>}</div>
-                <select id={id} disabled={!overridden} value={JSON.stringify(value)} onChange={e => update(c, setting.key, JSON.parse(e.target.value))} className="w-full rounded-lg border border-white/20 bg-slate-900 px-3 py-2 text-sm disabled:opacity-60 focus-visible:outline focus-visible:outline-cyan-400">
+                <PopoverSelect id={id} disabled={!overridden} value={JSON.stringify(value)} onChange={e => update(c, setting.key, JSON.parse(e.target.value))} className="w-full rounded-lg border border-white/20 bg-slate-900 px-3 py-2 text-sm disabled:opacity-60 focus-visible:outline focus-visible:outline-cyan-400">
                   {!valid && <option value={JSON.stringify(value)}>Unavailable: {String(value)}</option>}
                   {setting.options.map(option => <option key={JSON.stringify(option.value)} value={JSON.stringify(option.value)}>{option.label}</option>)}
-                </select>
+                </PopoverSelect>
                 {index > 0 && !overridden && <p className="text-xs text-slate-400">{preferences.settings?.[setting.key] !== undefined ? 'Inherited from primary' : 'Recipe default'}</p>}
               </div>;
             })}

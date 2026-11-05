@@ -261,10 +261,13 @@ Use exact accessible names,
 including description alternatives where necessary. Never match `Personalized`
 with a substring search: that also matches `Unpersonalized`.
 
-Home and Settings expose only declared modes and remember choices per task mode
-and provider. New Coding configurations default to ChatGPT Unpersonalized; saved
-choices and legacy boolean preferences remain unchanged. Other supported web
-providers use their native Temporary mode. Recipes may declare `personalization`
+Home and Settings share one Temporary on/off preference per task mode. The Home
+selector also remembers the selected provider personalization while the switch is
+off. Changing providers preserves the switch; unavailable services do not change
+the preference. Existing installations migrate the routed provider's saved choice
+to the mode switch. New Coding configurations enable Temporary and default ChatGPT
+to Unpersonalized. Other supported web providers use their native Temporary mode.
+Recipes may declare `personalization`
 as `disabled`, `profile-only`, `selectable`, or `unknown`; absent metadata means
 unknown. Gemini declares disabled personalization, while Claude Incognito may
 still use profile preferences and custom styles.

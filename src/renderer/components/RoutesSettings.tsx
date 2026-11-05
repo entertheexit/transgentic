@@ -1,3 +1,4 @@
+import { PopoverSelect } from './PopoverSelect.js';
 import { BUILTIN_PROVIDER_IDS } from '../../shared/providers.js';
 import { isCliProvider } from '../../shared/cli.js';
 import React, { useState, useEffect } from 'react';
@@ -825,7 +826,7 @@ export const RoutesSettings: React.FC<RoutesSettingsProps> = ({
           {/* Add Fallback Control */}
           {availableToAdd.length > 0 && (
             <div className="flex items-center gap-2 pt-1">
-              <select
+              <PopoverSelect
                 value={fallbackToAdd}
                 onChange={(e) => setFallbackToAdd(e.target.value as ProviderId)}
                 className="flex-1 bg-black/50 border border-white/10 rounded-xl px-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-cyan-500/50"
@@ -841,7 +842,7 @@ export const RoutesSettings: React.FC<RoutesSettingsProps> = ({
                     </option>
                   );
                 })}
-              </select>
+              </PopoverSelect>
 
               <button
                 disabled={!fallbackToAdd || !doesProviderSupportMode(fallbackToAdd, selectedMode)}
@@ -934,11 +935,11 @@ export const RoutesSettings: React.FC<RoutesSettingsProps> = ({
 
                     {isCliProvider(provId) && <div className="space-y-2 border-b border-white/10 pb-3">
                       {config?.cli?.services?.[provId]?.workMode === 'agentic' ? <label className="block text-xs text-slate-300">Host workspace (optional)
-                        <select aria-label={`${srv?.name || provId} host workspace`} className="mt-1 w-full rounded-lg border border-white/10 bg-slate-900 px-3 py-2" value={currentRoute.cliWorkspaces?.[provId] || ''} onChange={e => onUpdateRoute(selectedMode, { cliWorkspaces: { ...currentRoute.cliWorkspaces, [provId]: e.target.value } }, activePipeline)}>
+                        <PopoverSelect aria-label={`${srv?.name || provId} host workspace`} className="mt-1 w-full rounded-lg border border-white/10 bg-slate-900 px-3 py-2" value={currentRoute.cliWorkspaces?.[provId] || ''} onChange={e => onUpdateRoute(selectedMode, { cliWorkspaces: { ...currentRoute.cliWorkspaces, [provId]: e.target.value } }, activePipeline)}>
                           <option value="">No project access</option>
                           {config?.cli?.workspaces.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
                           {currentRoute.cliWorkspaces?.[provId] && !config?.cli?.workspaces.some(w => w.id === currentRoute.cliWorkspaces?.[provId]) && <option value={currentRoute.cliWorkspaces[provId]}>Unavailable workspace — select another</option>}
-                        </select>
+                        </PopoverSelect>
                       </label> : <div className="flex items-center gap-2 rounded-lg border border-cyan-500/20 bg-cyan-500/[0.06] px-3 py-2 text-[10.5px] text-cyan-200"><ShieldCheck className="h-3.5 w-3.5" />Provider Mode · supplied context only, no host workspace</div>}
                       <p className="text-[11px] text-slate-400">{config?.cli?.services?.[provId]?.workMode === 'agentic' ? `A workspace belongs to the machine running Transgentic. Editing, command, and MCP grants still apply.${activePipeline === 'co' ? ' Co always disables editing and commands.' : ''}` : 'Switch this CLI to Agentic Mode in Provider settings before assigning a host workspace.'}</p>
                     </div>}
@@ -953,7 +954,7 @@ export const RoutesSettings: React.FC<RoutesSettingsProps> = ({
                           {modeModels.length} models tagged for {selectedMode}
                         </span>
                       </div>
-                      <select
+                      <PopoverSelect
                         value={defaultModelId}
                         onChange={(e) => handleSetProviderModeDefaultModel(provId, e.target.value)}
                         className="w-full bg-black/50 border border-teal-500/30 rounded-xl px-3 py-1.5 text-xs text-teal-200 focus:outline-none focus:border-teal-400 font-mono cursor-pointer"
@@ -963,7 +964,7 @@ export const RoutesSettings: React.FC<RoutesSettingsProps> = ({
                             {m.displayName || m.id} {m.requiresTier ? `(${m.requiresTier})` : ''}
                           </option>
                         ))}
-                      </select>
+                      </PopoverSelect>
                     </div>
 
                     {/* Intra-Service Fallback Models */}
@@ -1028,7 +1029,7 @@ export const RoutesSettings: React.FC<RoutesSettingsProps> = ({
                       {/* Add Fallback Model Selector */}
                       {availableModelFbs.length > 0 && (
                         <div className="flex items-center gap-2 pt-1">
-                          <select
+                          <PopoverSelect
                             value={selectedFallbackToAdd}
                             onChange={(e) =>
                               setModelFallbackToAdd((prev) => ({ ...prev, [provId]: e.target.value }))
@@ -1043,7 +1044,7 @@ export const RoutesSettings: React.FC<RoutesSettingsProps> = ({
                                 {m.displayName || m.id}
                               </option>
                             ))}
-                          </select>
+                          </PopoverSelect>
                           <button
                             disabled={!selectedFallbackToAdd}
                             onClick={() => handleAddProviderModeFallbackModel(provId, selectedFallbackToAdd)}

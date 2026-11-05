@@ -1,9 +1,20 @@
 import { describe, expect, it, vi, afterEach } from 'vitest';
-import { normalizeChatModePreferences, resolveChatMode, validateChatMode } from '../src/shared/types.js';
+import { DEFAULT_TEMPORARY_CHAT, migrateTemporaryModeSwitches, normalizeChatModePreferences, resolveChatMode, validateChatMode } from '../src/shared/types.js';
 import { boundedTemporaryChatProbe } from '../src/main/webviews/temporaryChatProbe.js';
 
 afterEach(() => vi.useRealTimers());
 describe('chat mode preferences and request contracts', () => {
+  it('enables Coding Temporary Chat on first install without changing saved choices', () => {
+    const firstInstall = {
+      temporaryChat: { ...DEFAULT_TEMPORARY_CHAT },
+      chatModes: { coding: { chatgpt: 'temporary-unpersonalized' as const } },
+    };
+    expect(resolveChatMode(firstInstall, 'coding', 'claude', undefined, undefined, 'webview', true)).toBe('temporary');
+    expect(resolveChatMode(firstInstall, 'coding', 'chatgpt', undefined, undefined, 'webview', true)).toBe('temporary-unpersonalized');
+    expect(resolveChatMode(firstInstall, 'coding', 'gemini', undefined, undefined, 'webview', true)).toBe('temporary');
+    expect(resolveChatMode({ ...firstInstall, temporaryChat: { ...DEFAULT_TEMPORARY_CHAT, coding: false } }, 'coding', 'chatgpt')).toBe('normal');
+    expect(normalizeChatModePreferences(undefined, { coding: false }).coding?.chatgpt).toBe('normal');
+  });
   it('migrates enabled ChatGPT to personalized and disabled modes to normal', () => {
     const migrated = normalizeChatModePreferences(undefined, { general: true, coding: false });
     expect(migrated.general?.chatgpt).toBe('temporary-personalized');
@@ -13,7 +24,7 @@ describe('chat mode preferences and request contracts', () => {
   it('keeps each provider and task mode independent', () => {
     const config = { chatModes: { general: { chatgpt: 'temporary-unpersonalized' as const, gemini: 'normal' as const } } };
     expect(resolveChatMode(config, 'general', 'chatgpt')).toBe('temporary-unpersonalized');
-    expect(resolveChatMode(config, 'general', 'gemini')).toBe('normal');
+    expect(resolveChatMode(config, 'general', 'gemini')).toBe('temporary');
     expect(resolveChatMode(config, 'coding', 'chatgpt')).toBe('temporary-unpersonalized');
     expect(resolveChatMode(config, 'coding', 'claude')).toBe('temporary');
     expect(resolveChatMode(config, 'coding', 'localllm')).toBe('normal');
@@ -21,6 +32,19 @@ describe('chat mode preferences and request contracts', () => {
     expect(resolveChatMode({ temporaryChat: { coding: true } as any }, 'coding', 'custom_api', undefined, undefined, 'api')).toBe('normal');
     expect(resolveChatMode({ temporaryChat: { coding: true } as any }, 'coding', 'custom_api', 'temporary', undefined, 'api')).toBe('temporary');
     expect(resolveChatMode(config, 'writing', 'chatgpt')).toBe('temporary-unpersonalized');
+  });
+  it('migrates the routed choice and preserves the remembered variant across switch changes', () => {
+    const old = { temporaryChat: { ...DEFAULT_TEMPORARY_CHAT }, routes: { main: { coding: { defaultService: 'chatgpt' } } }, chatModes: { coding: { chatgpt: 'normal' } } } as any;
+    const migrated = migrateTemporaryModeSwitches(old);
+    expect(migrated.temporaryChat?.coding).toBe(false);
+    const enabled = { ...migrated, temporaryChat: { ...migrated.temporaryChat!, coding: true }, chatModes: { coding: { chatgpt: 'temporary-personalized' as const } } };
+    expect(resolveChatMode(enabled, 'coding', 'chatgpt')).toBe('temporary-personalized');
+    expect(resolveChatMode(enabled, 'coding', 'gemini')).toBe('temporary');
+    expect(resolveChatMode(enabled, 'coding', 'cli_codex')).toBe('normal');
+    const disabled = { ...enabled, temporaryChat: { ...enabled.temporaryChat, coding: false } };
+    expect(resolveChatMode(disabled, 'coding', 'chatgpt')).toBe('normal');
+    expect(resolveChatMode({ ...disabled, temporaryChat: enabled.temporaryChat }, 'coding', 'chatgpt')).toBe('temporary-personalized');
+    expect(migrateTemporaryModeSwitches(disabled)).toBe(disabled);
   });
   it('preserves legacy overrides and rejects contradictory fields', () => {
     expect(resolveChatMode(undefined, 'general', 'chatgpt', undefined, true)).toBe('temporary-personalized');

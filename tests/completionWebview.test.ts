@@ -21,8 +21,9 @@ describe('WebView completion conversation ownership', () => {
     vi.spyOn(ServiceManifestManager, 'getManifest').mockReturnValue({ version: '1', services: {
       grok: { id: 'grok', name: 'Grok', enabled: true, providerType: 'webview', url: 'https://grok.com' },
       chatgpt: { id: 'chatgpt', name: 'ChatGPT', enabled: true, providerType: 'webview', url: 'https://chatgpt.com' },
+      meta: { id: 'meta', name: 'Meta AI', enabled: true, providerType: 'webview', url: 'https://www.meta.ai' },
     } } as any);
-    vi.spyOn(globalSessionManager, 'getAdapter').mockImplementation(id => new CustomRecipeAdapter(BUILTIN_RECIPES[id as 'grok' | 'chatgpt']));
+    vi.spyOn(globalSessionManager, 'getAdapter').mockImplementation(id => new CustomRecipeAdapter(BUILTIN_RECIPES[id as 'grok' | 'chatgpt' | 'meta']));
     vi.spyOn(globalSessionManager, 'getStatus').mockImplementation(id => ({ temporaryChat: id === 'chatgpt'
       ? { supported: true, availability: 'available' } : { supported: false, availability: 'unavailable' } }) as any);
     vi.spyOn(globalSessionManager, 'ensureNormalConversation').mockResolvedValue(handle);
@@ -34,6 +35,15 @@ describe('WebView completion conversation ownership', () => {
     gateway = new CompletionGateway(() => ({ temporaryChat: { ...DEFAULT_TEMPORARY_CHAT } } as any), () => 58420);
   });
   afterEach(() => { vi.restoreAllMocks(); });
+
+  it('routes Meta AI direct completions to its authenticated WebView', async () => {
+    expect(gateway.isEligible('meta')).toBe(true);
+    expect(gateway.listModels().map(model => model.id)).toContain('transgentic/provider/meta');
+    const result = await gateway.complete({ model: 'transgentic/provider/meta', chat_mode: 'normal', messages: [{ role: 'user', content: 'Meta API sentinel' }] });
+    expect(globalSessionManager.ensureNormalConversation).toHaveBeenCalledWith(expect.objectContaining({ providerId: 'meta' }));
+    expect(executePrompt.mock.calls[0][0]).toContain('Meta API sentinel');
+    expect(result).toMatchObject({ provider: 'meta', message: { content: 'Provider answer' } });
+  });
 
   it('uses a fresh view and full caller history for every ordinary API request', async () => {
     expect(gateway.isEligible('grok')).toBe(true);
