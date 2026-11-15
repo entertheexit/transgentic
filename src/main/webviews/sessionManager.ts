@@ -20,6 +20,7 @@ import { ModelScraperEngine } from '../registry/modelScrapers.js';
 import { AccountRegistryManager } from '../registry/accountRegistry.js';
 import { ServiceManifestManager } from '../registry/serviceManifest.js';
 import { globalThreadManager } from '../registry/threadManager.js';
+import { PartitionLifecycleManager } from '../auth/partitionLifecycle.js';
 
 function getStealthPreloadPath(): string | undefined {
   try {
@@ -74,7 +75,7 @@ export class SessionManager {
   private statuses: Map<ProviderId, ProviderStatus> = new Map();
   private openWindows: Map<string, BrowserWindow> = new Map();
   private backgroundWindows: Map<string, BrowserWindow> = new Map();
-  private availabilityProbeViews = new WeakSet<WebContents>();
+  private isolatedProviderViews = new WeakSet<WebContents>();
   private temporaryConversations = new Map<string, TemporaryConversationEntry>();
   private normalConversations = new Map<string, NormalConversationEntry>();
   private temporaryGeneration = 0;
@@ -231,7 +232,7 @@ export class SessionManager {
    * Ensures an active WebContents exists in the background for prompt execution
    * even when the user is not actively viewing the drawer.
    */
-  public async ensureWebContents(id: ProviderId, targetPartition?: string): Promise<WebContents> {
+  public async ensureWebContents(id: ProviderId, targetPartition?: string, backgroundOnly = false): Promise<WebContents> {
     if (isCliProvider(id)) throw new Error('CLI services do not use browser sessions.');
     const adapter = this.adapters.get(id);
     if (!adapter) throw new Error(`Unknown provider ${id}`);
@@ -242,30 +243,43 @@ export class SessionManager {
 
     // If adapter already has an active, non-destroyed webContents with matching partition, return it
     const existing = adapter.getWebContents();
-    if (existing && !existing.isDestroyed()) {
+    if (!backgroundOnly && existing && !existing.isDestroyed()) {
       return existing;
     }
 
     // Check if background window exists for this partition
-    const bgKey = `${id}:${effectivePartition}`;
+    const bgKey = `${id}:${effectivePartition}${backgroundOnly ? ':requests' : ''}`;
     let bgWin = this.backgroundWindows.get(bgKey);
     if (bgWin && !bgWin.isDestroyed()) {
-      adapter.setWebContents(bgWin.webContents);
+      if (!backgroundOnly) adapter.setWebContents(bgWin.webContents);
       return bgWin.webContents;
     }
 
-    this.configureSession(effectivePartition);
+    const accountSession = this.configureSession(effectivePartition);
+    const requestPartition = backgroundOnly && id === 'chatgpt'
+      ? `transgentic-image:${effectivePartition}`
+      : effectivePartition;
+    if (requestPartition !== effectivePartition) {
+      // The image composer has its own storage, so a draft saved by the
+      // provider in the shared account view cannot be restored here.
+      const requestSession = this.configureSession(requestPartition);
+      requestSession.setUserAgent(accountSession.getUserAgent());
+      const cookies = await accountSession.cookies.get({ url: 'https://chatgpt.com/' });
+      await requestSession.clearStorageData();
+      await PartitionLifecycleManager.syncCookiesToPartition(requestPartition, cookies, 'chatgpt.com');
+    }
 
     const preloadScript = getStealthPreloadPath();
-    const normalizedUA = SessionProfileManager.getNormalizedUserAgent();
+    const normalizedUA = accountSession.getUserAgent();
     bgWin = new BrowserWindow({
       width: 1024,
       height: 768,
       show: false, // hidden in background
       webPreferences: {
-        partition: effectivePartition,
+        partition: requestPartition,
         nodeIntegration: false,
         contextIsolation: true,
+        backgroundThrottling: false,
         preload: preloadScript,
       },
     });
@@ -276,11 +290,12 @@ export class SessionManager {
       bgWin?.webContents.executeJavaScript(SessionProfileManager.getPreloadCompatibilityScript(), true).catch(() => {});
     });
 
+    if (backgroundOnly) this.isolatedProviderViews.add(bgWin.webContents);
     if (adapter.url) {
       bgWin.loadURL(adapter.url);
     }
     this.backgroundWindows.set(bgKey, bgWin);
-    adapter.setWebContents(bgWin.webContents);
+    if (!backgroundOnly) adapter.setWebContents(bgWin.webContents);
 
     // Wait for did-finish-load or up to 6 seconds
     if (adapter.url) {
@@ -395,8 +410,16 @@ export class SessionManager {
     }
   }
 
+  public discardChatGptImageView(partition: string, contents: WebContents | undefined): void {
+    const key = `chatgpt:${partition}:requests`;
+    const window = this.backgroundWindows.get(key);
+    if (!window || window.isDestroyed() || window.webContents !== contents) return;
+    this.backgroundWindows.delete(key);
+    window.destroy();
+  }
+
   public isIsolatedProviderView(webContents: WebContents): boolean {
-    return this.availabilityProbeViews.has(webContents) ||
+    return this.isolatedProviderViews.has(webContents) ||
       [...this.temporaryConversations.values(), ...this.normalConversations.values()]
       .some(entry => !entry.window.isDestroyed() && entry.window.webContents === webContents);
   }
@@ -524,7 +547,7 @@ export class SessionManager {
         backgroundThrottling: false, preload: getStealthPreloadPath(),
       },
     });
-    this.availabilityProbeViews.add(window.webContents);
+    this.isolatedProviderViews.add(window.webContents);
     try {
       window.webContents.setUserAgent(session.getUserAgent());
       window.webContents.on('dom-ready', () => {

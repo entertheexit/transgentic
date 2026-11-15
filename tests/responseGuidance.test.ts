@@ -1,16 +1,21 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { TransgenticMcpServer } from '../src/main/mcp/server.js';
 import { DynamicRouter } from '../src/main/mcp/router.js';
 import { LocalLlmClient } from '../src/main/localllm/localLlmClient.js';
 import { globalThreadManager } from '../src/main/registry/threadManager.js';
 import { AccountRegistryManager } from '../src/main/registry/accountRegistry.js';
+import { ModelScraperEngine } from '../src/main/registry/modelScrapers.js';
+import { effortModelId } from '../src/shared/modelEffort.js';
 import { ModelRegistryManager } from '../src/main/registry/modelRegistry.js';
 import { ServiceManifestManager } from '../src/main/registry/serviceManifest.js';
 import { globalSessionManager } from '../src/main/webviews/sessionManager.js';
 import { globalRateLimiter } from '../src/main/mcp/rateLimiter.js';
 import { DuplicateActionGuard } from '../src/main/security/duplicateActionGuard.js';
-import { globalAssetManager } from '../src/main/storage/assetManager.js';
+import { AssetManager, globalAssetManager } from '../src/main/storage/assetManager.js';
+import * as artifacts from '../src/main/media/artifacts.js';
 import { CustomRecipeAdapter } from '../src/main/webviews/customRecipeAdapter.js';
 import { BUILTIN_RECIPES } from '../src/shared/types/recipe.js';
 import type { ProviderId, TaskMode, TransgenticConfig } from '../src/shared/types.js';
@@ -285,26 +290,44 @@ describe('Actual provider answers with server-side reminders', () => {
     expect(adapter.executePrompt).not.toHaveBeenCalled();
   });
 
-  it.each(['text', 'empty', 'long', 'uncertain'])('never retries a submitted media request after a %s result', async kind => {
+  it.each(['text', 'empty', 'long', 'uncertain', 'timeout'])('never retries a submitted media request after a %s result', async kind => {
     configure(false, false, true);
-    vi.mocked(DynamicRouter.getCandidateChain).mockReturnValue(['gemini', 'grok']);
-    const mediaAdapter = new CustomRecipeAdapter(BUILTIN_RECIPES.gemini);
+    const provider = kind === 'timeout' ? 'chatgpt' : 'gemini';
+    vi.mocked(DynamicRouter.getCandidateChain).mockReturnValue([provider, 'grok']);
+    const discard = vi.spyOn(globalSessionManager, 'discardChatGptImageView');
+    const mediaAdapter = new CustomRecipeAdapter(BUILTIN_RECIPES[provider]);
     vi.mocked(globalSessionManager.getAdapter).mockReturnValue(mediaAdapter);
     const pinExecution = vi.spyOn(mediaAdapter, 'createPinnedExecutionAdapter').mockReturnValue(mediaAdapter);
     vi.spyOn(mediaAdapter, 'prepareMediaPage').mockResolvedValue();
     vi.spyOn(mediaAdapter, 'navigateToNewChat').mockResolvedValue();
+    vi.spyOn(mediaAdapter, 'checkAuthStatus').mockResolvedValue(true);
     vi.spyOn(mediaAdapter, 'checkRateLimit').mockResolvedValue({ isRateLimited: false });
     vi.spyOn(mediaAdapter, 'acquireDomLock').mockResolvedValue(() => {});
     vi.spyOn(mediaAdapter, 'getConversationUrl').mockResolvedValue('https://gemini.google.com/app/test');
     const execute = vi.spyOn(mediaAdapter, 'executePrompt').mockImplementation(async (...args) => {
       args[8]?.();
       if (kind === 'uncertain') throw new Error('Lost provider response after submission');
+      if (kind === 'timeout') {
+        vi.useFakeTimers();
+        const inspect = vi.spyOn(mediaAdapter as any, 'executeScript').mockResolvedValue({ text: '', isGenerating: true });
+        try {
+          const polling = mediaAdapter.pollGeneration({ mode: 'image', timeoutMs: 1_100 });
+          const deadline = expect(polling).rejects.toThrow(/Timeout after .* waiting for .*ChatGPT/);
+          await vi.advanceTimersByTimeAsync(1_100);
+          await deadline;
+          return await polling;
+        } finally {
+          inspect.mockRestore();
+          vi.useRealTimers();
+        }
+      }
       return { text: kind === 'empty' ? '' : kind === 'long' ? 'x'.repeat(1_100) : 'Here is a plan for creating your image.' };
     });
     const result = await run('Create a square landscape illustration.', 'image');
     expect(result.isError).toBe(true);
     expect(result.structuredContent.status).toBe('failed');
-    expect(result.content[0].text).toContain(kind === 'uncertain' ? 'WEBVIEW_SUBMISSION_UNCERTAIN' : 'MEDIA_NOT_GENERATED');
+    expect(result.content[0].text).toContain(['uncertain', 'timeout'].includes(kind) ? 'WEBVIEW_SUBMISSION_UNCERTAIN' : 'MEDIA_NOT_GENERATED');
+    if (kind === 'timeout') expect(discard).toHaveBeenCalledOnce();
     if (kind === 'text') expect(result.content[0].text).toContain('Provider reply (no media produced): "Here is a plan for creating your image."');
     if (kind === 'empty') expect(result.content[0].text).not.toContain('Provider reply');
     if (kind === 'long') {
@@ -315,6 +338,43 @@ describe('Actual provider answers with server-side reminders', () => {
     expect(execute).toHaveBeenCalledOnce();
     expect(pinExecution).toHaveBeenCalledOnce();
     expect(completion).not.toHaveBeenCalled();
+    if (kind === 'timeout') {
+      const nextView = { getURL: () => 'https://chatgpt.com/' } as any;
+      vi.mocked(globalSessionManager.ensureWebContents).mockResolvedValueOnce(nextView);
+      const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jPZkAAAAASUVORK5CYII=', 'base64');
+      const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'transgentic-image-retry-'));
+      try {
+        const assets = new AssetManager(directory);
+        vi.spyOn(globalAssetManager, 'saveMediaAsset').mockImplementation(assets.saveMediaAsset.bind(assets));
+        const validate = vi.spyOn(artifacts, 'validateMediaArtifact').mockResolvedValue({ bytes: png.length, mimeType: 'image/png' });
+        const model = 'gpt-5-6-sol';
+        const variant = effortModelId(model, 'medium');
+        vi.mocked(DynamicRouter.resolveTargetModel).mockReturnValue(model);
+        vi.spyOn(DynamicRouter, 'getModelAttempts').mockReturnValue([variant]);
+        const select = vi.spyOn(ModelScraperEngine, 'selectModelAndEffort').mockResolvedValue();
+        execute.mockImplementationOnce(async (...args) => {
+          expect(select).not.toHaveBeenCalled();
+          await args[9]?.();
+          args[8]?.();
+          return { text: '', media: { type: 'image', data: png, suggestedName: 'retry' } };
+        });
+
+        const retry = await run('Create a square landscape illustration.', 'image');
+
+        expect(select).toHaveBeenCalledWith('chatgpt', model, 'medium', nextView);
+        expect(pinExecution).toHaveBeenLastCalledWith(nextView, 'test');
+        expect(execute).toHaveBeenCalledTimes(2);
+        expect(retry.structuredContent.status).toBe('completed');
+        expect(validate).toHaveBeenCalledOnce();
+        const [file, mode] = validate.mock.calls[0];
+        expect(mode).toBe('image');
+        expect(path.dirname(file)).toBe(assets.getLibraryDirectory('Images'));
+        expect(fs.readFileSync(file)).toEqual(png);
+        expect(discard).toHaveBeenCalledOnce();
+      } finally {
+        fs.rmSync(directory, { recursive: true, force: true });
+      }
+    }
   });
 
   it('keeps a surviving dual answer when the other provider fails', async () => {

@@ -1,7 +1,7 @@
 import { effortModelId, parseEffortModel } from '../../shared/modelEffort.js';
 import { validateMediaArtifact } from '../media/artifacts.js';
 import { resolveMediaSettings } from '../../shared/media.js';
-import { resolveChatMode, validateChatMode, normalizeRouteMode, type ChatModeSelection } from '../../shared/types.js';
+import { resolveChatMode, validateChatMode, normalizeRouteMode, temporaryChatModeRestriction, type ChatModeSelection } from '../../shared/types.js';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import { isCliProvider, CLI_DEFINITIONS } from '../../shared/cli.js';
@@ -334,7 +334,7 @@ export class CompletionGateway {
     if (previousBinding && !request.new_thread) eligibleCandidates = eligibleCandidates.filter(provider => provider === previousBinding.provider);
     if (policy === 'require-temporary') eligibleCandidates = eligibleCandidates.filter(provider => {
       const adapter = globalSessionManager.getAdapter(provider);
-      return adapter instanceof CustomRecipeAdapter && adapter.supportsChatMode(resolveChatMode(undefined, mode, provider, request.chat_mode, request.temporary_chat)) && globalSessionManager.getStatus(provider)?.temporaryChat?.availability !== 'unavailable';
+      return !temporaryChatModeRestriction(mode, provider) && adapter instanceof CustomRecipeAdapter && adapter.supportsChatMode(resolveChatMode(undefined, mode, provider, request.chat_mode, request.temporary_chat)) && globalSessionManager.getStatus(provider)?.temporaryChat?.availability !== 'unavailable';
     });
     if (!eligibleCandidates.length) { await staged.cleanup();
       throw new Error(policy === 'require-temporary' ? '[TEMPORARY_CHAT_UNSUPPORTED] No eligible provider can verify native Temporary Chat.'
@@ -377,13 +377,14 @@ export class CompletionGateway {
       try {
         const adapter = globalSessionManager.getAdapter(provider);
         const selection = resolveChatMode(undefined, mode, provider, request.chat_mode, request.temporary_chat);
-        const capable = adapter instanceof CustomRecipeAdapter && adapter.supportsChatMode(selection);
+        const restriction = temporaryChatModeRestriction(mode, provider);
+        const capable = !restriction && adapter instanceof CustomRecipeAdapter && adapter.supportsChatMode(selection);
         const unavailable = globalSessionManager.getStatus(provider)?.temporaryChat?.availability === 'unavailable';
         const actualMode = policy !== 'normal' && capable && !unavailable ? 'temporary' : 'normal';
         const modeChanged = Boolean(previousBinding && !request.new_thread && (previousBinding.mode !== actualMode || previousBinding.selection !== (actualMode === 'temporary' ? selection : 'normal')));
         const fallbackReason = policy !== 'normal' && actualMode === 'normal'
-          ? unavailable ? globalSessionManager.getStatus(provider)?.temporaryChat?.reason || 'Native Temporary Chat is unavailable for this account.'
-            : `${provider} does not support native Temporary Chat.` : undefined;
+          ? restriction || (unavailable ? globalSessionManager.getStatus(provider)?.temporaryChat?.reason || 'Native Temporary Chat is unavailable for this account.'
+            : `${provider} does not support native Temporary Chat.`) : undefined;
         const status: ChatExecutionStatus = { requestedSelection: selection, actualSelection: actualMode === 'temporary' ? selection : 'normal', policy, actualMode, verified: actualMode === 'temporary', recall: recallFor(provider, actualMode === 'temporary', selection), ...(fallbackReason ? { fallbackReason } : {}) };
         attemptedStatus = status;
         if (modeChanged && retainedKey) {

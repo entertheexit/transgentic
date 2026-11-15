@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { runInNewContext } from 'node:vm';
+import { createContext, runInContext, runInNewContext } from 'node:vm';
 import { CookieSyncManager } from '../src/main/auth/cookieSyncServer.js';
 import { AccountRegistryManager } from '../src/main/registry/accountRegistry.js';
 
@@ -8,7 +8,7 @@ const background = readFileSync(new URL('../extensions/transgentic-sync/backgrou
 const metadata = background.slice(0, background.indexOf('/**\n * Reads background sync configuration'));
 const extraction = background.slice(background.indexOf('async function extractServiceCookies('), background.indexOf('/**\n * Silent Background Execution Engine:'));
 
-function extension({ signedIn = false, visible = true, open = true, denied = false } = {}) {
+function extension({ signedIn = false, visible = true, open = true, denied = false, origin = 'https://meta.ai' } = {}) {
   const cookies = [
     { name: 'session', value: 'test-only', domain: '.meta.ai', path: '/' },
     { name: 'other', value: 'test-only', domain: '.facebook.com', path: '/' },
@@ -24,14 +24,28 @@ function extension({ signedIn = false, visible = true, open = true, denied = fal
     cookies: { getAll: vi.fn(async () => cookies) },
     storage: { local: { get: vi.fn(async () => ({})) } },
   };
-  return runInNewContext(`${metadata}\n${extraction}\n({ service: SERVICES_METADATA.meta, defaults: DEFAULT_SYNC_CONFIG, extractServiceCookies })`, {
+  const context = createContext({
     chrome, URL,
+    location: { origin },
+    importScripts: (file: string) => {
+      expect(file).toBe('gemini-session.js');
+      const source = readFileSync(new URL('../extensions/transgentic-sync/gemini-session.js', import.meta.url), 'utf8');
+      runInContext(source, context);
+    },
     document: { querySelectorAll: () => signedIn ? [{ getClientRects: () => visible ? [1] : [] }] : [] },
     getComputedStyle: () => ({ display: 'block', visibility: 'visible' }),
   });
+  return runInContext(`${metadata}\n${extraction}\n({ service: SERVICES_METADATA.meta, gemini: SERVICES_METADATA.gemini, defaults: DEFAULT_SYNC_CONFIG, extractServiceCookies })`, context);
 }
 
 describe('Meta session synchronization boundaries', () => {
+  it('refuses Gemini refresh when cookies remain after sign-out', async () => {
+    const cookies = [{ name: '__Secure-1PSID', value: 'example-session-cookie-contents' }];
+    const origin = 'https://gemini.google.com';
+    expect(await extension({ origin }).gemini.isValidSession(cookies)).toBe(false);
+    expect(await extension({ origin, signedIn: true }).gemini.isValidSession(cookies)).toBe(true);
+  });
+
   it.each([
     [{ signedIn: true }, true],
     [{ signedIn: false }, false],

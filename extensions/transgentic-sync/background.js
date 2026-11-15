@@ -6,6 +6,8 @@
  * cookies from Google Chrome to Transgentic's local session partitions.
  */
 
+importScripts('gemini-session.js');
+
 const ext = typeof chrome !== 'undefined' && chrome.runtime ? chrome : (typeof browser !== 'undefined' ? browser : null);
 
 const HEALTHCHECK_URL = 'http://127.0.0.1:58420/api/health';
@@ -97,16 +99,9 @@ const SERVICES_METADATA = {
     name: 'Google Gemini',
     defaultOrigin: 'https://gemini.google.com',
     domains: ['gemini.google.com', '.google.com', 'google.com', 'accounts.google.com'],
-    // Logout Guard: must have valid primary PSID token
-    isValidSession: (cookies) => {
-      return cookies.some((c) =>
-        (c.name === '__Secure-1PSID' || c.name === '__Secure-3PSID' || c.name === 'SID') &&
-        typeof c.value === 'string' &&
-        c.value.length > 20 &&
-        c.value !== 'deleted' &&
-        c.value !== 'null'
-      );
-    },
+    isValidSession: async (cookies) =>
+      cookies.some(cookie => /^__Secure-[13]PSID$/.test(cookie.name) && cookie.value?.length > 20) &&
+      await hasSignedInGeminiTab(ext),
   },
   grok: {
     id: 'grok',

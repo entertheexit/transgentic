@@ -482,7 +482,8 @@ export class CustomRecipeAdapter extends BaseProviderAdapter {
     attachments: readonly StagedAttachment[] = [],
     mediaSettings: MediaSettings = {},
     mediaModel?: string,
-    onSubmitted?: () => void
+    onSubmitted?: () => void,
+    selectMediaModel?: () => Promise<void>
   ): Promise<ProviderAdapterResult> {
     // 1. Ensure WebContents is active
     if (!this.webContents || this.webContents.isDestroyed()) {
@@ -499,7 +500,7 @@ export class CustomRecipeAdapter extends BaseProviderAdapter {
       // Active hidden requests still need provider timers, visibility events and
       // media metadata. Restore the original idle policy on every exit path.
       if (wasThrottled) contents.setBackgroundThrottling(false);
-      return await this.executePromptInView(prompt, mode, project, onChunk, abortSignal, attachments, mediaSettings, mediaModel, onSubmitted);
+      return await this.executePromptInView(prompt, mode, project, onChunk, abortSignal, attachments, mediaSettings, mediaModel, onSubmitted, selectMediaModel);
     } finally {
       try {
         if (wasThrottled && !contents.isDestroyed()) contents.setBackgroundThrottling(true);
@@ -516,7 +517,8 @@ export class CustomRecipeAdapter extends BaseProviderAdapter {
     attachments: readonly StagedAttachment[] = [],
     mediaSettings: MediaSettings = {},
     mediaModel?: string,
-    onSubmitted?: () => void
+    onSubmitted?: () => void,
+    selectMediaModel?: () => Promise<void>
   ): Promise<ProviderAdapterResult> {
     const contents = this.webContents;
     if (!contents || contents.isDestroyed()) throw new Error('Provider browser view is unavailable.');
@@ -595,6 +597,11 @@ export class CustomRecipeAdapter extends BaseProviderAdapter {
       if (this.temporaryChatRequired && !await this.verifyTemporaryChat()) {
         throw new Error('[TEMPORARY_CHAT_VERIFICATION_FAILED] Temporary Chat verification was lost before attachments or prompt entry.');
       }
+      if (selectMediaModel) {
+        await selectMediaModel();
+        await verifyMedia?.();
+      }
+
       if (attachments.length) {
         if (!upload) throw new Error(`Provider "${this.name}" does not declare attachment upload support for ${mode} mode.`);
         const unsupported = attachments.find(file => {
@@ -756,7 +763,16 @@ export class CustomRecipeAdapter extends BaseProviderAdapter {
   /** Rich-text paragraphs can contribute extra visual newlines to innerText. */
   private imageDraftNormalizationScript(): string {
     return `const normalize = text => String(text || '').replace(/\\r\\n?/g, '\\n')
-      .replace(/\\u00a0/g, ' ').replace(/ *\\n(?: *\\n)* */g, '\\n').trim();`;
+      .replace(/\\u00a0/g, ' ').replace(/ *\\n(?: *\\n)* */g, '\\n').trim();
+      const readDraft = (text, label) => {
+        const full = normalize(text);
+        const prefix = normalize(label);
+        return prefix && full.startsWith(prefix) ? normalize(full.slice(prefix.length)) : full;
+      };
+      const drafts = (editor, control) => [
+        readDraft(editor.innerText, control.innerText),
+        readDraft(editor.textContent, control.textContent),
+      ];`;
   }
 
   private async dispatchPromptAfterImagePill(selector: string, prompt: string, pillSelector: string): Promise<{ success: boolean; error?: string }> {
@@ -773,10 +789,9 @@ export class CustomRecipeAdapter extends BaseProviderAdapter {
       if (!editor || !pill) return 'missing';
       const inlineControl = pill.closest('[contenteditable="false"]') || pill;
       ${this.imageDraftNormalizationScript()}
-      const label = normalize(inlineControl.innerText);
-      const rendered = normalize(editor.innerText);
-      const existingPrompt = label && rendered.startsWith(label) ? normalize(rendered.slice(label.length)) : rendered;
-      if (existingPrompt === normalize(${JSON.stringify(prompt)})) return 'already-entered';
+      const [existingPrompt, plainDraft] = drafts(editor, inlineControl);
+      const expected = normalize(${JSON.stringify(prompt)});
+      if (existingPrompt === expected || plainDraft === expected) return 'already-entered';
       if (existingPrompt) return 'occupied:' + existingPrompt.length;
       editor.focus();
       const range = document.createRange();
@@ -811,11 +826,7 @@ export class CustomRecipeAdapter extends BaseProviderAdapter {
       const inlineControl = pill.closest('[contenteditable="false"]') || pill;
       ${this.imageDraftNormalizationScript()}
       const expected = normalize(${JSON.stringify(prompt)});
-      return [[editor.innerText, inlineControl.innerText], [editor.textContent, inlineControl.textContent]].some(([text, label]) => {
-        const full = normalize(text);
-        const prefix = normalize(label);
-        return (!prefix || full.startsWith(prefix)) && normalize(full.slice(prefix.length)) === expected;
-      });
+      return drafts(editor, inlineControl).includes(expected);
     })()`);
   }
 

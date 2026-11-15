@@ -628,6 +628,12 @@ export interface IpcApi {
 export const CHAT_MODE_SELECTIONS = ['normal', 'temporary', 'temporary-personalized', 'temporary-unpersonalized'] as const;
 export type ChatModePreferences = Partial<Record<RouteMode, Record<string, ChatModeSelection>>>;
 
+export function temporaryChatModeRestriction(mode: TaskMode, provider: string): string | undefined {
+  if (provider === 'chatgpt' && normalizeRouteMode(mode) === 'image') {
+    return 'ChatGPT Image uses Normal chat because ChatGPT disables Create image in Temporary Chat.';
+  }
+}
+
 export function validateChatMode(value: unknown, legacy?: unknown): ChatModeSelection | undefined {
   if (legacy !== undefined && typeof legacy !== 'boolean') throw new Error('temporary_chat must be a boolean.');
   if (value === undefined) return undefined;
@@ -641,6 +647,7 @@ export function resolveChatMode(config: Pick<TransgenticConfig, 'temporaryChat' 
   validateChatMode(requested, legacy);
   if (requested) return validateChatMode(requested)!;
   if (legacy !== undefined) return !legacy ? 'normal' : provider === 'chatgpt' ? 'temporary-personalized' : 'temporary';
+  if (temporaryChatModeRestriction(mode, provider)) return 'normal';
   if (legacy === undefined && (providerType === 'api' || providerType === 'cli' || isCliProvider(provider) || provider === 'localllm' || provider.startsWith('api_'))) return 'normal';
   if (!isTemporaryChatPreferred(config, mode)) return 'normal';
   if (provider === 'chatgpt') {

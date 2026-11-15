@@ -1,6 +1,6 @@
 import { effortModelId, isLegacyCurrentEffort, parseEffortModel } from '../../shared/modelEffort.js';
 import { BUILTIN_PROVIDER_IDS } from '../../shared/providers.js';
-import { isModelAllowedForMode, resolveChatMode, validateChatMode, normalizeRouteMode, type ChatModeSelection } from '../../shared/types.js';
+import { isModelAllowedForMode, resolveChatMode, validateChatMode, normalizeRouteMode, temporaryChatModeRestriction, type ChatModeSelection } from '../../shared/types.js';
 import { MediaJobStore } from '../media/jobs.js';
 import { createMediaRouter } from '../media/router.js';
 import { mediaCapability, normalizeMediaPreferences, resolveMediaSettings, type MediaPreferences, type MediaSettings, type MediaMode } from '../../shared/media.js';
@@ -1118,7 +1118,7 @@ export class TransgenticMcpServer {
       {
         name: 'generate_image',
         description:
-          'Generates an image via Grok (Imagine), ChatGPT (DALL-E), Gemini (Imagen), or Meta AI, downloads it locally to disk, and returns the short local file path. Recommended for storyboarding, scene illustrations, and visual concept generation. Automatically activates image mode and switches to the optimal image model.',
+          'Generates an image via Grok, ChatGPT, Gemini, or Meta AI, saves it locally, and returns its path. Activates the provider’s image controls and uses Image Routing unless a model is specified.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -1130,8 +1130,9 @@ export class TransgenticMcpServer {
             },
             model: {
               type: 'string',
-              description: 'Optional target model ID (e.g. dall-e-3).',
+              description: 'Optional model ID from list_models for Image mode. For ChatGPT, default keeps the current model and effort.',
             },
+            reasoning_effort: { type: 'string', description: 'ChatGPT thinking-effort ID for a named model.' },
             settings: { type: 'object', description: 'Semantic settings from get_media_capabilities.', additionalProperties: { type: ['string', 'number', 'boolean'] } },
             provider_settings: { type: 'object', additionalProperties: { type: 'object', additionalProperties: { type: ['string', 'number', 'boolean'] } } },
             ...sessionProperties,
@@ -1494,8 +1495,10 @@ export class TransgenticMcpServer {
     for (let i = 0; i < attempts.length; i++) {
       const { providerId, model: attemptModel } = attempts[i];
       const { model: requestedModel, effort } = parseEffortModel(attemptModel);
-      if (effort && ((requestedModel === 'default' && providerId !== 'chatgpt') || (!globalSessionManager.getAdapter(providerId) && providerId !== 'cli_codex') ||
-          !['general', 'writing', 'coding'].includes(effectiveMode))) {
+      const chatGptImage = providerId === 'chatgpt' && effectiveMode === 'image';
+      if (effort && ((requestedModel === 'default' && (providerId !== 'chatgpt' || chatGptImage)) ||
+          (!globalSessionManager.getAdapter(providerId) && providerId !== 'cli_codex') ||
+          (!chatGptImage && !['general', 'writing', 'coding'].includes(effectiveMode)))) {
         lastCandidateError = new Error('[MODEL_SELECTION_FAILED] This route does not expose reasoning effort.');
         continue;
       }
@@ -1511,16 +1514,17 @@ export class TransgenticMcpServer {
         continue;
       }
       const selectedMode = resolveChatMode(undefined, effectiveMode, providerId, params.chatSelection, temporaryChat);
-      const supportsTemporary = candidateAdapter instanceof CustomRecipeAdapter && candidateAdapter.supportsChatMode(selectedMode);
+      const restriction = temporaryChatModeRestriction(effectiveMode, providerId);
+      const supportsTemporary = !restriction && candidateAdapter instanceof CustomRecipeAdapter && candidateAdapter.supportsChatMode(selectedMode);
       const observedAvailability = globalSessionManager.getStatus(providerId)?.temporaryChat;
       const unavailable = observedAvailability?.availability === 'unavailable';
       const candidateTemporaryChat = temporaryChat && supportsTemporary && !unavailable;
       const recall = effectiveRecall(this.config?.recall, effectiveMode, providerId, candidateTemporaryChat, selectedMode);
       const fallbackReason = temporaryChat && !candidateTemporaryChat
-        ? (unavailable ? observedAvailability?.reason || 'Temporary Chat is unavailable for the active account.' : `${getProviderDisplayName(providerId)} does not support native Temporary Chat.`)
+        ? (restriction || (unavailable ? observedAvailability?.reason || 'Temporary Chat is unavailable for the active account.' : `${getProviderDisplayName(providerId)} does not support native Temporary Chat.`))
         : undefined;
       if (chatPolicy === 'require-temporary' && !candidateTemporaryChat) {
-        lastCandidateError = new Error(`[TEMPORARY_CHAT_UNSUPPORTED] ${getProviderDisplayName(providerId)} does not support provider-native Temporary Chat.`);
+        lastCandidateError = new Error(`[TEMPORARY_CHAT_UNSUPPORTED] ${restriction || `${getProviderDisplayName(providerId)} does not support provider-native Temporary Chat.`}`);
         if (forcedProvider) throw lastCandidateError;
         continue;
       }
@@ -1916,8 +1920,10 @@ export class TransgenticMcpServer {
               existingSession = null;
               isNewChat = true;
             }
-            contents = await globalSessionManager.ensureWebContents(providerId, activeAccount.partitionKey);
-            if ((['image', 'video', 'music'].includes(effectiveMode) || attachments.length > 0) && adapter instanceof CustomRecipeAdapter) {
+            const backgroundOnly = adapter instanceof CustomRecipeAdapter &&
+              (providerId === 'gemini' || (providerId === 'chatgpt' && effectiveMode === 'image'));
+            contents = await globalSessionManager.ensureWebContents(providerId, activeAccount.partitionKey, backgroundOnly);
+            if ((backgroundOnly || ['image', 'video', 'music'].includes(effectiveMode) || attachments.length > 0) && adapter instanceof CustomRecipeAdapter) {
               // Drawer registration can replace the shared adapter's view mid-request.
               // Keep reference uploads, polling and cancellation on the submitted view.
               executionAdapter = adapter.createPinnedExecutionAdapter(contents, activeAccount.partitionKey);
@@ -1943,6 +1949,12 @@ export class TransgenticMcpServer {
             }
           }
 
+          if (executionAdapter instanceof CustomRecipeAdapter &&
+              executionAdapter.recipe.auth?.requireLoggedInSelector &&
+              !await executionAdapter.checkAuthStatus()) {
+            throw new Error(`[PROVIDER_ACTION_REQUIRED] Sign in to ${getProviderDisplayName(providerId)} in Transgentic or use Chrome Sync before selecting a model or sending a prompt.`);
+          }
+
           const statusCheck = await executionAdapter.checkRateLimit();
           if (statusCheck.isRateLimited) {
             throw new Error(`[RATE_LIMIT] ${providerId} reported rate limit or usage cap.`);
@@ -1952,14 +1964,14 @@ export class TransgenticMcpServer {
           if (['image', 'video', 'music'].includes(effectiveMode) && executionAdapter instanceof CustomRecipeAdapter) {
             await executionAdapter.prepareMediaPage(effectiveMode);
           }
-          if (targetModel && requestedModel && requestedModel !== 'default' && ['image', 'video', 'music'].includes(effectiveMode)) {
-            if (!await ModelScraperEngine.switchModel(providerId, targetModel, contents)) {
-              throw new Error(`[MODEL_SELECTION_FAILED] The explicit media model ${targetModel} could not be verified. The prompt was not submitted.`);
-            }
-          } else {
-            await ModelScraperEngine.selectModelAndEffort(providerId, targetModel ?? undefined, effort, contents);
+          const selectModel = async () => {
+            await ModelScraperEngine.selectModelAndEffort(providerId, targetModel, effort, contents);
             globalSessionManager.recordVerifiedModelEffort(providerId, targetModel, effort, activeAccount.partitionKey);
-          }
+          };
+          // Verify the selected model and effort on the active image composer.
+          const selectMediaModel = chatGptImage &&
+            targetModel && targetModel !== 'default' ? selectModel : undefined;
+          if (!selectMediaModel) await selectModel();
 
           let promptToSend = maskedText;
           if (isNewChat) {
@@ -1995,7 +2007,7 @@ export class TransgenticMcpServer {
             throwIfCancelled(reqAbortController?.signal || abortSignal);
             reportProgress?.(`Generating response with ${getProviderDisplayName(providerId)}`);
             try {
-              adapterResult = await executionAdapter.executePrompt(promptToSend, effectiveMode, projectMeta, undefined, reqAbortController?.signal || abortSignal, attachments, effectiveSettings, targetModel, mediaSubmitted);
+              adapterResult = await executionAdapter.executePrompt(promptToSend, effectiveMode, projectMeta, undefined, reqAbortController?.signal || abortSignal, attachments, effectiveSettings, targetModel, mediaSubmitted, selectMediaModel);
             } catch (promptErr: any) {
               if (!mediaSubmissionAttempted && !candidateTemporaryChat && promptErr?.message && /conversation (?:is getting|too) long|context[ _]length/i.test(promptErr.message)) {
                 await executionAdapter.navigateToNewChat({ forceReload: true, assumeLocked: true });
@@ -2010,11 +2022,16 @@ export class TransgenticMcpServer {
                 if (this.config?.recall && recall.enabled) {
                   rolloverPrompt = applyRecallPipeline(rolloverPrompt, this.config.recall, effectiveMode);
                 }
-                adapterResult = await executionAdapter.executePrompt(rolloverPrompt, effectiveMode, projectMeta, undefined, reqAbortController?.signal || abortSignal, attachments, effectiveSettings, targetModel, mediaSubmitted);
+                adapterResult = await executionAdapter.executePrompt(rolloverPrompt, effectiveMode, projectMeta, undefined, reqAbortController?.signal || abortSignal, attachments, effectiveSettings, targetModel, mediaSubmitted, selectMediaModel);
               } else {
                 throw promptErr;
               }
             }
+          } catch (error) {
+            if (!candidateTemporaryChat && providerId === 'chatgpt' && effectiveMode === 'image') {
+              globalSessionManager.discardChatGptImageView(activeAccount.partitionKey, contents);
+            }
+            throw error;
           } finally {
             releaseDomLock();
           }

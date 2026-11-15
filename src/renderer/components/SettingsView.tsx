@@ -13,6 +13,7 @@ import {
   ServicesManifest,
   RouteMode,
   isTemporaryChatPreferred,
+  temporaryChatModeRestriction,
   TaskMode,
   AttachmentKind,
 } from '../../shared/types.js';
@@ -1201,9 +1202,11 @@ http_headers = { "Authorization" = "Bearer ${clientToken || 'YOUR_TOKEN'}" }`;
                   { mode: 'video' as RouteMode, label: 'Video', icon: Video },
                   { mode: 'music' as RouteMode, label: 'Music', icon: Music },
                 ]).map(({ mode, label, icon: Icon }) => {
-                  const active = isTemporaryChatPreferred(config, mode);
-                  return <button key={mode} type="button" aria-pressed={active}
-                    title={`Toggle Temporary Chat for ${label}`}
+                  const rule = config.routes?.main?.[mode];
+                  const restriction = temporaryChatModeRestriction(mode, rule?.defaultService || rule?.primary || '');
+                  const active = !restriction && isTemporaryChatPreferred(config, mode);
+                  return <button key={mode} type="button" aria-pressed={active} disabled={Boolean(restriction)}
+                    title={restriction || `Toggle Temporary Chat for ${label}`}
                     onClick={() => {
                       soundFx.playClick();
                       void onToggleTemporaryChatMode?.(mode, !active);

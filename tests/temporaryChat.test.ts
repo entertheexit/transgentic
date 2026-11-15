@@ -1,13 +1,20 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { BUILTIN_RECIPES, validateCustomRecipe } from '../src/shared/types/recipe.js';
 import { logCategory } from '../src/main/storage/logStorage.js';
-import { DEFAULT_TEMPORARY_CHAT, isTemporaryChatPreferred, normalizeTemporaryChatConfig } from '../src/shared/types.js';
+import { DEFAULT_TEMPORARY_CHAT, isTemporaryChatPreferred, normalizeTemporaryChatConfig, resolveChatMode } from '../src/shared/types.js';
 import { DataBlindingEngine } from '../src/main/security/dataBlinding.js';
 import { globalMemoryDb } from '../src/main/storage/memoryDb.js';
 import { ThreadManager } from '../src/main/registry/threadManager.js';
 import { CustomRecipeAdapter } from '../src/main/webviews/customRecipeAdapter.js';
 
 describe('Temporary Chat contracts', () => {
+  it('defaults ChatGPT Image to Normal even with a saved Temporary Chat preference', () => {
+    const config = { temporaryChat: { ...DEFAULT_TEMPORARY_CHAT, image: true } };
+    expect(resolveChatMode(config, 'image', 'chatgpt')).toBe('normal');
+    expect(resolveChatMode(config, 'image', 'gemini')).toBe('temporary');
+    expect(resolveChatMode(config, 'general', 'chatgpt')).toBe('temporary-unpersonalized');
+  });
+
   it('keeps old recipes valid and treats only declared built-ins as supported', () => {
     const oldRecipe = structuredClone(BUILTIN_RECIPES.grok) as any;
     delete oldRecipe.temporaryChat;

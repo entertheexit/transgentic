@@ -983,6 +983,11 @@ async function handleSyncCurrent() {
   setLoadingState(true, `Extracting ${currentProvider.name} cookies...`);
 
   try {
+    if (currentProvider.id === 'gemini' &&
+        !await hasSignedInGeminiTab(ext, currentTab?.id)) {
+      showStatus('error', 'Gemini Sign-in Required', 'Open Gemini in this Chrome profile and sign in before syncing.', '');
+      return;
+    }
     const cookies = await extractProviderCookies(currentProvider);
     if (cookies.length === 0) {
       throw new Error(`No cookies found for ${currentProvider.name}. Please ensure you are logged in to your account.`);
@@ -1038,8 +1043,8 @@ async function handleSyncCurrent() {
 
     showStatus(
       'success',
-      'Session Synchronized!',
-      `Successfully injected ${cookies.length} session cookies into Transgentic partition.`,
+      'Session Cookies Imported',
+      res.message || 'Open the provider in Transgentic to confirm it is signed in.',
       `Provider: ${currentProvider.serviceDomain || currentProvider.name} • Saved to: ${newAccountAlias || accountSelectEl.options[accountSelectEl.selectedIndex]?.text}`
     );
   } catch (err) {
@@ -1064,6 +1069,7 @@ async function handleSyncAll() {
     for (const p of Object.values(PROVIDERS)) {
       if (p.isCustomRecipe) continue;
       try {
+        if (p.id === 'gemini' && !await hasSignedInGeminiTab(ext)) continue;
         const cookies = await extractProviderCookies(p);
         if (cookies.length > 0) {
           const payload = {
@@ -1084,9 +1090,9 @@ async function handleSyncAll() {
     if (results.length > 0) {
       showStatus(
         'success',
-        'All AI Sessions Synced!',
+        'Session Cookies Imported',
         `Imported ${totalCookies} cookies across: ${results.join(', ')}`,
-        'All active partitions updated.'
+        'Open each provider in Transgentic to confirm sign-in.'
       );
     } else {
       showStatus(

@@ -22,6 +22,18 @@ function normalizeModelModes<T extends ServiceModelDef>(model: T): T {
   } as T;
 }
 
+function normalizeServiceModelModes(service: ServiceManifestEntry): void {
+  if (!Array.isArray(service.models)) return;
+  service.models = service.models.map(model => {
+    const normalized = normalizeModelModes(model);
+    if (service.id !== 'chatgpt') return normalized;
+
+    // ChatGPT's Create image tool uses the same composer model picker.
+    const modes = normalized.modes ?? [normalized.mode ?? 'general'];
+    return { ...normalized, modes: [...new Set<RouteMode>([...modes, 'image'])] };
+  });
+}
+
 export class ServiceManifestManager {
   private static readonly DEFAULT_MANIFEST: ServicesManifest = {
     modeSchemaVersion: MODE_SCHEMA_VERSION,
@@ -305,7 +317,7 @@ export class ServiceManifestManager {
     }
 
     for (const service of Object.values(baseManifest.services)) {
-      if (Array.isArray(service.models)) service.models = service.models.map(normalizeModelModes);
+      normalizeServiceModelModes(service);
       if ((service.providerType === 'api' || service.id.startsWith('api_')) && service.id !== 'localllm' && !Array.isArray(service.attachmentKinds)) {
         service.attachmentKinds = [];
       }
@@ -321,7 +333,7 @@ export class ServiceManifestManager {
       this.currentManifest = newManifest;
     }
     for (const service of Object.values(this.currentManifest.services)) {
-      if (Array.isArray(service.models)) service.models = service.models.map(normalizeModelModes);
+      normalizeServiceModelModes(service);
     }
     const savePath = this.getUserDataFilePath();
     try {
@@ -716,7 +728,8 @@ export class ServiceManifestManager {
     // Preserve declared media routing and user choices when the text picker omits them.
     const retained = (service.models || []).filter(model => model.id === 'default' ||
       (!discovered.has(model.id) && (preserveUnobserved || model.id === service.defaultModelId ||
-        model.modes?.some(mode => mode === 'image' || mode === 'video' || mode === 'music') ||
+        (providerId !== 'chatgpt' && model.modes?.includes('image')) ||
+        model.modes?.some(mode => mode === 'video' || mode === 'music') ||
         model.mode === 'image' || model.mode === 'video' || model.mode === 'music')));
     service.models = [
       ...retained,
@@ -731,6 +744,7 @@ export class ServiceManifestManager {
         modes: previous.get(model.id)?.modes || ['general', 'coding'],
       })),
     ];
+    normalizeServiceModelModes(service);
     this.notify();
   }
 

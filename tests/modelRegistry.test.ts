@@ -38,6 +38,9 @@ describe('ModelRegistryManager', () => {
 
     const visible = ServiceManifestManager.getModelsForMode('chatgpt', 'general');
     expect(visible.map(model => model.id)).toEqual(['default', ...named.map(model => model.id), effort.id]);
+    expect(ServiceManifestManager.getModelsForMode('chatgpt', 'image').map(model => model.id))
+      .toEqual(visible.map(model => model.id));
+    expect(ServiceManifestManager.getModelsForMode('chatgpt', 'video')).toEqual([]);
     expect(ModelRegistryManager.getProviderConfig('chatgpt').models.filter(model => model.discoveredAvailable).map(model => model.id))
       .toEqual(['default', ...named.map(model => model.id), effort.id]);
   });

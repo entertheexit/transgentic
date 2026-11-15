@@ -1,7 +1,7 @@
 import React, { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Check, ChevronDown, RefreshCw } from 'lucide-react';
-import { normalizeTemporaryChatConfig, resolveChatMode, type ChatModeSelection, type ProviderStatus, type RouteMode, type TransgenticConfig } from '../../shared/types.js';
+import { normalizeTemporaryChatConfig, resolveChatMode, temporaryChatModeRestriction, type ChatModeSelection, type ProviderStatus, type RouteMode, type TransgenticConfig } from '../../shared/types.js';
 import { selectMenuPosition } from './PopoverSelect.js';
 import { isCliProvider } from '../../shared/cli.js';
 
@@ -160,6 +160,13 @@ export function ChatModeControl({ config, mode, provider, capability, providerTy
       : (current + (event.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length;
     items[next]?.focus();
   };
+
+  const restriction = temporaryChatModeRestriction(mode, provider || '');
+  if (restriction) {
+    return <span className="text-[10px] font-mono text-slate-500" title={restriction} aria-label={restriction}>
+      {chatModeLabels.normal}
+    </span>;
+  }
 
   return <div className="inline-flex min-w-0 items-center gap-1 text-[10px] font-mono">
     <span ref={statusDot} tabIndex={0} role="img" aria-label={description} aria-describedby={tooltipOpen ? tooltipId : undefined}
