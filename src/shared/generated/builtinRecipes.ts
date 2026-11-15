@@ -3,7 +3,7 @@ import type { CustomRecipe } from '../types/recipe.js';
 
 export const BUILTIN_RECIPES: Record<"chatgpt" | "claude" | "gemini" | "grok" | "meta", CustomRecipe> = {
   "chatgpt": {
-    "version": "1.3.0",
+    "version": "1.3.1",
     "id": "chatgpt",
     "title": "OpenAI ChatGPT",
     "domainMatch": "chatgpt.com",
@@ -144,6 +144,26 @@ export const BUILTIN_RECIPES: Record<"chatgpt" | "claude" | "gemini" | "grok" | 
       "stopButton": "button[data-testid=\"stop-button\"], button[aria-label*=\"Stop\" i]",
       "modelDropdownTrigger": "button[aria-label=\"Select ChatGPT model\"], [data-testid=\"model-selector-button\"]"
     },
+    "modelSelection": {
+      "effort": {
+        "labels": {
+          "instant": "Instant",
+          "low": "Low",
+          "medium": "Medium",
+          "high": "High",
+          "extra": "Extra High",
+          "pro": "Pro"
+        },
+        "panel": "[data-reasoning-slider=true], [role=\"slider\"][aria-label=\"Power\"]",
+        "slider": "[role=\"slider\"]"
+      },
+      "trigger": "[data-testid=\"model-selector-button\"], button[aria-label=\"Select ChatGPT model\" i]",
+      "item": "[role=\"menuitemradio\"], [role=\"option\"][data-model-id]",
+      "submenu": "[data-model-picker-view-toggle=\"true\"]",
+      "disabledText": "Usage limit reached",
+      "openInput": "native",
+      "selectInput": "pointer"
+    },
     "response": {
       "container": "[data-content-search-unit-key]:has(> [data-conversation-role=\"assistant\"]), [data-message-author-role=\"assistant\"], [data-testid^=\"conversation-turn-\"]:has([data-message-author-role=\"assistant\"]), div.agent-turn, main [data-testid=\"generated-image-gallery\"]",
       "textSelector": "[data-markdown-text-style=\"assistant-message\"], .response-content-markdown, .markdown, .prose",
@@ -201,10 +221,20 @@ export const BUILTIN_RECIPES: Record<"chatgpt" | "claude" | "gemini" | "grok" | 
               {
                 "action": "click",
                 "target": {
-                  "selectors": "button[data-list-navigation-item]:has(svg path[d^=\"M7 21.005c-2.211\"])"
+                  "selectors": "button, [role=\"menuitem\"], [role=\"option\"]",
+                  "name": [
+                    "Create image",
+                    "Create an image"
+                  ],
+                  "nameMatch": "contains"
                 }
               }
             ],
+            "unavailableWhen": {
+              "selectors": "[aria-disabled=\"true\"] [data-menu-row-content]",
+              "name": "Create image"
+            },
+            "unavailableMessage": "ChatGPT has disabled Create image for this conversation.",
             "activeWhen": {
               "selectors": "[data-inline-selection-pill][data-system-hint-type=\"picture_v2\"]"
             },
@@ -305,6 +335,23 @@ export const BUILTIN_RECIPES: Record<"chatgpt" | "claude" | "gemini" | "grok" | 
       "stopButton": "button[aria-label*=\"Stop\" i], [data-is-streaming=\"true\"]",
       "modelDropdownTrigger": "button[aria-label*=\"model\" i], [data-testid=\"model-selector\"]"
     },
+    "modelSelection": {
+      "effort": {
+        "labels": {
+          "low": "Low",
+          "medium": "Medium",
+          "high": "High",
+          "extra": "Extra",
+          "max": "Max"
+        },
+        "submenuLabel": "Effort",
+        "submenu": "[role=\"menuitem\"][aria-haspopup=\"menu\"], button[aria-haspopup=\"menu\"]",
+        "item": "[role=\"menuitemradio\"], [role=\"menuitem\"], [role=\"option\"]"
+      },
+      "trigger": "button[aria-label^=\"Model:\" i], [data-testid=\"model-selector\"]",
+      "item": "[role=\"menuitemradio\"], [role=\"option\"][data-model-id]",
+      "name": "[data-model-name], .truncate"
+    },
     "response": {
       "container": "[data-test-render-count] .font-claude-message, .font-claude-message, div.grid-cols-1 .prose, div[data-is-streaming], div.prose",
       "textSelector": ".font-claude-message, .prose",
@@ -334,7 +381,7 @@ export const BUILTIN_RECIPES: Record<"chatgpt" | "claude" | "gemini" | "grok" | 
     }
   },
   "gemini": {
-    "version": "1.1.6",
+    "version": "1.1.8",
     "id": "gemini",
     "title": "Google Gemini",
     "domainMatch": "gemini.google.com",
@@ -352,6 +399,7 @@ export const BUILTIN_RECIPES: Record<"chatgpt" | "claude" | "gemini" | "grok" | 
         "google.com"
       ],
       "requireAllCookies": false,
+      "requireLoggedInSelector": true,
       "minCookieLength": 20,
       "loggedInSelector": "button[aria-label*=\"Google Account\" i], img[alt*=\"profile\" i], img[alt*=\"Google Account\" i], a[aria-label*=\"Google Account\" i], [data-id=\"avatar-button\"]",
       "loggedOutSelector": "a[href*=\"accounts.google.com/ServiceLogin\"], a[href*=\"accounts.google.com/signin\"], a[aria-label*=\"Sign in\" i], button[aria-label*=\"Sign in\" i], a[data-g-label=\"sign-in\"]",
@@ -374,8 +422,10 @@ export const BUILTIN_RECIPES: Record<"chatgpt" | "claude" | "gemini" | "grok" | 
         {
           "action": "click",
           "target": {
-            "role": "button",
-            "name": "Temporary chat"
+            "selectors": [
+              "button[aria-label=\"Turn on temporary chat\" i]",
+              "button[aria-label=\"Temporary chat\" i]"
+            ]
           }
         }
       ],
@@ -386,7 +436,10 @@ export const BUILTIN_RECIPES: Record<"chatgpt" | "claude" | "gemini" | "grok" | 
         ]
       },
       "inactiveWhen": {
-        "selectors": "button[aria-label=\"Temporary chat\"] mat-icon[fonticon=\"gemini_chat_temp\"]"
+        "selectors": [
+          "button[aria-label=\"Turn on temporary chat\" i]",
+          "button[aria-label=\"Temporary chat\"] mat-icon[fonticon=\"gemini_chat_temp\"]"
+        ]
       }
     },
     "createdAt": "2026-01-01T00:00:00.000Z",
@@ -394,7 +447,28 @@ export const BUILTIN_RECIPES: Record<"chatgpt" | "claude" | "gemini" | "grok" | 
       "inputPrompt": "div.ql-editor, rich-textarea textarea, rich-textarea div[contenteditable=\"true\"], div[contenteditable=\"true\"]",
       "submitButton": "button[aria-label*=\"Send message\" i], button[aria-label*=\"Send prompt\" i], button[aria-label*=\"Send\" i], button[aria-label*=\"ส่ง\" i], button.send-button, button[mattooltip*=\"Send\" i]",
       "stopButton": "button[aria-label*=\"Stop\" i], .streaming-indicator",
-      "modelDropdownTrigger": "button[aria-label*=\"Open mode picker\" i], button[aria-label*=\"model\" i], div.model-switcher"
+      "modelDropdownTrigger": "button[aria-label^=\"Open mode picker\" i]"
+    },
+    "modelSelection": {
+      "effort": {
+        "labels": {
+          "low": "Low",
+          "medium": "Medium",
+          "high": "High"
+        },
+        "submenuLabel": "Thinking level",
+        "submenuInput": "hover",
+        "submenu": "[role=\"menuitem\"], button[aria-haspopup=\"menu\"]",
+        "item": "[role=\"menuitemradio\"], [role=\"menuitem\"], [role=\"option\"]"
+      },
+      "trigger": "button[aria-label^=\"Open mode picker\" i]",
+      "item": "[role=\"menuitem\"], [role=\"menuitemradio\"], [role=\"option\"], button[data-mode-id]",
+      "name": ".label",
+      "namePattern": "^(?:Gemini )?\\d+(?:\\.\\d+)? (?:Flash(?:-Lite)?|Pro|[A-Z][a-z]+)$",
+      "disabledText": "Locked",
+      "openInput": "native",
+      "closeInput": "toggle",
+      "selectInput": "pointer"
     },
     "response": {
       "container": "model-response, response-container, structured-content-container, message-content",
@@ -4519,6 +4593,13 @@ export const BUILTIN_RECIPES: Record<"chatgpt" | "claude" | "gemini" | "grok" | 
       "stopButton": "button[aria-label*=\"Stop\" i]",
       "modelDropdownTrigger": "#model-select-trigger, button[aria-label=\"Model select\"]"
     },
+    "modelSelection": {
+      "trigger": "button[aria-label^=\"Model:\" i]",
+      "item": "[role=\"menuitemcheckbox\"], [role=\"menuitemradio\"]",
+      "closeInput": "toggle",
+      "selectInput": "keyboard",
+      "disabledText": "Requires SuperGrok"
+    },
     "response": {
       "container": "#last-reply-container [id^=\"response-\"], [id^=\"response-\"], [data-testid=\"assistant-message\"], div.items-start .message-bubble, .response-turn",
       "textSelector": ".response-content-markdown, .streamdown-chat-md, .prose",
@@ -5659,6 +5740,23 @@ export const BUILTIN_RECIPES: Record<"chatgpt" | "claude" | "gemini" | "grok" | 
       "stopButton": "button[data-testid=\"composer-stop-button\"], button[aria-label=\"Stop response\"]",
       "modelDropdownTrigger": "button[data-testid=\"composer-mode-dropdown-button\"]"
     },
+    "modelSelection": {
+      "trigger": "button[data-testid=\"composer-mode-dropdown-button\"]",
+      "item": "[role=\"menuitemcheckbox\"][data-testid^=\"composer-mode-option-\"]",
+      "name": "span",
+      "openInput": "pointerdown",
+      "idAttribute": "data-testid",
+      "knownChoices": {
+        "composer-mode-option-think_fast": {
+          "id": "instant",
+          "displayName": "Instant"
+        },
+        "composer-mode-option-think_hard": {
+          "id": "thinking",
+          "displayName": "Thinking"
+        }
+      }
+    },
     "response": {
       "container": "[data-testid=\"assistant-message\"]",
       "textSelector": ".prose.ur-markdown",
@@ -5758,7 +5856,7 @@ export const BUILTIN_RECIPES: Record<"chatgpt" | "claude" | "gemini" | "grok" | 
     "models": [
       {
         "id": "default",
-        "displayName": "Current provider selection",
+        "displayName": "Current",
         "modes": [
           "general",
           "coding",

@@ -8,6 +8,28 @@ import { createRecipeRouter } from '../src/main/auth/recipeSyncServer.js';
 import { LocalLlmClient } from '../src/main/localllm/localLlmClient.js';
 import { confirmRecipeInstallation } from '../src/main/registry/recipeConsent.js';
 
+it('updates only the retired ChatGPT image action in healed recipes', () => {
+  const manager = new RecipeManager();
+  const directory = fs.mkdtempSync(path.join(manager.getStorageDirectory(), 'legacy-image-'));
+  try {
+    manager.setStorageDirectory(directory);
+    const recipe = structuredClone(BUILTIN_RECIPES.chatgpt);
+    const generation = recipe.response.modes.image!.generation!;
+    const steps = generation.activationSteps!;
+    const legacy = { action: 'click', target: { selectors: 'button[data-list-navigation-item]:has(svg path[d^="M7 21.005c-2.211"])' } };
+    const file = path.join(manager.getHealedDirectory(), 'chatgpt.json');
+    generation.activationSteps = [steps[0], legacy as typeof steps[number]];
+    fs.writeFileSync(file, JSON.stringify(recipe));
+    manager.setStorageDirectory(directory);
+
+    const resolved = manager.getRecipe('chatgpt')?.response.modes.image?.generation?.activationSteps;
+    expect(resolved).toEqual(steps);
+    expect(JSON.parse(fs.readFileSync(file, 'utf8')).response.modes.image.generation.activationSteps[1]).toEqual(legacy);
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 describe('Custom Recipe System Unit Tests', () => {
   const sampleValidRecipe = {
     version: '1.0',

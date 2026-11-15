@@ -141,11 +141,11 @@ export class DomWatchdog {
           const custom = ${JSON.stringify(customSelectors || {})};
           const attachmentConfigs = ${JSON.stringify(attachmentConfigs || {})};
 
-          // Allow SPAs (Grok, ChatGPT, Claude) up to 3500ms to mount their React composer elements
+          // The document can finish loading before the provider mounts its composer.
           let inputRes = checkCandidate(inputCandidates, custom.inputPrompt);
           if (!inputRes.found) {
             const start = Date.now();
-            while (Date.now() - start < 3500) {
+            while (Date.now() - start < 12000) {
               await new Promise((r) => setTimeout(r, 150));
               inputRes = checkCandidate(inputCandidates, custom.inputPrompt);
               if (inputRes.found) break;

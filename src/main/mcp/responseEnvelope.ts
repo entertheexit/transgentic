@@ -7,6 +7,7 @@ export interface ProviderOutcome {
   status: 'completed' | 'failed';
   provider?: ProviderId;
   model?: string;
+  reasoningEffort?: string;
   error?: string;
 }
 

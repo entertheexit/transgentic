@@ -166,7 +166,10 @@ describe("ServiceManifestManager", () => {
     ServiceManifestManager.saveManifest(manifest);
 
     expect(ServiceManifestManager.supportsModelRouting(TEST_WEBVIEW_ID as any)).toBe(true);
-    expect(ServiceManifestManager.supportsModelRouting("chatgpt")).toBe(false);
+    expect(ServiceManifestManager.supportsModelRouting("chatgpt")).toBe(true);
+    expect(ServiceManifestManager.getModelsForMode("chatgpt", "image")).toEqual([
+      expect.objectContaining({ id: "default", displayName: "Current" }),
+    ]);
 
     const imageModels = ServiceManifestManager.getModelsForMode(TEST_WEBVIEW_ID as any, "image");
     expect(imageModels.length).toBeGreaterThanOrEqual(2);

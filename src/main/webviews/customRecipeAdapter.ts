@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+import { providerQueryScript } from './domQuery.js';
 import { isBuiltinProvider } from '../../shared/providers.js';
 import { session } from 'electron';
 import { InputDispatcher } from '../security/inputDispatcher.js';
@@ -113,7 +115,7 @@ export class CustomRecipeAdapter extends BaseProviderAdapter {
     if (this.temporaryChatRequired && (!this.webContents || this.webContents.isDestroyed())) {
       throw new Error('[TEMPORARY_CHAT_ENDED] Temporary Chat browser view is unavailable. Start a new Temporary Chat.');
     }
-    return super.executeScript<T>(code);
+    return super.executeScript<T>(`(() => { ${providerQueryScript(this.recipe.openShadowDom === true)} return (${code}); })()`);
   }
 
   public async verifyTemporaryChat(): Promise<boolean> {
@@ -253,8 +255,8 @@ export class CustomRecipeAdapter extends BaseProviderAdapter {
         const nameMatches = value => locator.nameMatch === 'contains' ? names.some(name => value.includes(name)) : names.includes(value);
         const visible = el => { const style = getComputedStyle(el); const rect = el.getBoundingClientRect(); return style.display !== 'none' && style.visibility !== 'hidden' && Number(style.opacity || 1) !== 0 && rect.width > 0 && rect.height > 0; };
         const selectors = Array.isArray(locator.selectors) ? locator.selectors : locator.selectors ? [locator.selectors] : [];
-        const candidates = selectors.flatMap(selector => { try { return Array.from(document.querySelectorAll(selector)); } catch { return []; } });
-        if (!selectors.length) candidates.push(...Array.from(document.querySelectorAll(locator.role === 'button' ? 'button,[role="button"]' : locator.role === 'heading' ? 'h1,h2,h3,h4,h5,h6,[role="heading"]' : '[role]')));
+        const candidates = selectors.flatMap(selector => { try { return Array.from(queryAll(document, selector)); } catch { return []; } });
+        if (!selectors.length) candidates.push(...Array.from(queryAll(document, locator.role === 'button' ? 'button,[role="button"]' : locator.role === 'heading' ? 'h1,h2,h3,h4,h5,h6,[role="heading"]' : '[role]')));
         return [...new Set(candidates)].filter(el => (!locator.role || normalize(implicitRole(el)) === normalize(locator.role)) && (!names.length || accessibleNames(el).some(nameMatches)) && visible(el)).length === 1;
       })()
     `).catch(() => false);
@@ -306,7 +308,7 @@ export class CustomRecipeAdapter extends BaseProviderAdapter {
               // 1. Client bootstrap verification (e.g. ChatGPT JSON state)
               const bootstrapSel = ${JSON.stringify(authCfg?.clientBootstrapSelector || null)};
               if (bootstrapSel) {
-                const bEl = document.querySelector(bootstrapSel);
+                const bEl = queryOne(document, bootstrapSel);
                 if (bEl && bEl.textContent) {
                   try {
                     const data = JSON.parse(bEl.textContent);
@@ -323,7 +325,7 @@ export class CustomRecipeAdapter extends BaseProviderAdapter {
               // 2. Explicit logged-out markers
               const loggedOutSel = ${JSON.stringify(toCombinedCssSelector(authCfg?.loggedOutSelector || null))};
               if (loggedOutSel) {
-                const hasLoggedOutEl = Array.from(document.querySelectorAll(loggedOutSel)).some(element => {
+                const hasLoggedOutEl = Array.from(queryAll(document, loggedOutSel)).some(element => {
                   const style = getComputedStyle(element);
                   return style.display !== 'none' && style.visibility !== 'hidden' && element.getClientRects().length > 0;
                 });
@@ -340,7 +342,7 @@ export class CustomRecipeAdapter extends BaseProviderAdapter {
 
               // 3. Explicit logged-in markers
               const loggedInSel = ${JSON.stringify(toCombinedCssSelector(authCfg?.loggedInSelector || null))};
-              if (loggedInSel && Array.from(document.querySelectorAll(loggedInSel)).some(element => {
+              if (loggedInSel && Array.from(queryAll(document, loggedInSel)).some(element => {
                 const style = getComputedStyle(element);
                 return style.display !== 'none' && style.visibility !== 'hidden' && element.getClientRects().length > 0;
               })) {
@@ -351,7 +353,7 @@ export class CustomRecipeAdapter extends BaseProviderAdapter {
 
               // 4. Default check: is the input prompt present?
               const inputSel = ${JSON.stringify(toCombinedCssSelector(this.recipe.selectors.inputPrompt))};
-              if (inputSel && !!document.querySelector(inputSel)) {
+              if (inputSel && !!queryOne(document, inputSel)) {
                 return true;
               }
 
@@ -456,7 +458,7 @@ export class CustomRecipeAdapter extends BaseProviderAdapter {
             }
           }
           const selector = ${JSON.stringify(rateCfg?.selector || '[role="alert"], [data-testid="request-error-banner"], .alert-error, .text-red-500')};
-          const errorAlert = document.querySelector(selector);
+          const errorAlert = queryOne(document, selector);
           if (errorAlert && (errorAlert.textContent || '').length > 0) {
             const text = errorAlert.textContent.trim().slice(0, 100);
             if (text.toLowerCase().includes('limit') || text.includes('429') || text.toLowerCase().includes('quota')) {
@@ -581,11 +583,14 @@ export class CustomRecipeAdapter extends BaseProviderAdapter {
     const resolvedSettings = ['image', 'video', 'music'].includes(mode)
       ? resolveMediaSettings(this.recipe, mode as MediaMode, { settings: mediaSettings }, mediaModel) : {};
     const verifyMedia = modeConfig?.generation
-      ? await applyMediaControls(modeConfig.generation, resolvedSettings, code => this.executeScript(code), abortSignal, () => { this.webContents?.sendInputEvent({ type: 'keyDown', keyCode: 'ESC' }); this.webContents?.sendInputEvent({ type: 'keyUp', keyCode: 'ESC' }); })
+      ? await applyMediaControls(modeConfig.generation, resolvedSettings, code => this.executeScript(code), abortSignal, () => { this.webContents?.sendInputEvent({ type: 'keyDown', keyCode: 'ESC' }); this.webContents?.sendInputEvent({ type: 'keyUp', keyCode: 'ESC' }); }, this.recipe.openShadowDom)
       : undefined;
     let attached = false;
     let submitted = false;
     let excludedMediaUrls: string[] | undefined;
+    let previousResponse: DomInspectionResult | undefined;
+    const editorGuard = modeConfig?.generation?.activationMarker === 'empty-composer'
+      ? 'data-transgentic-editor-' + randomUUID() : undefined;
     try {
       if (this.temporaryChatRequired && !await this.verifyTemporaryChat()) {
         throw new Error('[TEMPORARY_CHAT_VERIFICATION_FAILED] Temporary Chat verification was lost before attachments or prompt entry.');
@@ -611,10 +616,22 @@ export class CustomRecipeAdapter extends BaseProviderAdapter {
       const submittedPrompt = mediaGenerationPrompt(modeConfig?.generation, prompt);
       const rawInput = modeConfig?.inputSelector || this.recipe.selectors.inputPrompt;
       const inputSelector = toCombinedCssSelector(rawInput);
+      if (editorGuard) {
+        const marked = await this.executeScript<boolean>(`(() => {
+          const editor = ${InputDispatcher.getInputTargetScript(inputSelector)};
+          if (!editor) return false;
+          editor.setAttribute(${JSON.stringify(editorGuard)}, '');
+          return true;
+        })()`);
+        if (!marked) throw new Error('[MEDIA_SETTINGS_FAILED] The verified composer is unavailable.');
+      }
+      const imagePill = this.recipe.id === 'chatgpt' && mode === 'image'
+        ? toCombinedCssSelector(modeConfig?.generation?.activeWhen?.selectors)
+        : '';
       const inputResult = attachments.length && upload?.preserveInComposer
         ? await this.dispatchPromptPreservingAttachments(inputSelector, submittedPrompt, toCombinedCssSelector(upload.preserveInComposer), attachments.length)
-        : this.recipe.id === 'chatgpt' && mode === 'image'
-        ? await this.dispatchPromptAfterImagePill(inputSelector, submittedPrompt)
+        : imagePill
+        ? await this.dispatchPromptAfterImagePill(inputSelector, submittedPrompt, imagePill)
         : await this.dispatchRealisticInput(inputSelector, submittedPrompt);
       if (!inputResult?.success) throw new Error(`Failed to inject prompt into "${this.name}": ${inputResult?.error || 'Target input not found'}`);
       await new Promise((r) => setTimeout(r, 250));
@@ -623,10 +640,11 @@ export class CustomRecipeAdapter extends BaseProviderAdapter {
         throw new Error('[TEMPORARY_CHAT_VERIFICATION_FAILED] Temporary Chat verification was lost before submission.');
       }
 
-      await verifyMedia?.();
+      await verifyMedia?.(true);
+      const prior = await this.executeScript<DomInspectionResult>(DomObserver.getInspectionScript(this.providerId, mode, this.recipe, [], false));
+      previousResponse = prior;
       if (verifyMedia || attachments.length) {
-        const prior = await this.executeScript<DomInspectionResult>(DomObserver.getInspectionScript(this.providerId, mode, this.recipe));
-        const existing = await this.executeScript<string[]>(`Array.from(document.querySelectorAll('img,video,audio,source')).flatMap(el => [el.src, el.currentSrc, el.getAttribute('src')]).filter(Boolean)`);
+        const existing = await this.executeScript<string[]>(`Array.from(queryAll(document, 'img,video,audio,source')).flatMap(el => [el.src, el.currentSrc, el.getAttribute('src')]).filter(Boolean)`);
         excludedMediaUrls = [...existing, ...(prior.mediaUrl ? [prior.mediaUrl] : [])];
       }
       const rawSubmit = modeConfig?.submitSelector || this.recipe.selectors.submitButton;
@@ -634,15 +652,43 @@ export class CustomRecipeAdapter extends BaseProviderAdapter {
       if (attachments.length && upload?.preserveInComposer && !await this.verifyInlineAttachmentPrompt(
         inputSelector, submittedPrompt, toCombinedCssSelector(upload.preserveInComposer), attachments.length,
       )) throw new Error('Inline attachments or prompt changed before submission.');
-      onSubmitted?.(); // Persist uncertainty before the irreversible UI action.
-      const submitResult = verifyMedia
-        ? await this.dispatchRealisticSubmit(submitSelector, inputSelector, undefined, true)
-        : await this.dispatchRealisticSubmit(submitSelector, inputSelector);
+      if (imagePill && !await this.verifyImageDraft(inputSelector, submittedPrompt, imagePill)) {
+        throw new Error('ChatGPT image composer or draft changed before submission.');
+      }
+      if (editorGuard && attachments.length) {
+        const readySelector = upload?.ready && toCombinedCssSelector(upload.ready);
+        const referencesIntact = readySelector && await this.executeScript<boolean>(`queryAll(document, ${JSON.stringify(readySelector)}).filter(el => el.getClientRects().length > 0).length === ${attachments.length}`);
+        if (!referencesIntact) throw new Error('[MEDIA_SETTINGS_FAILED] The media composer lost its reference attachments before submission.');
+      }
+      if (editorGuard) {
+        const intact = await this.executeScript<boolean>(`(() => {
+          const editor = ${InputDispatcher.getInputTargetScript(inputSelector)};
+          return !!editor?.hasAttribute(${JSON.stringify(editorGuard)}) &&
+            (editor.value ?? editor.innerText ?? editor.textContent).trim() === ${JSON.stringify(submittedPrompt.trim())};
+        })()`);
+        if (!intact) throw new Error('[MEDIA_SETTINGS_FAILED] The verified composer or draft changed before submission.');
+      }
+      // A shadow composer can render an attachment chip before its upload
+      // finishes and only expose Submit once the upload is usable.
+      const waitForAttachmentSubmit = Boolean(attachments.length && this.recipe.openShadowDom);
+      const submitResult = await this.dispatchRealisticSubmit(
+        submitSelector, inputSelector, undefined, Boolean(verifyMedia) || waitForAttachmentSubmit, () => {
+          if (abortSignal?.aborted) {
+            throw Object.assign(new Error('Request cancelled before submission.'), { name: 'AbortError' });
+          }
+          onSubmitted?.();
+          submitted = true;
+        }, waitForAttachmentSubmit ? 15_000 : undefined,
+      );
       if (!submitResult?.success) throw new Error(`Failed to submit prompt to "${this.name}": ${submitResult?.error || 'No actionable submit control'}`);
       submitted = true;
     } catch (error) {
       if (attached && !submitted) await this.clearAttachedFiles(upload).catch(() => {});
       throw error;
+    } finally {
+      if (editorGuard) {
+        await this.executeScript(`queryOne(document, ${JSON.stringify('[' + editorGuard + ']')})?.removeAttribute(${JSON.stringify(editorGuard)})`).catch(() => {});
+      }
     }
 
     // Short buffer for page to register submission and begin streaming
@@ -654,12 +700,13 @@ export class CustomRecipeAdapter extends BaseProviderAdapter {
 
     // 5. Polling with dynamic timeout budget
     try {
-      const result = await this.pollGeneration({ mode, metadata: project, onChunk, abortSignal, excludedMediaUrls });
+      const result = await this.pollGeneration({ mode, metadata: project, onChunk, abortSignal, excludedMediaUrls, previousResponse });
       if (this.temporaryChatRequired && !await this.verifyTemporaryChat()) {
         throw new Error('[TEMPORARY_CHAT_SUBMISSION_UNCERTAIN] The provider response completed after Temporary Chat verification was lost. It was not retried elsewhere.');
       }
       return result;
     } catch (error: any) {
+      if (error?.name === 'AbortError') throw error;
       if (this.temporaryChatRequired && !String(error?.message || '').includes('[TEMPORARY_CHAT_')) {
         throw new Error(`[TEMPORARY_CHAT_SUBMISSION_UNCERTAIN] The prompt may have been submitted, and the response could not be completed: ${error?.message || 'unknown provider error'}`);
       }
@@ -681,10 +728,10 @@ export class CustomRecipeAdapter extends BaseProviderAdapter {
       const range = document.createRange();
       range.selectNodeContents(editor);
       range.collapse(false);
-      const selection = window.getSelection();
+      const selection = editor.getRootNode().getSelection?.() || window.getSelection();
       selection?.removeAllRanges();
       selection?.addRange(range);
-      return document.activeElement === editor ? 'ready' : 'not-focused';
+      return editor.getRootNode().activeElement === editor ? 'ready' : 'not-focused';
     })()`);
     if (state === 'already-entered') return { success: true };
     if (state !== 'ready') return { success: false, error: `Inline attachment composer is not ready (${state}).` };
@@ -706,30 +753,39 @@ export class CustomRecipeAdapter extends BaseProviderAdapter {
     return state === 'preserved';
   }
 
-  private async dispatchPromptAfterImagePill(selector: string, prompt: string): Promise<{ success: boolean; error?: string }> {
+  /** Rich-text paragraphs can contribute extra visual newlines to innerText. */
+  private imageDraftNormalizationScript(): string {
+    return `const normalize = text => String(text || '').replace(/\\r\\n?/g, '\\n')
+      .replace(/\\u00a0/g, ' ').replace(/ *\\n(?: *\\n)* */g, '\\n').trim();`;
+  }
+
+  private async dispatchPromptAfterImagePill(selector: string, prompt: string, pillSelector: string): Promise<{ success: boolean; error?: string }> {
     if (!this.webContents || this.webContents.isDestroyed()) {
       return { success: false, error: 'ChatGPT composer is unavailable.' };
     }
 
-    const pillSelector = '[data-inline-selection-pill][data-system-hint-type="picture_v2"]';
     const focusState = await this.executeScript<string>(`(() => {
-      const editor = [...document.querySelectorAll(${JSON.stringify(selector)})].find(el => {
+      const editor = [...queryAll(document, ${JSON.stringify(selector)})].find(el => {
         const rect = el.getBoundingClientRect();
         return el.isContentEditable && rect.width > 0 && rect.height > 0 && el.querySelector(${JSON.stringify(pillSelector)});
       });
       const pill = editor?.querySelector(${JSON.stringify(pillSelector)});
       if (!editor || !pill) return 'missing';
-      const existingPrompt = (editor.textContent || '').replace(pill.textContent || '', '').trim();
-      if (existingPrompt === ${JSON.stringify(prompt.trim())}) return 'already-entered';
+      const inlineControl = pill.closest('[contenteditable="false"]') || pill;
+      ${this.imageDraftNormalizationScript()}
+      const label = normalize(inlineControl.innerText);
+      const rendered = normalize(editor.innerText);
+      const existingPrompt = label && rendered.startsWith(label) ? normalize(rendered.slice(label.length)) : rendered;
+      if (existingPrompt === normalize(${JSON.stringify(prompt)})) return 'already-entered';
       if (existingPrompt) return 'occupied:' + existingPrompt.length;
       editor.focus();
       const range = document.createRange();
-      range.setStartAfter(pill);
+      range.setStartAfter(inlineControl);
       range.collapse(true);
-      const selection = window.getSelection();
+      const selection = editor.getRootNode().getSelection?.() || window.getSelection();
       selection?.removeAllRanges();
       selection?.addRange(range);
-      return document.activeElement === editor ? 'ready' : 'not-focused';
+      return editor.getRootNode().activeElement === editor ? 'ready' : 'not-focused';
     })()`);
     if (focusState === 'already-entered') return { success: true };
     if (focusState !== 'ready') return { success: false, error: `The selected ChatGPT image composer was not ready (${focusState}).` };
@@ -737,14 +793,30 @@ export class CustomRecipeAdapter extends BaseProviderAdapter {
     // Image mode is an inline, non-editable pill. Replacing the editor's whole
     // selection would erase it, so insert text after the pill and verify both.
     await this.webContents.insertText(prompt);
-    const preserved = await this.executeScript<boolean>(`(() => {
-      const editor = [...document.querySelectorAll(${JSON.stringify(selector)})].find(el =>
-        el.querySelector(${JSON.stringify(pillSelector)}));
-      return !!editor && (editor.innerText || editor.textContent || '').includes(${JSON.stringify(prompt)});
+    for (let attempt = 0; attempt < 8; attempt++) {
+      if (await this.verifyImageDraft(selector, prompt, pillSelector)) return { success: true };
+      await new Promise(resolve => setTimeout(resolve, 80));
+    }
+    return { success: false, error: 'ChatGPT did not retain the image mode and complete prompt after entry.' };
+  }
+
+  private async verifyImageDraft(selector: string, prompt: string, pillSelector: string): Promise<boolean> {
+    return this.executeScript<boolean>(`(() => {
+      const editors = [...queryAll(document, ${JSON.stringify(selector)})].filter(editor =>
+        editor.isContentEditable && editor.getClientRects().length &&
+        editor.querySelector(${JSON.stringify(pillSelector)})?.getClientRects().length);
+      if (editors.length !== 1) return false;
+      const editor = editors[0];
+      const pill = editor.querySelector(${JSON.stringify(pillSelector)});
+      const inlineControl = pill.closest('[contenteditable="false"]') || pill;
+      ${this.imageDraftNormalizationScript()}
+      const expected = normalize(${JSON.stringify(prompt)});
+      return [[editor.innerText, inlineControl.innerText], [editor.textContent, inlineControl.textContent]].some(([text, label]) => {
+        const full = normalize(text);
+        const prefix = normalize(label);
+        return (!prefix || full.startsWith(prefix)) && normalize(full.slice(prefix.length)) === expected;
+      });
     })()`);
-    return preserved
-      ? { success: true }
-      : { success: false, error: 'ChatGPT image mode or prompt was lost during entry.' };
   }
 
   private async attachFiles(upload: NonNullable<RecipeModes[keyof RecipeModes]>['inputAttachments'], attachments: readonly StagedAttachment[], abortSignal?: AbortSignal): Promise<void> {
@@ -841,13 +913,13 @@ export class CustomRecipeAdapter extends BaseProviderAdapter {
     const readyScript = `(function() {
       const readySelector = ${JSON.stringify(readySelector)};
       if (readySelector) {
-        const visible = [...document.querySelectorAll(readySelector)].filter(element => {
+        const visible = [...queryAll(document, readySelector)].filter(element => {
           const style = getComputedStyle(element);
           return style.display !== 'none' && style.visibility !== 'hidden' && element.getClientRects().length > 0;
         });
         return visible.length === ${expectedCount};
       }
-      return [...document.querySelectorAll(${JSON.stringify(selector)})]
+      return [...queryAll(document, ${JSON.stringify(selector)})]
         .some(input => input.files && input.files.length === ${attachments.length});
     })()`;
     const stableMs = upload.readyStableMs || 0;
@@ -864,7 +936,7 @@ export class CustomRecipeAdapter extends BaseProviderAdapter {
       }
       await new Promise(resolve => setTimeout(resolve, 150));
     }
-    const readyCount = readySelector ? await this.executeScript<number>(`document.querySelectorAll(${JSON.stringify(readySelector)}).length`).catch(() => 0) : undefined;
+    const readyCount = readySelector ? await this.executeScript<number>(`queryAll(document, ${JSON.stringify(readySelector)}).length`).catch(() => 0) : undefined;
     throw new Error(`Provider "${this.name}" did not confirm attachment readiness before submission.${readyCount == null ? '' : ` Expected ${expectedCount} ready attachments, found ${readyCount}.`}`);
   }
 
@@ -878,6 +950,31 @@ export class CustomRecipeAdapter extends BaseProviderAdapter {
   }
 
   private async findDeclaredFileInput(debuggerApi: any, candidate: SelectorCandidate, attachments: readonly StagedAttachment[] = []): Promise<{ nodeId?: number; ambiguous?: boolean }> {
+    if (this.recipe.openShadowDom) {
+      for (const selector of normalizeSelectorList(candidate)) {
+        const { result } = await debuggerApi.sendCommand('Runtime.evaluate', {
+          expression: `(() => {
+            ${providerQueryScript(true)}
+            const inputs = queryAll(document, ${JSON.stringify(selector)})
+              .filter(input => input instanceof HTMLInputElement && input.type === 'file' && !input.disabled);
+            return inputs.length > 1 ? 'ambiguous' : inputs[0] || null;
+          })()`,
+        });
+        if (result?.value === 'ambiguous') return { ambiguous: true };
+        if (!result?.objectId) continue;
+        try {
+          const { node } = await debuggerApi.sendCommand('DOM.describeNode', { objectId: result.objectId });
+          const attributes: string[] = node?.attributes || [];
+          const acceptIndex = attributes.findIndex((value, index) => index % 2 === 0 && value === 'accept');
+          if (!this.fileInputAccepts(acceptIndex < 0 ? undefined : attributes[acceptIndex + 1], attachments)) continue;
+          const { nodeId } = await debuggerApi.sendCommand('DOM.requestNode', { objectId: result.objectId });
+          if (nodeId) return { nodeId };
+        } finally {
+          await debuggerApi.sendCommand('Runtime.releaseObject', { objectId: result.objectId }).catch(() => {});
+        }
+      }
+      return {};
+    }
     const documentNode: any = await debuggerApi.sendCommand('DOM.getDocument', { depth: 0, pierce: true });
     let ambiguous = false;
     for (const selector of normalizeSelectorList(candidate)) {
@@ -960,7 +1057,7 @@ export class CustomRecipeAdapter extends BaseProviderAdapter {
             return style.display !== 'none' && style.visibility !== 'hidden' && Number(style.opacity || 1) !== 0 && rect.width > 0 && rect.height > 0;
           };
           const selectorCandidates = Array.isArray(locator.selectors) ? locator.selectors : locator.selectors ? [locator.selectors] : [];
-          const pools = selectorCandidates.length ? selectorCandidates.map(selector => { try { return Array.from(document.querySelectorAll(selector)); } catch { return []; } }) : [Array.from(document.querySelectorAll(locator.role === 'button' ? 'button,[role="button"]' : '[role="' + CSS.escape(locator.role || '') + '"]'))];
+          const pools = selectorCandidates.length ? selectorCandidates.map(selector => { try { return Array.from(queryAll(document, selector)); } catch { return []; } }) : [Array.from(queryAll(document, locator.role === 'button' ? 'button,[role="button"]' : '[role="' + CSS.escape(locator.role || '') + '"]'))];
           for (const pool of pools) {
             const matches = pool.filter(el => {
               if (locator.role && implicitRole(el) !== String(locator.role).toLowerCase()) return false;
@@ -995,6 +1092,6 @@ export class CustomRecipeAdapter extends BaseProviderAdapter {
     if (!upload) return;
     const cleanup = toCombinedCssSelector(upload.cleanup);
     const input = toCombinedCssSelector(upload.fileInput);
-    await this.executeScript(`(function(){const cleanup=${JSON.stringify(cleanup)};if(cleanup){for(const el of document.querySelectorAll(cleanup))el.click()}const input=document.querySelector(${JSON.stringify(input)});if(input){try{input.value='';input.dispatchEvent(new Event('input',{bubbles:true}));input.dispatchEvent(new Event('change',{bubbles:true}))}catch{}}try{document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',code:'Escape',bubbles:true}));document.dispatchEvent(new KeyboardEvent('keyup',{key:'Escape',code:'Escape',bubbles:true}))}catch{}})()`);
+    await this.executeScript(`(function(){const cleanup=${JSON.stringify(cleanup)};if(cleanup){for(const el of queryAll(document, cleanup))el.click()}const input=queryOne(document, ${JSON.stringify(input)});if(input){try{input.value='';input.dispatchEvent(new Event('input',{bubbles:true}));input.dispatchEvent(new Event('change',{bubbles:true}))}catch{}}try{document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',code:'Escape',bubbles:true}));document.dispatchEvent(new KeyboardEvent('keyup',{key:'Escape',code:'Escape',bubbles:true}))}catch{}})()`);
   }
 }

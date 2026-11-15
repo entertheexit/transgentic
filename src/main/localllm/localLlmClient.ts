@@ -17,7 +17,8 @@ export class LocalLlmClient {
    */
   public static async fetchModels(
     baseUrl: string,
-    preset: 'ollama' | 'lmstudio' | 'custom' = 'ollama'
+    preset: 'ollama' | 'lmstudio' | 'custom' = 'ollama',
+    apiKey?: string
   ): Promise<string[]> {
     const normUrl = this.normalizeBaseUrl(baseUrl);
     const models: string[] = [];
@@ -51,9 +52,12 @@ export class LocalLlmClient {
     try {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 4000);
-      const res = await fetch(`${normUrl}/v1/models`, {
+      const base = normUrl.replace(/\/chat\/completions$/i, '');
+      const modelsUrl = base.endsWith('/v1') ? `${base}/models` : `${base}/v1/models`;
+      const res = await fetch(modelsUrl, {
+        redirect: 'error',
         signal: controller.signal,
-        headers: { Accept: 'application/json' },
+        headers: { Accept: 'application/json', ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}) },
       });
       clearTimeout(timeout);
 

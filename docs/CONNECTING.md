@@ -8,6 +8,15 @@ Connect Transgentic to local models, synchronize permitted web sessions, and con
 
 - [Provider setup](#provider-setup)
 - [MCP authentication](#mcp-authentication)
+- [Client setup](#client-setup)
+  - [Codex](#codex)
+  - [Cursor](#cursor)
+  - [Google Antigravity](#google-antigravity)
+  - [Claude Desktop](#claude-desktop)
+  - [VS Code](#vs-code)
+  - [LM Studio Bionic](#lm-studio-bionic)
+  - [Claude Code](#claude-code)
+  - [LM Studio](#lm-studio)
 - [HTTP and SSE endpoints](#http-and-sse-endpoints)
   - [Choosing a transport](#choosing-a-transport)
   - [Unified gateway](#unified-gateway)
@@ -56,6 +65,132 @@ Authorization: Bearer YOUR_TOKEN
 Endpoints also accept `?token=YOUR_TOKEN`. Prefer a header when your client supports one: URL tokens can appear in copied links, configuration exports, or logs. Do not commit tokens to a repository.
 
 Client configuration formats and settings screens differ. Supply the endpoint and authentication using your client's supported MCP configuration. A field named “bearer token environment variable” expects a variable name, not the token value; the client process must be able to read that variable.
+
+## Client setup
+
+Keep the Transgentic desktop app running on the same computer as the MCP client. Use the port shown in Transgentic if it differs from `58420`. Get the token from **Settings → MCP Client Security & Authentication**. Where an example uses `YOUR_TOKEN`, replace it only in your private local config. Merge each example into the existing config if you already have MCP servers.
+
+After saving, start or reload the server in your client and ask it to call Transgentic's `get_status` tool. This checks tool discovery and authentication without sending a prompt to a provider. See [connection checks](#connection-checks) if the call fails.
+
+### Codex
+
+Add this to `~/.codex/config.toml`. Set `TRANSGENTIC_TOKEN` to the raw token in the environment that launches Codex. Codex adds the `Bearer` prefix.
+
+```toml
+[mcp_servers.transgentic]
+url = "http://127.0.0.1:58420/mcp"
+bearer_token_env_var = "TRANSGENTIC_TOKEN"
+```
+
+If the desktop app cannot see your shell environment, use `http_headers = { Authorization = "Bearer YOUR_TOKEN" }` in the private user config in place of `bearer_token_env_var`. Reload Codex to pick up changes. [Codex MCP documentation](https://learn.chatgpt.com/docs/extend/mcp?surface=cli)
+
+### Cursor
+
+Add the server to `~/.cursor/mcp.json`. Set `TRANSGENTIC_TOKEN` in the environment Cursor inherits. If Cursor cannot see that variable, use `Bearer YOUR_TOKEN` in your private user config.
+
+```json
+{
+  "mcpServers": {
+    "transgentic": {
+      "url": "http://127.0.0.1:58420/mcp",
+      "headers": {
+        "Authorization": "Bearer ${env:TRANSGENTIC_TOKEN}"
+      }
+    }
+  }
+}
+```
+
+Check that the server is enabled in Cursor's MCP settings. [Cursor MCP documentation](https://cursor.com/docs/mcp)
+
+### Google Antigravity
+
+In Antigravity IDE, open the agent panel's **… → MCP Servers → Manage MCP Servers → View raw config**. Add this to the global `~/.gemini/config/mcp_config.json` and replace `YOUR_TOKEN` with the Transgentic token. Antigravity CLI also reads this global file and shows connection status under `/mcp`. [Google Antigravity MCP documentation](https://antigravity.google/docs/mcp)
+
+```json
+{
+  "mcpServers": {
+    "transgentic": {
+      "serverUrl": "http://127.0.0.1:58420/mcp",
+      "headers": {
+        "Authorization": "Bearer YOUR_TOKEN"
+      }
+    }
+  }
+}
+```
+
+### Claude Desktop
+
+Use the local [stdio bridge](#stdio-clients). Open `claude_desktop_config.json` in `~/Library/Application Support/Claude/` on macOS or `%APPDATA%\Claude\` on Windows. Add the entry below, substitute the absolute paths to Node and the script in your Transgentic checkout, then fully quit and reopen Claude Desktop. In JSON on Windows, escape backslashes as `\\`. [MCP guide for Claude Desktop](https://modelcontextprotocol.io/docs/develop/connect-local-servers)
+
+```json
+{
+  "mcpServers": {
+    "transgentic": {
+      "command": "/absolute/path/to/node",
+      "args": ["/absolute/path/to/transgentic/bin/transgentic-cli.js"]
+    }
+  }
+}
+```
+
+The bridge reads the token from Transgentic's local auth file. If it cannot find a valid token, add `"env": { "TRANSGENTIC_TOKEN": "YOUR_TOKEN" }` to the `transgentic` entry. Include `TRANSGENTIC_PORT` in `env` if you use a custom gateway port.
+
+### VS Code
+
+For VS Code's built-in MCP support, run **MCP: Open User Configuration** from the Command Palette and add the following to `mcp.json`. Start the server and enter the raw Transgentic token when VS Code prompts for it. VS Code masks the input and stores it securely. Enable the server's tools in chat. [VS Code MCP configuration reference](https://code.visualstudio.com/docs/agents/reference/mcp-configuration)
+
+```json
+{
+  "inputs": [
+    {
+      "type": "promptString",
+      "id": "transgentic-token",
+      "description": "Transgentic MCP access token",
+      "password": true
+    }
+  ],
+  "servers": {
+    "transgentic": {
+      "type": "http",
+      "url": "http://127.0.0.1:58420/mcp",
+      "headers": {
+        "Authorization": "Bearer ${input:transgentic-token}"
+      }
+    }
+  }
+}
+```
+
+### LM Studio Bionic
+
+In Bionic, open **Settings → MCP → Add custom MCP**. Use the local [stdio bridge](#stdio-clients) with these fields.
+
+| Field | Value |
+| :--- | :--- |
+| Name | `Transgentic` |
+| Connection | **On this computer** |
+| Command | Absolute path to your Node executable. On macOS or Linux, run `command -v node` in Terminal to find it. |
+| Arguments | One argument with the absolute path to `bin/transgentic-cli.js` in your Transgentic checkout. |
+| Environment variables | Leave blank to use the local auth file. If authentication fails, add `TRANSGENTIC_TOKEN` with the raw token. Add `TRANSGENTIC_PORT` if your gateway uses a custom port. |
+| Working directory | Leave blank. |
+| Request timeout (seconds) | Start with the default of `60`. Increase it if discovery works but a provider call needs longer. |
+
+Click **Add MCP**. If **Hide from agent unless mentioned** is enabled, use `@Transgentic` in the test prompt.
+
+### Claude Code
+
+Run the following in a terminal where `TRANSGENTIC_TOKEN` is set to the raw token. This adds the server to your private user scope and saves the expanded header in Claude Code's local config. Run the command again after removing the old entry if you rotate the token. Use `/mcp` in Claude Code to check connection status. [Claude Code MCP documentation](https://code.claude.com/docs/en/mcp)
+
+```sh
+claude mcp add --scope user --transport http transgentic http://127.0.0.1:58420/mcp \
+  --header "Authorization: Bearer $TRANSGENTIC_TOKEN"
+```
+
+### LM Studio
+
+In LM Studio, open **Program → Install → Edit mcp.json** in the right sidebar. Paste the [Cursor JSON example](#cursor), replacing `Bearer ${env:TRANSGENTIC_TOKEN}` with `Bearer YOUR_TOKEN` in the local file. Save and enable the server for your chat. [LM Studio MCP documentation](https://lmstudio.ai/docs/app/mcp)
 
 ## HTTP and SSE endpoints
 
@@ -132,7 +267,11 @@ Speech, narration, voiceover, TTS, podcasts, and sound effects are reserved for 
 
   Use `/mcp` or `/sse` and pass the intended arguments on each call. This keeps the routing choice visible in the request.
 
+Use `list_models` to discover model IDs for a provider and mode, and `get_model_routes` to read the saved Main and Co routes. In `prompt_model`, pass one of `model`, `models`, or `provider_models`. A single `model` selects one model, `models` supplies an ordered list for the selected provider, and `provider_models` supplies ordered lists keyed by provider ID. Request overrides apply to the current call. Edit persistent defaults and fallback order in Routing settings.
+
 These paths are routing conveniences, not enforced permission boundaries. In the current implementation, a named tool such as `ask_grok` can override a provider endpoint's selection, and an explicit `mode` argument can override a mode endpoint. Media tools also select a mode. Avoid conflicting choices. Combined paths such as `/claude/coding/mcp` are not registered; use a supported path plus tool arguments.
+
+For providers with a verified thinking control, the model list includes combined choices such as Sonnet with Medium effort. Send the combined ID in `model`, or send its base model ID with `reasoning_effort`. Use the IDs returned by MCP `list_models` or HTTP `/v1/models` for the corresponding transport. Ordered MCP model lists accept combined IDs. Conflicting values produce an error. Routing tries the configured choices in order when a combination is unavailable.
 
 ### Authentication and caller continuity
 

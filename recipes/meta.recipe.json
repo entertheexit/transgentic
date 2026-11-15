@@ -30,6 +30,17 @@
     "stopButton": "button[data-testid=\"composer-stop-button\"], button[aria-label=\"Stop response\"]",
     "modelDropdownTrigger": "button[data-testid=\"composer-mode-dropdown-button\"]"
   },
+  "modelSelection": {
+    "trigger": "button[data-testid=\"composer-mode-dropdown-button\"]",
+    "item": "[role=\"menuitemcheckbox\"][data-testid^=\"composer-mode-option-\"]",
+    "name": "span",
+    "openInput": "pointerdown",
+    "idAttribute": "data-testid",
+    "knownChoices": {
+      "composer-mode-option-think_fast": { "id": "instant", "displayName": "Instant" },
+      "composer-mode-option-think_hard": { "id": "thinking", "displayName": "Thinking" }
+    }
+  },
   "response": {
     "container": "[data-testid=\"assistant-message\"]",
     "textSelector": ".prose.ur-markdown",
@@ -129,7 +140,7 @@
   "models": [
     {
       "id": "default",
-      "displayName": "Current provider selection",
+      "displayName": "Current",
       "modes": [
         "general",
         "coding",

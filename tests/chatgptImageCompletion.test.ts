@@ -43,7 +43,7 @@ async function inspectGallery({ loaded = true, user = false, stopped = true, wra
   // Installed/healed recipes may still have only the former assistant selectors.
   const oldRecipe = { ...BUILTIN_RECIPES.chatgpt, response: { ...BUILTIN_RECIPES.chatgpt.response, container: '[data-message-author-role="assistant"]' } };
   return await vm.runInNewContext(DomObserver.getInspectionScript('chatgpt', 'image', oldRecipe), {
-    document, getComputedStyle: () => ({ display: 'block', visibility: 'visible', opacity: '1' }),
+    document, innerWidth: 1024, getComputedStyle: () => ({ display: 'block', visibility: 'visible', opacity: '1' }),
   });
 }
 
@@ -70,34 +70,59 @@ describe('ChatGPT image-only completion detection', () => {
 
 describe('ChatGPT inline image composer', () => {
   const enter = (CustomRecipeAdapter.prototype as any).dispatchPromptAfterImagePill;
+  const verifyImageDraft = (CustomRecipeAdapter.prototype as any).verifyImageDraft;
+  const imageDraftNormalizationScript = (CustomRecipeAdapter.prototype as any).imageDraftNormalizationScript;
+  const pillSelector = '[data-inline-selection-pill]';
 
   it('keeps an exact unsent draft without typing it twice', async () => {
     const insertText = vi.fn();
     const adapter = {
       webContents: { isDestroyed: () => false, insertText },
+      imageDraftNormalizationScript,
       executeScript: vi.fn().mockResolvedValue('already-entered'),
     };
-    expect(await enter.call(adapter, '[contenteditable="true"]', 'A purple circle')).toEqual({ success: true });
+    expect(await enter.call(adapter, '[contenteditable="true"]', 'A purple circle', pillSelector)).toEqual({ success: true });
     expect(insertText).not.toHaveBeenCalled();
   });
 
   it('inserts after the image pill and verifies both mode and prompt before success', async () => {
     const insertText = vi.fn();
     const executeScript = vi.fn().mockResolvedValueOnce('ready').mockResolvedValueOnce(true);
-    const adapter = { webContents: { isDestroyed: () => false, insertText }, executeScript };
-    expect(await enter.call(adapter, '[contenteditable="true"]', 'A purple circle')).toEqual({ success: true });
+    const adapter = { webContents: { isDestroyed: () => false, insertText }, executeScript, verifyImageDraft, imageDraftNormalizationScript };
+    expect(await enter.call(adapter, '[contenteditable="true"]', 'A purple circle', pillSelector)).toEqual({ success: true });
     expect(insertText).toHaveBeenCalledExactlyOnceWith('A purple circle');
-    expect(executeScript.mock.calls[0][0]).toContain('range.setStartAfter(pill)');
+    expect(executeScript.mock.calls[0][0]).toContain('range.setStartAfter(inlineControl)');
     expect(executeScript.mock.calls[1][0]).toContain('data-inline-selection-pill');
+  });
+
+  it('accepts a complete multiline draft while rejecting truncated drafts or a missing mode', async () => {
+    const pill = { innerText: 'Image', textContent: 'Image', closest: () => null, getClientRects: () => [{}] };
+    const editor = {
+      isContentEditable: true,
+      getClientRects: () => [{}],
+      querySelector: () => pill as typeof pill | null,
+      innerText: 'Image\nA purple circle\n\nOn white',
+      textContent: 'ImageA purple circleOn white',
+    };
+    const adapter = {
+      imageDraftNormalizationScript,
+      executeScript: (script: string) => vm.runInNewContext(script, { document: {}, queryAll: () => [editor] }),
+    };
+    const verify = (prompt: string) => verifyImageDraft.call(adapter, '[contenteditable]', prompt, pillSelector);
+    expect(await verify('A purple circle\r\nOn white')).toBe(true);
+    expect(await verify('A purple circle')).toBe(false);
+    editor.querySelector = () => null;
+    expect(await verify('A purple circle\nOn white')).toBe(false);
   });
 
   it('refuses to append to an unrelated draft', async () => {
     const insertText = vi.fn();
     const adapter = {
       webContents: { isDestroyed: () => false, insertText },
+      imageDraftNormalizationScript,
       executeScript: vi.fn().mockResolvedValue('occupied:12'),
     };
-    expect(await enter.call(adapter, '[contenteditable="true"]', 'A purple circle')).toMatchObject({ success: false });
+    expect(await enter.call(adapter, '[contenteditable="true"]', 'A purple circle', pillSelector)).toMatchObject({ success: false });
     expect(insertText).not.toHaveBeenCalled();
   });
 });

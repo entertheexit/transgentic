@@ -1,3 +1,4 @@
+import { effortModelId } from '../../shared/modelEffort.js';
 import { boundedTemporaryChatProbe, inspectTemporaryChatInBackground } from './temporaryChatProbe.js';
 import { isCliProvider } from '../../shared/cli.js';
 import path from 'path';
@@ -58,12 +59,22 @@ export class SessionManager {
   private adapters: Map<ProviderId, BaseProviderAdapter> = new Map();
   private availabilityContexts = new Map<ProviderId, AvailabilityContext>();
   private availabilityRechecks = new Map<ProviderId, { context: AvailabilityContext; promise: Promise<ProviderStatus> }>();
+  private modelRefreshes = new Map<ProviderId, {
+    context: AvailabilityContext;
+    nextCheck: number;
+    pending?: Promise<void>;
+  }>();
+  private verifiedModelEfforts = new Map<ProviderId, {
+    context: AvailabilityContext;
+    options: Map<string, { model: string; label: string; verifiedAt: number }>;
+  }>();
   private statusProbeGenerations = new Map<ProviderId, number>();
   public sessions: Map<ProviderId, Session> = new Map();
   private partitionSessions: Map<string, Session> = new Map();
   private statuses: Map<ProviderId, ProviderStatus> = new Map();
   private openWindows: Map<string, BrowserWindow> = new Map();
   private backgroundWindows: Map<string, BrowserWindow> = new Map();
+  private availabilityProbeViews = new WeakSet<WebContents>();
   private temporaryConversations = new Map<string, TemporaryConversationEntry>();
   private normalConversations = new Map<string, NormalConversationEntry>();
   private temporaryGeneration = 0;
@@ -384,15 +395,15 @@ export class SessionManager {
     }
   }
 
-  public isManagedConversation(webContents: WebContents): boolean {
-    return [...this.temporaryConversations.values(), ...this.normalConversations.values()]
+  public isIsolatedProviderView(webContents: WebContents): boolean {
+    return this.availabilityProbeViews.has(webContents) ||
+      [...this.temporaryConversations.values(), ...this.normalConversations.values()]
       .some(entry => !entry.window.isDestroyed() && entry.window.webContents === webContents);
   }
 
   public registerWebContents(id: ProviderId, webContents: WebContents): void {
-    // Managed conversations own their adapter and must never become the shared
-    // drawer/auth view: cookie refresh can reload that view to the provider root.
-    if (this.isManagedConversation(webContents)) return;
+    // Managed conversations and discovery probes must never replace the shared provider view.
+    if (this.isIsolatedProviderView(webContents)) return;
     const adapter = this.adapters.get(id);
     if (adapter) {
       adapter.setWebContents(webContents);
@@ -513,6 +524,7 @@ export class SessionManager {
         backgroundThrottling: false, preload: getStealthPreloadPath(),
       },
     });
+    this.availabilityProbeViews.add(window.webContents);
     try {
       window.webContents.setUserAgent(session.getUserAgent());
       window.webContents.on('dom-ready', () => {
@@ -525,6 +537,134 @@ export class SessionManager {
       throw error;
     }
     return window;
+  }
+
+  public recordVerifiedModelEffort(provider: ProviderId, model: string | null | undefined, effort: string | undefined, partition: string): void {
+    if (!model || model === 'default' || !effort) return;
+    const adapter = this.adapters.get(provider);
+    if (!(adapter instanceof CustomRecipeAdapter)) return;
+    const context = this.availabilityContext(provider, adapter);
+    const label = adapter.recipe.modelSelection?.effort?.labels[effort];
+    if (context.partition !== partition || !label) return;
+
+    let observations = this.verifiedModelEfforts.get(provider);
+    if (!observations || !this.sameAvailabilityContext(observations.context, context)) {
+      observations = { context, options: new Map() };
+      this.verifiedModelEfforts.set(provider, observations);
+    }
+    const id = effortModelId(model, effort);
+    observations.options.set(id, { model, label, verifiedAt: Date.now() });
+    const knownModel = ServiceManifestManager.getManifest().services[provider]?.models?.find(choice =>
+      choice.id === model && choice.enabled !== false && choice.userEnabled !== false && choice.discoveredAvailable !== false);
+    if (knownModel) {
+      ModelRegistryManager.mergeDiscoveredModels(provider, [{ id, displayName: knownModel.displayName + ' ' + label }], true);
+    }
+  }
+
+  public refreshModels(id: ProviderId, force = false): Promise<void> {
+    const adapter = this.adapters.get(id);
+    if (!(adapter instanceof CustomRecipeAdapter) || !ServiceManifestManager.isServiceEnabled(id)) {
+      return Promise.resolve();
+    }
+    const context = this.availabilityContext(id, adapter);
+    const previous = this.modelRefreshes.get(id);
+    if (previous && this.sameAvailabilityContext(previous.context, context)) {
+      if (previous.pending) return previous.pending;
+      if (!force && Date.now() < previous.nextCheck) return Promise.resolve();
+    }
+
+    const entry = { context, nextCheck: 0, pending: undefined as Promise<void> | undefined };
+    const task = async () => {
+      let window: BrowserWindow | undefined;
+      let succeeded = false;
+      try {
+        const target = this.createAvailabilityProbeWindow(context.partition);
+        window = target;
+        let baseModels: Awaited<ReturnType<typeof ModelScraperEngine.discoverModels>> = [];
+        const variants: typeof baseModels = [];
+        const models = await boundedTemporaryChatProbe(async () => {
+          await target.loadURL(adapter.recipe.newChatUrl || adapter.url);
+          if (target.isDestroyed()) return [];
+          if (adapter.recipe.auth?.requireLoggedInSelector) {
+            const probeAdapter = adapter.createPinnedExecutionAdapter(target.webContents, context.partition);
+            if (!await probeAdapter.checkAuthStatus()) return [];
+          }
+          const switchDeadline = Date.now() + 24_000;
+          // On ChatGPT the fresh picker shows the slider. Opening the model list
+          // first can leave that slider hidden when the picker is reopened.
+          let startingEffort: string | undefined;
+          const startingChoices = adapter.recipe.modelSelection?.effort?.slider
+            ? await ModelScraperEngine.readEfforts(id, target.webContents, undefined, effort => { startingEffort = effort; })
+                .catch(() => ({}))
+            : {};
+          if (target.isDestroyed()) return [];
+          const models = await ModelScraperEngine.discoverModels(id, target.webContents, true);
+          baseModels = models.filter(model => !model.locked);
+          if (!adapter.recipe.modelSelection?.effort) return baseModels;
+          const selected = models.filter(model => model.selected);
+          const original = selected.length === 1 && !selected[0].locked ? selected[0] : undefined;
+          let attemptedSwitch = false;
+          let originalEffort = startingEffort;
+          try {
+            for (const model of [...baseModels].sort((a, b) => Number(Boolean(b.selected)) - Number(Boolean(a.selected)))) {
+              if (target.isDestroyed()) break;
+              if (model.id === 'default' || (!original && !model.selected)) continue;
+              try {
+                if (!model.selected) {
+                  if (!originalEffort || Date.now() >= switchDeadline) break;
+                  attemptedSwitch = true;
+                  if (!await ModelScraperEngine.switchModel(id, model.id, target.webContents)) continue;
+                }
+                const efforts = model.id === original?.id && startingEffort && Object.keys(startingChoices).length
+                  ? startingChoices
+                  : await ModelScraperEngine.readEfforts(id, target.webContents, undefined,
+                      model.id === original?.id ? effort => { originalEffort = effort; } : undefined);
+                for (const [effort, label] of Object.entries(efforts)) {
+                  variants.push({ id: effortModelId(model.id, effort), displayName: model.displayName + ' ' + label });
+                }
+              } catch {
+                // A changed or locked control leaves only the base model available.
+              }
+            }
+          } finally {
+            if (attemptedSwitch && original && !target.isDestroyed()) {
+              const restored = await ModelScraperEngine.switchModel(id, original.id, target.webContents);
+              if (restored && originalEffort) {
+                await ModelScraperEngine.selectEffort(id, target.webContents, originalEffort);
+              }
+            }
+          }
+          return [...baseModels, ...variants];
+        }, 40_000) ?? [...baseModels, ...variants];
+        if (models.length && this.modelRefreshes.get(id) === entry &&
+            ServiceManifestManager.isServiceEnabled(id) &&
+            this.adapters.get(id) === adapter && this.statuses.get(id)?.isAuthenticated !== false &&
+            this.sameAvailabilityContext(context, this.availabilityContext(id, adapter))) {
+          const confirmed = new Map(models.map(model => [model.id, model]));
+          const observations = this.verifiedModelEfforts.get(id);
+          if (observations && this.sameAvailabilityContext(observations.context, context)) {
+            for (const [variant, observation] of observations.options) {
+              if (Date.now() - observation.verifiedAt >= 60 * 60_000) {
+                observations.options.delete(variant);
+                continue;
+              }
+              const base = confirmed.get(observation.model);
+              if (base && !confirmed.has(variant)) {
+                confirmed.set(variant, { id: variant, displayName: base.displayName + ' ' + observation.label });
+              }
+            }
+          }
+          ModelRegistryManager.mergeDiscoveredModels(id, [...confirmed.values()]);
+          succeeded = true;
+        }
+      } finally {
+        if (window && !window.isDestroyed()) window.destroy();
+        entry.nextCheck = Date.now() + (succeeded ? 60 * 60_000 : 5 * 60_000);
+      }
+    };
+    this.modelRefreshes.set(id, entry);
+    entry.pending = task().finally(() => { entry.pending = undefined; });
+    return entry.pending;
   }
 
   public recheckTemporaryChatAvailability(id: ProviderId): Promise<ProviderStatus> {
@@ -829,14 +969,8 @@ export class SessionManager {
           AccountRegistryManager.markStatus(id, activeAcc.id, 'ready');
         }
 
-        // If newly authenticated, trigger model discovery in background
-        if (!previousAuth && webContents && !webContents.isDestroyed()) {
-          ModelScraperEngine.discoverModels(id, webContents).then((models) => {
-            if (models && models.length > 0) {
-              ModelRegistryManager.mergeDiscoveredModels(id, models);
-            }
-          }).catch(() => {});
-        }
+        // Use a separate view so discovery cannot touch the active draft or conversation.
+        void this.refreshModels(id).catch(() => {});
       } else {
         current.state = 'disconnected';
         if (activeAcc && activeAcc.status !== 'unauthenticated') {

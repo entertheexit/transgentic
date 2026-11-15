@@ -18,9 +18,9 @@ function turn(text: string, hidden = false, displayContents = false): any {
   };
 }
 
-async function inspect(provider: 'chatgpt' | 'claude' | 'grok' | 'gemini' | 'webview_custom_example', nodes: any[], recipe?: any) {
+async function inspect(provider: 'chatgpt' | 'claude' | 'grok' | 'gemini' | 'webview_custom_example', nodes: any[], recipe?: any, mode: 'general' | 'image' = 'general') {
   const markers = { chatgpt: 'generated-image-gallery', claude: 'font-claude-message', grok: 'response-turn', gemini: 'model-response', webview_custom_example: 'assistant-turn' };
-  return vm.runInNewContext(DomObserver.getInspectionScript(provider, 'general', recipe), {
+  return vm.runInNewContext(DomObserver.getInspectionScript(provider, mode, recipe), {
     document: { body: { innerText: '' }, querySelector: () => null,
       createElement: () => ({ textContent: '' }),
       querySelectorAll: (selector: string) => selector.includes(markers[provider]) ? nodes : [] },
@@ -102,6 +102,34 @@ describe('Provider response visibility', () => {
     const recipe = { response: { container: '.assistant-turn', codeBlockSelector: '.code-block-wrapper', modes: { text: { enabled: true } } } };
     expect(await inspect('webview_custom_example', [response], recipe)).toMatchObject({ text: '```\n' + source + '\n```' });
   });
+  it('finds an image outside the normal Markdown response container', async () => {
+    const response = turn('');
+    const image = { ...turn(''), tagName: 'IMG', src: 'https://example.com/generated.png', complete: true, naturalWidth: 128 };
+    response.querySelectorAll = (selector: string) => selector === 'img.generated' ? [image] : [];
+    const recipe = { response: {
+      container: '.markdown-only',
+      modes: { image: { enabled: true, responseContainer: '.assistant-turn', contentSelector: 'img.generated' } },
+    } };
+    expect(await inspect('webview_custom_example', [response], recipe, 'image'))
+      .toMatchObject({ mediaUrl: image.src, mediaType: 'image' });
+  });
+
+  it('extracts only a loaded, visible image from a custom response', async () => {
+    const response = turn('');
+    const image = (src: string, complete: boolean, width: number) => ({
+      ...turn(''), tagName: 'IMG', src, complete, naturalWidth: width,
+    });
+    response.querySelectorAll = (selector: string) => selector === 'img.generated'
+      ? [image('https://example.com/unloaded.png', false, 0), image('https://example.com/ready.png', true, 128)]
+      : [];
+    const recipe = { response: {
+      container: '.assistant-turn',
+      modes: { text: { enabled: true, contentSelector: 'img.generated' } },
+    } };
+    expect(await inspect('webview_custom_example', [response], recipe))
+      .toMatchObject({ mediaUrl: 'https://example.com/ready.png', mediaType: 'image' });
+  });
+
   it.each(['chatgpt', 'claude', 'grok', 'gemini'] as const)('%s ignores a hidden response after the visible response', async provider => {
     expect(await inspect(provider, [turn('Visible reply'), turn('Hidden stale reply', true)])).toMatchObject({ text: 'Visible reply' });
     expect(await inspect(provider, [turn('Hidden stale reply', true)])).toMatchObject({ text: '' });
@@ -131,13 +159,53 @@ describe('Provider intervention while polling', () => {
     await assertion;
     expect(executeScript).toHaveBeenCalledOnce();
   });
+  it('waits for a generated image even when progress text has action buttons', async () => {
+    vi.useFakeTimers();
+    const progress = { ...idle, text: 'Preparing your image', hasActionButtons: true };
+    const image = { ...idle, mediaUrl: 'https://example.com/result.png', mediaType: 'image', hasActionButtons: true };
+    const executeScript = vi.fn().mockResolvedValueOnce(progress).mockResolvedValueOnce(progress)
+      .mockResolvedValue(image);
+    const pending = BaseProviderAdapter.prototype.pollGeneration.call(
+      { providerId: 'gemini', name: 'Gemini', executeScript } as any, { mode: 'image' },
+    );
+    await vi.advanceTimersByTimeAsync(6500);
+    await expect(pending).resolves.toMatchObject({ media: { type: 'image', data: image.mediaUrl } });
+  });
+
+  it('ignores a video returned while waiting for an image', async () => {
+    vi.useFakeTimers();
+    const video = { ...idle, mediaUrl: 'https://example.com/preview.mp4', mediaType: 'video', hasActionButtons: true };
+    const image = { ...idle, mediaUrl: 'https://example.com/final.png', mediaType: 'image', hasActionButtons: true };
+    const executeScript = vi.fn().mockResolvedValueOnce(video).mockResolvedValueOnce({ ...video })
+      .mockResolvedValue(image);
+    const pending = BaseProviderAdapter.prototype.pollGeneration.call(
+      { providerId: 'gemini', name: 'Gemini', executeScript } as any, { mode: 'image' },
+    );
+    await vi.advanceTimersByTimeAsync(6500);
+    await expect(pending).resolves.toMatchObject({ media: { type: 'image', data: image.mediaUrl } });
+  });
+
+  it('waits again when generation resumes during the final media check', async () => {
+    vi.useFakeTimers();
+    const preview = { ...idle, mediaUrl: 'https://example.com/preview.png', mediaType: 'image', hasActionButtons: true };
+    const finalImage = { ...preview, mediaUrl: 'https://example.com/final.png' };
+    const executeScript = vi.fn().mockResolvedValueOnce(preview).mockResolvedValueOnce(preview)
+      .mockResolvedValueOnce({ ...preview, isMediaRendering: true }).mockResolvedValue(finalImage);
+    const pending = BaseProviderAdapter.prototype.pollGeneration.call(
+      { providerId: 'gemini', name: 'Gemini', executeScript } as any, { mode: 'image' },
+    );
+    await vi.advanceTimersByTimeAsync(6500);
+    await expect(pending).resolves.toMatchObject({ media: { type: 'image', data: finalImage.mediaUrl } });
+  });
+
   it('does not return a completed reply when verification appears in the final snapshot', async () => {
     vi.useFakeTimers();
     const executeScript = vi.fn().mockResolvedValueOnce({ ...idle, text: 'Reply', hasActionButtons: true })
+      .mockResolvedValueOnce({ ...idle, text: 'Reply', hasActionButtons: true })
       .mockResolvedValue({ ...idle, text: 'Reply', isSecurityWarning: true, securityWarningReason: 'Verification challenge' });
     const promise = BaseProviderAdapter.prototype.pollGeneration.call({ providerId: 'claude', name: 'Claude', executeScript } as any, { mode: 'general' });
     const assertion = expect(promise).rejects.toThrow('Verification challenge');
-    await vi.advanceTimersByTimeAsync(1900);
+    await vi.advanceTimersByTimeAsync(3000);
     await assertion;
   });
 });

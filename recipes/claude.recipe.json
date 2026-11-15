@@ -70,6 +70,23 @@
     "stopButton": "button[aria-label*=\"Stop\" i], [data-is-streaming=\"true\"]",
     "modelDropdownTrigger": "button[aria-label*=\"model\" i], [data-testid=\"model-selector\"]"
   },
+  "modelSelection": {
+    "effort": {
+      "labels": {
+        "low": "Low",
+        "medium": "Medium",
+        "high": "High",
+        "extra": "Extra",
+        "max": "Max"
+      },
+      "submenuLabel": "Effort",
+      "submenu": "[role=\"menuitem\"][aria-haspopup=\"menu\"], button[aria-haspopup=\"menu\"]",
+      "item": "[role=\"menuitemradio\"], [role=\"menuitem\"], [role=\"option\"]"
+    },
+    "trigger": "button[aria-label^=\"Model:\" i], [data-testid=\"model-selector\"]",
+    "item": "[role=\"menuitemradio\"], [role=\"option\"][data-model-id]",
+    "name": "[data-model-name], .truncate"
+  },
   "response": {
     "container": "[data-test-render-count] .font-claude-message, .font-claude-message, div.grid-cols-1 .prose, div[data-is-streaming], div.prose",
     "textSelector": ".font-claude-message, .prose",

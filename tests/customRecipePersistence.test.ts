@@ -182,7 +182,7 @@ describe('Custom Recipe Session Persistence & Startup Tests', () => {
     expect(result.text).toBe('Mock response');
     // Verify dispatchRealisticSubmit was invoked exactly once
     expect(submitSpy).toHaveBeenCalledTimes(1);
-    expect(submitSpy).toHaveBeenCalledWith('button[type="submit"]', '#prompt-textarea');
+    expect(submitSpy).toHaveBeenCalledWith('button[type="submit"]', '#prompt-textarea', undefined, false, expect.any(Function), undefined);
 
     // Verify executeScript was NOT called with raw click cascades
     const executeScriptCalls = executeScriptSpy.mock.calls;
@@ -212,7 +212,7 @@ describe('Custom Recipe Session Persistence & Startup Tests', () => {
     (adapter as any).webContents = { isDestroyed: () => false, getURL: () => 'https://chatgpt.com', loadURL: vi.fn(), debugger: debuggerApi };
     vi.spyOn(adapter, 'checkAuthStatus').mockResolvedValue(true);
     vi.spyOn(adapter, 'checkRateLimit').mockResolvedValue({ isRateLimited: false });
-    const ready = vi.spyOn(adapter as any, 'executeScript').mockImplementation(async (script: string) => script.startsWith('Array.from(document.querySelectorAll') ? [] : true);
+    const ready = vi.spyOn(adapter as any, 'executeScript').mockImplementation(async (script: string) => script.startsWith('Array.from(queryAll(document,') ? [] : true);
     const input = vi.spyOn(adapter as any, 'dispatchRealisticInput').mockResolvedValue({ success: true });
     const submit = vi.spyOn(adapter as any, 'dispatchRealisticSubmit').mockResolvedValue({ success: true });
     vi.spyOn(adapter as any, 'pollGeneration').mockResolvedValue({ text: 'done' });
@@ -288,7 +288,7 @@ describe('Custom Recipe Session Persistence & Startup Tests', () => {
         if (revealCount === 2) chooserListener?.({}, 'Page.fileChooserOpened', { backendNodeId: 7 });
         return { success: true };
       }
-      return script.startsWith('Array.from(document.querySelectorAll') ? [] : true;
+      return script.startsWith('Array.from(queryAll(document,') ? [] : true;
     });
     const input = vi.spyOn(adapter as any, 'dispatchRealisticInput').mockResolvedValue({ success: true });
     vi.spyOn(adapter as any, 'dispatchRealisticSubmit').mockResolvedValue({ success: true });

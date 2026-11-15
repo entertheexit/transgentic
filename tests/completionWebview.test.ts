@@ -6,6 +6,8 @@ import { ServiceManifestManager } from '../src/main/registry/serviceManifest.js'
 import { AccountRegistryManager } from '../src/main/registry/accountRegistry.js';
 import { globalSessionManager } from '../src/main/webviews/sessionManager.js';
 import { CustomRecipeAdapter } from '../src/main/webviews/customRecipeAdapter.js';
+import { ModelScraperEngine } from '../src/main/registry/modelScrapers.js';
+import { effortModelId } from '../src/shared/modelEffort.js';
 import { DynamicRouter } from '../src/main/mcp/router.js';
 
 vi.mock('electron', () => ({ app: undefined }));
@@ -35,6 +37,38 @@ describe('WebView completion conversation ownership', () => {
     gateway = new CompletionGateway(() => ({ temporaryChat: { ...DEFAULT_TEMPORARY_CHAT } } as any), () => 58420);
   });
   afterEach(() => { vi.restoreAllMocks(); });
+
+  it('rejects a media request with no recipe-compatible model before opening a conversation', async () => {
+    const recipe = new CustomRecipeAdapter(BUILTIN_RECIPES.grok);
+    vi.mocked(globalSessionManager.getAdapter).mockReturnValue(recipe);
+    const imageModels = recipe.recipe.response.modes.image?.generation?.models;
+    await expect(gateway.completeProviderPrompt('grok', 'image', 'Draw a square', [], undefined, 'text-only'))
+      .rejects.toThrow('MODEL_SELECTION_FAILED');
+    expect(DynamicRouter.resolveTargetModel).toHaveBeenCalledWith('grok', 'image', 'text-only', 'main', imageModels);
+    expect(globalSessionManager.ensureNormalConversation).not.toHaveBeenCalled();
+  });
+
+  it('applies and reports the same named model and effort for both completion request formats', async () => {
+    const selectModel = vi.spyOn(ModelScraperEngine, 'selectRequestedModel').mockResolvedValue();
+    const selectEffort = vi.spyOn(ModelScraperEngine, 'selectEffort').mockResolvedValue();
+    const model = 'transgentic/provider/chatgpt/model/gpt-5-6-sol';
+    const request = { chat_mode: 'normal', messages: [{ role: 'user', content: 'Reply OK' }] };
+
+    for (const selection of [{ model, reasoning_effort: 'medium' }, { model: effortModelId(model, 'medium') }]) {
+      selectModel.mockClear();
+      selectEffort.mockClear();
+      const result = await gateway.complete({ ...request, ...selection });
+      expect(selectModel).toHaveBeenCalledExactlyOnceWith('chatgpt', 'gpt-5-6-sol', handle.webContents);
+      expect(selectEffort.mock.calls).toEqual([
+        ['chatgpt', handle.webContents, 'medium'],
+        ['chatgpt', handle.webContents, 'medium'],
+      ]);
+      const modelSelection = selectModel.mock.invocationCallOrder[0];
+      expect(selectEffort.mock.invocationCallOrder[0]).toBeLessThan(modelSelection);
+      expect(selectEffort.mock.invocationCallOrder[1]).toBeGreaterThan(modelSelection);
+      expect(result.model).toBe(effortModelId('gpt-5-6-sol', 'medium'));
+    }
+  });
 
   it('routes Meta AI direct completions to its authenticated WebView', async () => {
     expect(gateway.isEligible('meta')).toBe(true);
@@ -246,6 +280,22 @@ describe('WebView completion conversation ownership', () => {
     expect(prompt).toContain('original sentinel');
     expect(prompt.includes('explicitly enabled Recall')).toBe(expected);
     expect(result.chatExecution).toMatchObject({ actualSelection: selection, verified: true, recall: { enabled: expected } });
+  });
+
+  it('does not try the fallback provider after a browser submission attempt', async () => {
+    vi.spyOn(DynamicRouter, 'getRule').mockReturnValue({ defaultService: 'grok', fallbackChain: ['chatgpt'] } as any);
+    executePrompt.mockImplementationOnce(async (...args: unknown[]) => {
+      (args[8] as () => void)();
+      throw new Error('Could not save the provider response');
+    });
+
+    await expect(gateway.complete({
+      model: 'transgentic/general',
+      chat_mode: 'normal',
+      messages: [{ role: 'user', content: 'Submission sentinel' }],
+    })).rejects.toThrow('[WEBVIEW_SUBMISSION_UNCERTAIN]');
+    expect(executePrompt).toHaveBeenCalledOnce();
+    expect(globalSessionManager.ensureNormalConversation).toHaveBeenCalledOnce();
   });
 
   it('recomputes completion Recall for a temporary fallback after a normal provider fails', async () => {

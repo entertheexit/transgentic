@@ -29,7 +29,7 @@ export interface CliStatus {
   provider: CliProviderId; state: 'not_checked' | 'missing' | 'incompatible' | 'available' | 'ready' | 'busy' | 'authentication_required' | 'quota_exhausted' | 'error';
   executablePath?: string; version?: string; message?: string; checkedAt?: number; resetAt?: number;
 }
-export interface CliModelOption { id: string; name: string }
+export interface CliModelOption { id: string; name: string; efforts?: string[] }
 export interface CliModelDiscovery {
   provider: CliProviderId;
   state: 'available' | 'unsupported' | 'error';

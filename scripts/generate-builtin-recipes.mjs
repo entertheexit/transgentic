@@ -22,7 +22,7 @@ if (process.argv.includes('--check')) {
     ? fs.readFileSync(target, 'utf8').replaceAll('\r\n', '\n')
     : null;
   if (existing !== output) {
-    console.error('Built-in recipe output is stale. Run npm run generate:recipes.');
+    console.error('Built-in recipe output is stale. Run npm run generate:recipes or yarn generate:recipes.');
     process.exitCode = 1;
   }
 } else {

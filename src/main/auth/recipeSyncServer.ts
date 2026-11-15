@@ -59,8 +59,9 @@ export function createRecipeRouter(): Router {
       // If drawer webview is currently open for this provider, navigate to entryUrl so it logs in immediately
       const entryUrl = result.recipe.url || `https://${result.recipe.domainMatch}`;
       try {
-        const webContents = globalSessionManager.getWebContents(result.providerId);
-        if (webContents && !webContents.isDestroyed()) {
+        const adapter = globalSessionManager.getAdapter(result.providerId);
+        const webContents = adapter?.getWebContents();
+        if (webContents && !webContents.isDestroyed() && !adapter?.isLocked()) {
           webContents.loadURL(entryUrl).catch(() => {
             webContents.reload();
           });

@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import type { StagedAttachment } from '../../shared/attachments.js';
 
 export interface CliResult { wasNewChat?: boolean; text: string; sessionId?: string; modelUsed?: string; usage?: Record<string, number>; permissionDenied?: boolean; actions?: { commands: number; fileChanges: number } }
-export interface AdapterInput { prompt: string; model?: string; sessionId?: string; policy: ExecutionPolicy; progress?: (message: string) => void; attachments?: readonly StagedAttachment[] }
+export interface AdapterInput { prompt: string; model?: string; effort?: string; sessionId?: string; policy: ExecutionPolicy; progress?: (message: string) => void; attachments?: readonly StagedAttachment[] }
 
 function promptWithAttachmentManifest(input: AdapterInput): string {
   if (!input.attachments?.length) return input.prompt;
@@ -17,6 +17,7 @@ export function adapterArgs(id: CliProviderId, input: AdapterInput): string[] {
   // Codex must delegate confinement to that boundary for its native patch helper to work.
   if (id === 'cli_codex') return ['exec', '--ignore-user-config', '--ignore-rules', '--json', '--skip-git-repo-check', '--sandbox', 'danger-full-access',
     '-c', 'features.plugins=false', '-c', `features.shell_tool=${input.policy.allowCommands}`, '-c', `features.unified_exec=${input.policy.allowCommands}`,
+    ...(input.effort ? ['-c', `model_reasoning_effort=${JSON.stringify(input.effort)}`] : []),
     ...(input.model ? ['--model', input.model] : []), ...(input.attachments || []).filter(file => file.kind === 'image').map(file => `--image=${file.path}`), ...(input.sessionId ? ['resume', input.sessionId] : []), '-'];
   if (id === 'cli_grok') return ['--no-auto-update', 'agent', 'stdio'];
   if (id === 'cli_claude_code') return ['--safe-mode', '-p', '--verbose', '--output-format', 'stream-json', '--permission-mode', 'dontAsk', '--tools', [

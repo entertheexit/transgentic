@@ -71,7 +71,9 @@ describe('Declarative media recipe contracts', () => {
   it('validates declarative account-unavailability locators without exposing them as settings', () => {
     const g: any = structuredClone(recipe.response.modes.image!.generation!);
     g.unavailableWhen = { role: 'dialog', name: 'Subscription required', nameMatch: 'contains' };
+    g.unavailableMessage = '  No matching model is available.  ';
     expect(validateGeneration(g).unavailableWhen).toEqual(g.unavailableWhen);
+    expect(validateGeneration(g).unavailableMessage).toBe('No matching model is available.');
     g.unavailableWhen = { javascript: 'untrusted()' };
     expect(() => validateGeneration(g)).toThrow('Invalid generation controls');
   });
@@ -98,6 +100,52 @@ describe('Declarative media recipe contracts', () => {
 });
 
 describe('Guarded media control resolution', () => {
+  it('reports a provider restriction that mounts after opening the activation menu', async () => {
+    const context = fixture();
+    const template = context.document.querySelectorAll('#options')[0].querySelectorAll()[0];
+    let opened = false;
+    let restrictionChecks = 0;
+    const open = { ...template, click: vi.fn(() => { opened = true; }) };
+    const disabledAction = { ...template, textContent: 'Create image', click: vi.fn() };
+    context.document.querySelectorAll = (selector: string) => {
+      if (selector === '#menu-trigger') return [open];
+      if (selector === '#disabled-image' && opened && ++restrictionChecks >= 3) return [disabledAction];
+      return [];
+    };
+    const config = validateGeneration({
+      activationSteps: [
+        { action: 'click', target: { selectors: '#menu-trigger' } },
+        { action: 'click', target: { selectors: '#create-image' } },
+      ],
+      activeWhen: { selectors: '#active-image' },
+      unavailableWhen: { selectors: '#disabled-image', name: 'Create image' },
+      unavailableMessage: 'ChatGPT has disabled Create image for this conversation.',
+      settings: [],
+    });
+
+    await expect(applyMediaControls(config, {}, async <T>(script: string): Promise<T> =>
+      vm.runInNewContext(script, context))).rejects.toThrow('[MEDIA_UNAVAILABLE] ChatGPT has disabled Create image');
+    expect(open.click).toHaveBeenCalledOnce();
+    expect(disabledAction.click).not.toHaveBeenCalled();
+  });
+
+  it('verifies a separate native mode marker after the composer placeholder disappears', async () => {
+    const context = fixture();
+    const marker = context.document.querySelectorAll('#options')[0].querySelectorAll()[0];
+    let typed = false;
+    context.document.querySelectorAll = (selector: string) =>
+      (typed ? selector === '#selected-tool' : selector === '#empty-editor-marker') ? [marker] : [];
+    const config = validateGeneration({
+      activationSteps: [],
+      activeWhen: { selectors: '#empty-editor-marker' },
+      afterInputWhen: { selectors: '#selected-tool' },
+      settings: [],
+    });
+    const verify = await applyMediaControls(config, {}, async <T>(script: string): Promise<T> =>
+      vm.runInNewContext(script, context));
+    typed = true;
+    await expect(verify(true)).resolves.toBeUndefined();
+  });
   it('waits for an animated option group to be complete before selecting', async () => {
     const context = fixture();
     const scope = context.document.querySelectorAll('#options')[0];

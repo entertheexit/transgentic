@@ -25,7 +25,7 @@ export class ModelRegistryManager {
       hourlyLimit: 30,
       cooldownSeconds: 6,
       models: [
-        { id: 'default', displayName: 'Current provider model', discoveredAvailable: true, userEnabled: true, modes: ['general', 'coding', 'image'] },
+        { id: 'default', displayName: 'Current', discoveredAvailable: true, userEnabled: true, modes: ['general', 'coding', 'image'] },
       ],
     },
     claude: {
@@ -36,7 +36,7 @@ export class ModelRegistryManager {
       hourlyLimit: 35,
       cooldownSeconds: 6,
       models: [
-        { id: 'default', displayName: 'Current provider model', discoveredAvailable: true, userEnabled: true, modes: ['general', 'coding'] },
+        { id: 'default', displayName: 'Current', discoveredAvailable: true, userEnabled: true, modes: ['general', 'coding'] },
       ],
     },
     gemini: {
@@ -47,7 +47,7 @@ export class ModelRegistryManager {
       hourlyLimit: 50,
       cooldownSeconds: 5,
       models: [
-        { id: 'default', displayName: 'Current provider model', discoveredAvailable: true, userEnabled: true, modes: ['general', 'coding', 'image', 'video', 'music'] },
+        { id: 'default', displayName: 'Current', discoveredAvailable: true, userEnabled: true, modes: ['general', 'coding', 'image', 'video', 'music'] },
       ],
     },
     meta: {
@@ -58,7 +58,7 @@ export class ModelRegistryManager {
       hourlyLimit: 30,
       cooldownSeconds: 6,
       models: [
-        { id: 'default', displayName: 'Current provider selection', discoveredAvailable: true, userEnabled: true, modes: ['general', 'coding', 'image', 'video'] },
+        { id: 'default', displayName: 'Current', discoveredAvailable: true, userEnabled: true, modes: ['general', 'coding', 'image', 'video'] },
       ],
     },
     grok: {
@@ -69,7 +69,7 @@ export class ModelRegistryManager {
       hourlyLimit: 40,
       cooldownSeconds: 6,
       models: [
-        { id: 'default', displayName: 'Current provider model', discoveredAvailable: true, userEnabled: true, modes: ['general', 'coding', 'image', 'video'] },
+        { id: 'default', displayName: 'Current', discoveredAvailable: true, userEnabled: true, modes: ['general', 'coding', 'image', 'video'] },
       ],
     },
   };
@@ -122,10 +122,11 @@ export class ModelRegistryManager {
       if (!config) continue;
       for (const model of config.models) {
         if (model.id !== 'default') model.discoveredAvailable = false;
+        else model.displayName = 'Current';
       }
       if (!config.models.some(model => model.id === 'default')) {
         config.models.unshift({
-          id: 'default', displayName: 'Current provider model',
+          id: 'default', displayName: 'Current',
           discoveredAvailable: true, userEnabled: true,
           modes: this.DEFAULT_REGISTRY[id]?.models.find(model => model.id === 'default')?.modes || ['general', 'coding'],
         });
@@ -347,7 +348,8 @@ export class ModelRegistryManager {
    */
   public static mergeDiscoveredModels(
     providerId: ProviderId,
-    discovered: Array<{ id: string; displayName: string; requiresTier?: string }>
+    discovered: Array<{ id: string; displayName: string; requiresTier?: string }>,
+    preserveUnobserved = false,
   ): RegistryStore {
     if (!this.currentRegistry[providerId]) {
       this.currentRegistry[providerId] = {
@@ -358,18 +360,21 @@ export class ModelRegistryManager {
     const config = this.currentRegistry[providerId];
     if (!config) return this.getRegistry();
 
-    ServiceManifestManager.setDiscoveredWebModels(providerId, discovered);
+    ServiceManifestManager.setDiscoveredWebModels(providerId, discovered, preserveUnobserved);
 
-    const discoveredIds = new Set(discovered.map((d) => d.id));
+    const discoveredById = new Map(discovered.map(model => [model.id, model]));
     const nowIso = new Date().toISOString();
 
     // 1. Update existing models
     for (const existing of config.models) {
       if (existing.id === 'default') continue;
-      if (discoveredIds.has(existing.id)) {
+      const observed = discoveredById.get(existing.id);
+      if (observed) {
+        existing.displayName = observed.displayName;
+        if (observed.requiresTier) existing.requiresTier = observed.requiresTier;
         existing.discoveredAvailable = true;
         existing.lastSeen = nowIso;
-      } else {
+      } else if (!preserveUnobserved) {
         existing.discoveredAvailable = false;
       }
     }

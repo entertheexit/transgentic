@@ -19,6 +19,23 @@ describe('Provider attachment input selection', () => {
     expect(execution.getActivePartition()).toBe('persist:media-account');
   });
 
+  it('blocks shared-adapter navigation while a pinned adapter holds the same view lock', async () => {
+    const view = { isDestroyed: () => false } as any;
+    adapter.setWebContents(view);
+    const execution = adapter.createPinnedExecutionAdapter(view, 'persist:media-account');
+    const releaseExecution = await execution.acquireDomLock();
+    const entered = vi.fn();
+    const navigation = adapter.acquireDomLock().then(release => {
+      entered();
+      release();
+    });
+    await Promise.resolve();
+    expect(entered).not.toHaveBeenCalled();
+    releaseExecution();
+    await navigation;
+    expect(entered).toHaveBeenCalledOnce();
+  });
+
   it.each([
     ['image/*', [image], true],
     ['.jpg,.png', [image], true],

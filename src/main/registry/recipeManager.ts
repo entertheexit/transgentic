@@ -222,8 +222,42 @@ export class RecipeManager {
     }
     const cleanId = id.replace(/^custom_|^recipe_/, '');
 
-    const withBundledTemporaryChat = (recipe: CustomRecipe): CustomRecipe => {
+    const withBundledCapabilities = (recipe: CustomRecipe): CustomRecipe => {
       const bundled = (BUILTIN_RECIPES as Record<string, CustomRecipe>)[cleanId];
+      if (recipe.id === cleanId && bundled?.modelSelection?.effort && !recipe.modelSelection?.effort) {
+        recipe = { ...recipe, modelSelection: {
+          ...bundled.modelSelection,
+          ...recipe.modelSelection,
+          effort: bundled.modelSelection.effort,
+        } };
+      }
+      if (cleanId === 'gemini' && recipe.id === cleanId && recipe.auth?.loggedInSelector &&
+          bundled?.auth?.requireLoggedInSelector &&
+          normalizeSelectorList(recipe.auth.loggedInSelector).join(',') === normalizeSelectorList(bundled.auth.loggedInSelector).join(',')) {
+        recipe = { ...recipe, auth: { ...recipe.auth, requireLoggedInSelector: true } };
+      }
+      if (cleanId === 'chatgpt' && recipe.id === cleanId) {
+        const image = recipe.response.modes.image;
+        const generation = image?.generation;
+        const bundledGeneration = bundled?.response.modes.image?.generation;
+        const bundledSteps = bundledGeneration?.activationSteps;
+        const imageAction = bundledSteps?.find(step => step.action === 'click' &&
+          Array.isArray(step.target.name) && step.target.name.includes('Create image'));
+        const legacySelector = 'button[data-list-navigation-item]:has(svg path[d^="M7 21.005c-2.211"])';
+        const steps = generation?.activationSteps;
+        if (image && generation && imageAction && steps?.some(step => step.action === 'click' && step.target.selectors === legacySelector)) {
+          recipe = { ...recipe, response: { ...recipe.response, modes: { ...recipe.response.modes, image: {
+            ...image,
+            generation: {
+              ...generation,
+              unavailableWhen: generation.unavailableWhen || bundledGeneration?.unavailableWhen,
+              unavailableMessage: generation.unavailableMessage || bundledGeneration?.unavailableMessage,
+              activationSteps: steps.map(step =>
+                step.action === 'click' && step.target.selectors === legacySelector ? imageAction : step),
+            },
+          } } } };
+        }
+      }
       if (recipe.id === cleanId && recipe.temporaryChat?.enabled && bundled?.temporaryChat?.enabled) {
         return { ...recipe, temporaryChat: {
           ...recipe.temporaryChat,
@@ -238,12 +272,12 @@ export class RecipeManager {
     };
 
     // 1. Local healed override takes top priority
-    if (this.healedMap.has(id)) return withBundledTemporaryChat(this.healedMap.get(id)!);
-    if (this.healedMap.has(cleanId)) return withBundledTemporaryChat(this.healedMap.get(cleanId)!);
+    if (this.healedMap.has(id)) return withBundledCapabilities(this.healedMap.get(id)!);
+    if (this.healedMap.has(cleanId)) return withBundledCapabilities(this.healedMap.get(cleanId)!);
 
     // 2. Custom recipe
-    if (this.recipesMap.has(id)) return withBundledTemporaryChat(this.recipesMap.get(id)!);
-    if (this.recipesMap.has(cleanId)) return withBundledTemporaryChat(this.recipesMap.get(cleanId)!);
+    if (this.recipesMap.has(id)) return withBundledCapabilities(this.recipesMap.get(id)!);
+    if (this.recipesMap.has(cleanId)) return withBundledCapabilities(this.recipesMap.get(cleanId)!);
 
     // 3. Bundled built-in default
     if ((BUILTIN_RECIPES as any)[cleanId]) {
@@ -450,6 +484,11 @@ export class RecipeManager {
         badgeClass: 'bg-teal-500/15 text-teal-300 border-teal-500/30',
         glowClass: 'shadow-[0_0_15px_rgba(20,184,166,0.15)]',
       },
+      mediaModelAllowlist: Object.fromEntries((['image', 'video', 'music'] as const).flatMap(mode => {
+        const config = recipe.response.modes[mode];
+        const models = config?.enabled ? config.generation?.models : [];
+        return models ? [[mode, models]] : [];
+      })),
       models: modelsDef,
     };
     ServiceManifestManager.saveManifest(manifest);

@@ -7,7 +7,7 @@ export class InputDispatcher {
   /** Resolve a unique declared button before any irreversible native input. */
   public static getSubmitTargetScript(selector: string, inputSelector?: string): string {
     return `(function() {
-      let candidates = Array.from(document.querySelectorAll(${JSON.stringify(selector)})).filter(el => {
+      let candidates = Array.from((typeof queryAll === 'function' ? queryAll.bind(null, document) : document.querySelectorAll.bind(document))(${JSON.stringify(selector)})).filter(el => {
         if (el.disabled || el.hasAttribute('disabled') || el.getAttribute('aria-disabled') === 'true') return false;
         if (el.closest('[hidden], [inert], [aria-hidden="true"], header, nav, aside')) return false;
         const style = getComputedStyle(el);
@@ -15,8 +15,17 @@ export class InputDispatcher {
         return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
       });
       const input = ${inputSelector ? this.getInputTargetScript(inputSelector) : 'null'};
-      for (let root = input?.parentElement; root && root !== document.body; root = root.parentElement) {
-        const local = candidates.filter(button => root.contains(button));
+      const parent = node => node?.assignedSlot || node?.parentElement ||
+        (typeof openShadowDom !== 'undefined' && openShadowDom ? node?.getRootNode?.()?.host : null);
+      const contains = (root, node) => {
+        if (root.contains(node)) return true;
+        for (let ancestor = parent(node); ancestor; ancestor = parent(ancestor)) {
+          if (ancestor === root) return true;
+        }
+        return false;
+      };
+      for (let root = parent(input); root && root !== document.body; root = parent(root)) {
+        const local = candidates.filter(button => contains(root, button));
         if (local.length) { candidates = local; break; }
       }
       const exact = candidates.filter(button => /^(Send|Send message|Send prompt|ส่ง|ส่งข้อความ|ส่งพรอมต์)$/i.test(button.getAttribute('aria-label') || ''));
@@ -29,8 +38,15 @@ export class InputDispatcher {
       const y = Math.round(rect.y + rect.height / 2);
       if ((typeof innerWidth === 'number' && (x < 0 || x >= innerWidth)) ||
           (typeof innerHeight === 'number' && (y < 0 || y >= innerHeight))) return { offscreen: true };
-      const hit = document.elementFromPoint?.(x, y);
-      if (hit && hit !== candidates[0] && !candidates[0].contains(hit)) return { obscured: true };
+      let hit = document.elementFromPoint?.(x, y);
+      if (typeof openShadowDom !== 'undefined' && openShadowDom) {
+        while (hit?.shadowRoot) {
+          const inner = hit.shadowRoot.elementFromPoint?.(x, y);
+          if (!inner || inner === hit) break;
+          hit = inner;
+        }
+      }
+      if (hit && hit !== candidates[0] && !contains(candidates[0], hit)) return { obscured: true };
       return { x, y };
     })()`;
   }
@@ -38,7 +54,7 @@ export class InputDispatcher {
   /** Use the same rendered composer for native focus, text insertion, and Enter. */
   public static getInputTargetScript(selector: string): string {
     return `(function() {
-      const candidates = Array.from(document.querySelectorAll(${JSON.stringify(selector)})).filter(el => {
+      const candidates = Array.from((typeof queryAll === 'function' ? queryAll.bind(null, document) : document.querySelectorAll.bind(document))(${JSON.stringify(selector)})).filter(el => {
         if (el.disabled || el.readOnly || el.getAttribute('aria-disabled') === 'true') return false;
         if (el.closest('[hidden], [inert], [aria-hidden="true"]')) return false;
         const style = getComputedStyle(el);
@@ -121,7 +137,7 @@ export class InputDispatcher {
             el.focus();
 
             // Select all current content
-            const selection = window.getSelection();
+            const selection = el.getRootNode?.().getSelection?.() || window.getSelection();
             const range = document.createRange();
             range.selectNodeContents(el);
             selection?.removeAllRanges();
@@ -194,7 +210,7 @@ export class InputDispatcher {
 
           while (Date.now() - startWait < 400) {
             // Check direct send button candidates (ChatGPT, Gemini, Grok, Claude)
-            const direct = Array.from(document.querySelectorAll(
+            const direct = Array.from((typeof queryAll === 'function' ? queryAll.bind(null, document) : document.querySelectorAll.bind(document))(
               'button[data-testid="send-button"], ' +
               'button:has(img[alt="Send"]), ' +
               'button[aria-label*="ส่ง" i], ' +
@@ -210,7 +226,7 @@ export class InputDispatcher {
 
             // Check recipe buttonSelector candidates
             if (${JSON.stringify(buttonSelector || '')}) {
-              const matched = document.querySelectorAll(${JSON.stringify(buttonSelector || '')});
+              const matched = (typeof queryAll === 'function' ? queryAll.bind(null, document) : document.querySelectorAll.bind(document))(${JSON.stringify(buttonSelector || '')});
               for (const b of matched) {
                 if (isButtonActive(b)) {
                   targetBtn = b;

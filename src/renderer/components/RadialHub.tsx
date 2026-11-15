@@ -100,7 +100,7 @@ const PROVIDERS_CONFIG: Array<{
       id: 'chatgpt',
       name: 'ChatGPT',
       providerCompany: 'OpenAI',
-      defaultModel: 'Current provider model',
+      defaultModel: 'Current',
       icon: Bot,
       accentColor: 'emerald',
       iconColor: 'text-emerald-400',
@@ -109,7 +109,7 @@ const PROVIDERS_CONFIG: Array<{
       id: 'claude',
       name: 'Claude',
       providerCompany: 'Anthropic',
-      defaultModel: 'Current provider model',
+      defaultModel: 'Current',
       icon: Brain,
       accentColor: 'amber',
       iconColor: 'text-amber-400',
@@ -118,7 +118,7 @@ const PROVIDERS_CONFIG: Array<{
       id: 'gemini',
       name: 'Gemini',
       providerCompany: 'Google',
-      defaultModel: 'Current provider model',
+      defaultModel: 'Current',
       icon: Sparkles,
       accentColor: 'blue',
       iconColor: 'text-blue-400',
@@ -127,7 +127,7 @@ const PROVIDERS_CONFIG: Array<{
       id: 'grok',
       name: 'Grok',
       providerCompany: 'xAI',
-      defaultModel: 'Current provider model',
+      defaultModel: 'Current',
       icon: Cpu,
       accentColor: 'purple',
       iconColor: 'text-purple-400',
@@ -263,11 +263,15 @@ export const RadialHub: React.FC<RadialHubProps> = ({
       const theme = getProviderTheme(s.id, s as any);
       const isApi = s.providerType === 'api' || s.id.startsWith('api_');
       const resolvedName = getProviderDisplayName(s.id, servicesManifest, providers);
+      const defaultModelId = s.defaultModelId || 'default';
+      const defaultModel = s.providerType === 'webview' && defaultModelId === 'default'
+        ? 'Current'
+        : s.models?.find(model => model.id === defaultModelId)?.displayName || s.defaultModelId || 'Default';
       return {
         id: s.id,
         name: resolvedName,
         providerCompany: isApi ? 'Custom API' : (s.company && !s.company.toLowerCase().includes('experimental') && s.company !== resolvedName ? s.company : 'Custom Recipe'),
-        defaultModel: s.defaultModelId || 'Default',
+        defaultModel,
         icon: theme.icon,
         accentColor: theme.accentColor || 'teal',
         iconColor: theme.textClass,

@@ -65,7 +65,7 @@ export function ChatModeControl({ config, mode, provider, capability, providerTy
     : capability?.reason && !error && !pending ? `${status}. ${capability.reason}` : status;
   const dotColor = error ? 'bg-rose-400'
     : pending ? 'bg-cyan-400 animate-pulse'
-      : capability?.checkFailed ? 'bg-rose-400'
+      : capability?.checkFailed ? (selection === 'normal' ? 'bg-slate-500' : 'bg-amber-400')
       : !externalSettings && (capability?.availability === 'unavailable' || capability?.reason?.startsWith('Sign in')) ? 'bg-amber-400'
         : capability?.supported && capability.availability === 'available' ? 'bg-emerald-400' : 'bg-slate-500';
 

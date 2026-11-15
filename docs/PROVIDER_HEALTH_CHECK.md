@@ -31,15 +31,21 @@ State the evidence layer for each result: source inspection, fixture test, nativ
 
 ## 2. Model discovery and selection
 
+The app refreshes enabled model catalogs in the background while it is running. Web providers use the active account's session in a separate hidden view. The recipe's `modelSelection` identifies the picker, choices, and any submenu or input method needed to read them. Native CLIs and configured API providers use their own listing interfaces. Empty or failed checks preserve the previous catalog.
+
 For ChatGPT, Claude, Gemini, Grok, Meta AI, and each configured integration:
 
 - Inspect the current account's model picker and official provider documentation. Record exact labels/IDs, reasoning controls, selected state, disabled choices, and plan/quota restrictions. Do not infer web model IDs from API or CLI naming.
+- Refresh available models from each authorized live picker and from each installed CLI that exposes a native list. Reconcile additions, removals, and renamed entries before updating recipes. Verify an explicitly selected model through Transgentic after refreshing.
+- Keep **Custom Recipes** in the private workspace and installed local recipe folder when present. Use generic names in shared reports and omit private recipe identifiers, domains, tenant URLs, and account details.
 - Compare the live list with the manifest, registry, route settings, and MCP tool schemas. Identify retired defaults, missing models, invented availability, and stale cached discovery.
 - Test discovery with the picker closed and already open. Exclude unrelated menus and restore any transient UI opened by inspection.
 - Select a different available model, verify the resulting active selection, then restore the original selection. A click or opened picker alone is not success.
 - Test an absent model, disabled model, ambiguous label, and unavailable picker using fixtures where live tests would waste quota. Explicit selection must fail before submission when the requested model cannot be verified.
 - Verify that `default` intentionally uses the provider's current selection. Preserve user-enabled choices and defaults when refreshing the catalog.
 - Check wide and compact layouts and supported locales where locators depend on text, structure, order, or icons.
+
+Verify a saved default and an ordered fallback in both the Main and Co routes where configured. Through MCP, call `list_models` and `get_model_routes`, then verify that a request override uses the requested model and the next ordinary request uses the saved route. Record the actual provider and model. Exercise an unavailable model before submission and confirm that an ambiguous submission never triggers another attempt.
 
 ## 3. Web-service mode matrix
 

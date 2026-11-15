@@ -1,5 +1,5 @@
 {
-  "version": "1.3.0",
+  "version": "1.3.1",
   "id": "chatgpt",
   "title": "OpenAI ChatGPT",
   "domainMatch": "chatgpt.com",
@@ -140,6 +140,26 @@
     "stopButton": "button[data-testid=\"stop-button\"], button[aria-label*=\"Stop\" i]",
     "modelDropdownTrigger": "button[aria-label=\"Select ChatGPT model\"], [data-testid=\"model-selector-button\"]"
   },
+  "modelSelection": {
+    "effort": {
+      "labels": {
+        "instant": "Instant",
+        "low": "Low",
+        "medium": "Medium",
+        "high": "High",
+        "extra": "Extra High",
+        "pro": "Pro"
+      },
+      "panel": "[data-reasoning-slider=true], [role=\"slider\"][aria-label=\"Power\"]",
+      "slider": "[role=\"slider\"]"
+    },
+    "trigger": "[data-testid=\"model-selector-button\"], button[aria-label=\"Select ChatGPT model\" i]",
+    "item": "[role=\"menuitemradio\"], [role=\"option\"][data-model-id]",
+    "submenu": "[data-model-picker-view-toggle=\"true\"]",
+    "disabledText": "Usage limit reached",
+    "openInput": "native",
+    "selectInput": "pointer"
+  },
   "response": {
     "container": "[data-content-search-unit-key]:has(> [data-conversation-role=\"assistant\"]), [data-message-author-role=\"assistant\"], [data-testid^=\"conversation-turn-\"]:has([data-message-author-role=\"assistant\"]), div.agent-turn, main [data-testid=\"generated-image-gallery\"]",
     "textSelector": "[data-markdown-text-style=\"assistant-message\"], .response-content-markdown, .markdown, .prose",
@@ -197,10 +217,17 @@
             {
               "action": "click",
               "target": {
-                "selectors": "button[data-list-navigation-item]:has(svg path[d^=\"M7 21.005c-2.211\"])"
+                "selectors": "button, [role=\"menuitem\"], [role=\"option\"]",
+                "name": ["Create image", "Create an image"],
+                "nameMatch": "contains"
               }
             }
           ],
+          "unavailableWhen": {
+            "selectors": "[aria-disabled=\"true\"] [data-menu-row-content]",
+            "name": "Create image"
+          },
+          "unavailableMessage": "ChatGPT has disabled Create image for this conversation.",
           "activeWhen": {
             "selectors": "[data-inline-selection-pill][data-system-hint-type=\"picture_v2\"]"
           },

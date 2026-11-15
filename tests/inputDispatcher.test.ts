@@ -193,6 +193,38 @@ describe('InputDispatcher', () => {
     expect(adapter.executeScript).toHaveBeenCalledOnce();
   });
 
+  it('records submission only after trusted pointer positioning succeeds', async () => {
+    const beforeSubmit = vi.fn();
+    const sendCommand = vi.fn().mockRejectedValue(new Error('view gone'));
+    const adapter = {
+      getEffectiveSelector: async (_landmark: string, selector: string) => selector,
+      executeScript: vi.fn().mockResolvedValue({ x: 100, y: 80 }),
+      webContents: { debugger: { isAttached: () => true, sendCommand }, sendInputEvent: vi.fn() },
+    };
+    await expect((BaseProviderAdapter.prototype as any).dispatchRealisticSubmit.call(
+      adapter, 'button.send', '.editor', undefined, true, beforeSubmit,
+    )).rejects.toThrow('[WEBVIEW_INPUT_UNAVAILABLE]');
+    expect(beforeSubmit).not.toHaveBeenCalled();
+    expect(sendCommand).toHaveBeenCalledTimes(1);
+  });
+
+  it('honors cancellation after pointer positioning without dispatching a click', async () => {
+    const sendCommand = vi.fn().mockResolvedValue({});
+    const adapter = {
+      getEffectiveSelector: async (_landmark: string, selector: string) => selector,
+      executeScript: vi.fn().mockResolvedValue({ x: 100, y: 80 }),
+      webContents: { debugger: { isAttached: () => true, sendCommand }, sendInputEvent: vi.fn() },
+    };
+    const abort = () => {
+      throw Object.assign(new Error('Request cancelled before submission.'), { name: 'AbortError' });
+    };
+    await expect((BaseProviderAdapter.prototype as any).dispatchRealisticSubmit.call(
+      adapter, 'button.send', '.editor', undefined, true, abort,
+    )).rejects.toMatchObject({ name: 'AbortError' });
+    expect(sendCommand.mock.calls.map(call => call[1].type)).toEqual(['mouseMoved']);
+    expect(adapter.webContents.sendInputEvent).not.toHaveBeenCalled();
+  });
+
   it('never retries a partially dispatched trusted click', async () => {
     const debuggerApi = {
       isAttached: () => true,
@@ -300,6 +332,26 @@ it('rejects a submit target that remains outside the viewport after scrolling', 
   })).toEqual({ offscreen: true });
 });
 
+it('selects the send control in the active shadow composer', () => {
+  const composer = { contains: () => false };
+  const input = {
+    closest: () => null, getAttribute: () => null,
+    getBoundingClientRect: () => ({ width: 100, height: 40 }),
+    getRootNode: () => ({ host: composer }),
+  };
+  const button = {
+    hasAttribute: () => false, getAttribute: () => 'Send', closest: () => null,
+    getRootNode: () => ({ host: composer }),
+    getBoundingClientRect: () => ({ x: 20, y: 40, width: 100, height: 40 }),
+  };
+  const otherButton = { ...button, getRootNode: () => ({ host: {} }) };
+  expect(runInNewContext(InputDispatcher.getSubmitTargetScript('button', '.editor'), {
+    document: { querySelectorAll: (selector: string) => selector === '.editor' ? [input] : [otherButton, button] },
+    getComputedStyle: () => ({ display: 'block', visibility: 'visible' }),
+    openShadowDom: true,
+  })).toEqual({ x: 70, y: 60 });
+});
+
 it('does not send trusted input through an overlay covering the submit button', () => {
   const button = {
     disabled: false, hasAttribute: () => false, getAttribute: () => 'Send', closest: () => null,
@@ -311,6 +363,27 @@ it('does not send trusted input through an overlay covering the submit button', 
     getComputedStyle: () => ({ display: 'block', visibility: 'visible' }),
     innerWidth: 1024, innerHeight: 768,
   })).toEqual({ obscured: true });
+});
+
+it('waits for the native submit button after an attachment without pressing Enter', async () => {
+  vi.useFakeTimers();
+  try {
+    const executeScript = vi.fn().mockResolvedValueOnce(null).mockResolvedValue({ x: 100, y: 80 });
+    const sendInputEvent = vi.fn();
+    const adapter = {
+      getEffectiveSelector: async (_landmark: string, selector: string) => selector,
+      executeScript, webContents: { sendInputEvent },
+    };
+    const pending = (BaseProviderAdapter.prototype as any).dispatchRealisticSubmit.call(
+      adapter, 'button.send', '.editor', undefined, true, undefined, 15_000,
+    );
+    await vi.runAllTimersAsync();
+    await expect(pending).resolves.toMatchObject({ success: true });
+    expect(executeScript).toHaveBeenCalledTimes(2);
+    expect(sendInputEvent.mock.calls.map(call => call[0].type)).toEqual(['mouseDown', 'mouseUp']);
+  } finally {
+    vi.useRealTimers();
+  }
 });
 
 it('waits for a closing provider backdrop before sending exactly one click', async () => {

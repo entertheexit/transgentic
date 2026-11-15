@@ -24,7 +24,7 @@
       "models": [
         {
           "id": "default",
-          "displayName": "Current provider model",
+          "displayName": "Current",
           "enabled": true,
           "discoveredAvailable": true,
           "userEnabled": true,
@@ -59,7 +59,7 @@
       "models": [
         {
           "id": "default",
-          "displayName": "Current provider model",
+          "displayName": "Current",
           "enabled": true,
           "discoveredAvailable": true,
           "userEnabled": true,
@@ -93,7 +93,7 @@
       "models": [
         {
           "id": "default",
-          "displayName": "Current provider model",
+          "displayName": "Current",
           "enabled": true,
           "discoveredAvailable": true,
           "userEnabled": true,
@@ -130,7 +130,7 @@
       "models": [
         {
           "id": "default",
-          "displayName": "Current provider model",
+          "displayName": "Current",
           "enabled": true,
           "discoveredAvailable": true,
           "userEnabled": true,

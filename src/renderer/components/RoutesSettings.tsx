@@ -1,3 +1,5 @@
+import { isModelAllowedForMode } from '../../shared/types.js';
+import { isLegacyCurrentEffort, parseEffortModel } from '../../shared/modelEffort';
 import { PopoverSelect } from './PopoverSelect.js';
 import { BUILTIN_PROVIDER_IDS } from '../../shared/providers.js';
 import { isCliProvider } from '../../shared/cli.js';
@@ -233,11 +235,12 @@ export const RoutesSettings: React.FC<RoutesSettingsProps> = ({
     if (!Array.isArray(s.models) || s.models.length === 0) {
       if (isApi && (mode === 'general' || mode === 'coding')) {
         const defaultModel = s.defaultModelId || 'default';
-        return [{ id: defaultModel, displayName: defaultModel, enabled: true, mode: 'general', modes: ['general', 'coding'], requiresTier: undefined }];
+        return [{ id: defaultModel, displayName: defaultModel, enabled: true, userEnabled: true, discoveredAvailable: true, mode: 'general', modes: ['general', 'coding'], requiresTier: undefined }];
       }
       return [];
     }
     const filtered = s.models.filter((m) => {
+      if (!isModelAllowedForMode(s, m.id, mode)) return false;
       if (m.mode === mode) return true;
       if (Array.isArray(m.modes) && m.modes.includes(mode)) return true;
       if (mode === 'general' && !m.mode && (!m.modes || m.modes.length === 0)) return true;
@@ -267,8 +270,10 @@ export const RoutesSettings: React.FC<RoutesSettingsProps> = ({
   const getDefaultModelForProviderMode = (providerId: ProviderId, mode: RouteMode) => {
     const configured = currentRoute.providerModels?.[providerId]?.defaultModelId;
     if (configured) return configured;
-    const available = getProviderModelsForMode(providerId, mode);
-    return available[0]?.id || servicesManifest?.services?.[providerId]?.defaultModelId || '';
+    const available = getProviderModelsForMode(providerId, mode)
+      .filter(model => model.enabled !== false && model.userEnabled !== false);
+    const providerDefault = servicesManifest?.services?.[providerId]?.defaultModelId;
+    return available.find(model => model.id === providerDefault)?.id || available[0]?.id || '';
   };
 
   const getFallbackModelsForProviderMode = (providerId: ProviderId) => {
@@ -901,7 +906,14 @@ export const RoutesSettings: React.FC<RoutesSettingsProps> = ({
 
               {routingServices.map((provId) => {
                 const srv = servicesManifest?.services?.[provId];
-                const modeModels = getProviderModelsForMode(provId, selectedMode);
+                const modeModels = getProviderModelsForMode(provId, selectedMode)
+                  .filter(model => !isLegacyCurrentEffort(model.id) && model.enabled !== false && model.userEnabled !== false && model.discoveredAvailable !== false)
+                  .sort((left, right) => {
+                    const a = parseEffortModel(left.id);
+                    const b = parseEffortModel(right.id);
+                    if (left.id === 'default' || right.id === 'default') return left.id === 'default' ? -1 : 1;
+                    return a.model!.localeCompare(b.model!) || Number(Boolean(a.effort)) - Number(Boolean(b.effort));
+                  });
                 const defaultModelId = getDefaultModelForProviderMode(provId, selectedMode);
                 const fallbackModelIds = getFallbackModelsForProviderMode(provId);
                 const availableModelFbs = modeModels.filter(
@@ -959,12 +971,26 @@ export const RoutesSettings: React.FC<RoutesSettingsProps> = ({
                         onChange={(e) => handleSetProviderModeDefaultModel(provId, e.target.value)}
                         className="w-full bg-black/50 border border-teal-500/30 rounded-xl px-3 py-1.5 text-xs text-teal-200 focus:outline-none focus:border-teal-400 font-mono cursor-pointer"
                       >
+                        {defaultModelId && !modeModels.some(model => model.id === defaultModelId) &&
+                          <option value={defaultModelId}>{isLegacyCurrentEffort(defaultModelId) ? 'Current · ' + parseEffortModel(defaultModelId).effort + ' (legacy override)' : defaultModelId + ' (unavailable)'}</option>}
                         {modeModels.map((m) => (
                           <option key={m.id} value={m.id} className="bg-slate-900 text-slate-200">
                             {m.displayName || m.id} {m.requiresTier ? `(${m.requiresTier})` : ''}
                           </option>
                         ))}
                       </PopoverSelect>
+                      {isCliProvider(provId) && (
+                        <form className="flex gap-2" onSubmit={event => {
+                          event.preventDefault();
+                          const model = String(new FormData(event.currentTarget).get('model') || '').trim();
+                          if (model) handleSetProviderModeDefaultModel(provId, model);
+                          event.currentTarget.reset();
+                        }}>
+                          <input name="model" aria-label="Manual CLI model ID" placeholder="Enter a CLI model ID"
+                            maxLength={200} className="min-w-0 flex-1 rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-xs" />
+                          <button type="submit" className="rounded-lg border border-teal-500/30 px-3 text-xs text-teal-200">Set default</button>
+                        </form>
+                      )}
                     </div>
 
                     {/* Intra-Service Fallback Models */}
@@ -993,7 +1019,7 @@ export const RoutesSettings: React.FC<RoutesSettingsProps> = ({
                               >
                                 <div className="flex items-center gap-2">
                                   <span className="text-[9.5px] font-bold text-teal-400">#{idx + 1}</span>
-                                  <span>{mObj?.displayName || mId}</span>
+                                  <span>{isLegacyCurrentEffort(mId) ? 'Current · ' + parseEffortModel(mId).effort + ' (legacy override)' : mObj?.displayName || mId}</span>
                                 </div>
                                 <div className="flex items-center gap-1">
                                   <button

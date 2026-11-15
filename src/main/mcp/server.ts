@@ -1,5 +1,6 @@
+import { effortModelId, isLegacyCurrentEffort, parseEffortModel } from '../../shared/modelEffort.js';
 import { BUILTIN_PROVIDER_IDS } from '../../shared/providers.js';
-import { resolveChatMode, validateChatMode, normalizeRouteMode, type ChatModeSelection } from '../../shared/types.js';
+import { isModelAllowedForMode, resolveChatMode, validateChatMode, normalizeRouteMode, type ChatModeSelection } from '../../shared/types.js';
 import { MediaJobStore } from '../media/jobs.js';
 import { createMediaRouter } from '../media/router.js';
 import { mediaCapability, normalizeMediaPreferences, resolveMediaSettings, type MediaPreferences, type MediaSettings, type MediaMode } from '../../shared/media.js';
@@ -150,11 +151,26 @@ export class TransgenticMcpServer {
   }
 
   public getMediaCapabilities(mode?: MediaMode, model?: string) {
+    const statuses = globalSessionManager.getAllStatuses();
     return globalSessionManager.getAdapters().flatMap(adapter => {
       if (!(adapter instanceof CustomRecipeAdapter)) return [];
       return (mode ? [mode] : ['image', 'video', 'music'] as MediaMode[]).flatMap(m => {
-        const models = model ? [model] : [...new Set([DynamicRouter.resolveTargetModel(adapter.providerId, m, undefined, 'main') || ModelRegistryManager.getEffectiveModel(adapter.providerId) || undefined, ...(adapter.recipe.response.modes[m]?.generation?.models || [])])];
-        return models.flatMap(id => { const c = mediaCapability(adapter.recipe, m, id, globalSessionManager.getAllStatuses()[adapter.providerId]?.isAuthenticated === true); return c ? [{ ...c, provider: adapter.providerId }] : []; });
+        const declared = adapter.recipe.response.modes[m]?.generation?.models;
+        const resolve = (requested?: string) =>
+          DynamicRouter.resolveTargetModel(adapter.providerId, m, requested, 'main', declared);
+        const models = model ? [model] : [...new Set([
+          resolve() || undefined,
+          ...(declared || []).filter(id => resolve(id) === id),
+        ])];
+        return models.flatMap(id => {
+          const compatible = id !== undefined && resolve(id) === id;
+          const authenticated = statuses[adapter.providerId]?.isAuthenticated === true;
+          const capability = mediaCapability(adapter.recipe, m, id, compatible && authenticated);
+          if (!capability) return [];
+          const unavailableReason = compatible || !adapter.recipe.response.modes[m]?.enabled
+            ? capability.unavailable_reason : 'No enabled recipe-compatible model is available for this media request.';
+          return [{ ...capability, provider: adapter.providerId, unavailable_reason: unavailableReason }];
+        });
       });
     });
   }
@@ -166,7 +182,7 @@ export class TransgenticMcpServer {
     return [...new Set(ids)].flatMap(id => {
       const adapter = globalSessionManager.getAdapter(id);
       if (!(adapter instanceof CustomRecipeAdapter)) return [];
-      const model = DynamicRouter.resolveTargetModel(id, mode, undefined, 'main') || ModelRegistryManager.getEffectiveModel(id) || undefined;
+      const model = DynamicRouter.resolveTargetModel(id, mode, undefined, 'main', adapter.recipe.response.modes[mode]?.generation?.models) || undefined;
       const capability = mediaCapability(adapter.recipe, mode, model, globalSessionManager.getAllStatuses()[id]?.isAuthenticated === true);
       return capability ? [{ ...capability, provider: id }] : [{ provider: id, title: adapter.name, mode, model, available: false, settings: [] }];
     });
@@ -320,8 +336,8 @@ export class TransgenticMcpServer {
           const adapter = globalSessionManager.getAdapter(id);
           try {
             if (!(adapter instanceof CustomRecipeAdapter)) throw new Error('Provider has no media recipe.');
-            if (request.model && !ModelRegistryManager.isModelUsable(id, request.model)) throw new Error('The requested model is not available for this provider.');
-            const model = request.model || DynamicRouter.resolveTargetModel(id, request.mode, undefined, 'main') || undefined;
+            const model = DynamicRouter.resolveTargetModel(id, request.mode, request.model, 'main', adapter.recipe.response.modes[request.mode]?.generation?.models) || undefined;
+            if (request.model && !model) throw new Error('[MODEL_SELECTION_FAILED] The requested model is unavailable for this media mode.');
             resolveMediaSettings(adapter.recipe, request.mode, request, model, id);
             if (files?.length) {
               const upload = adapter.recipe.response.modes[request.mode]?.inputAttachments;
@@ -348,6 +364,8 @@ export class TransgenticMcpServer {
           created,
           owned_by: 'transgentic',
           name: model.displayName,
+          base_model: parseEffortModel(model.id).model,
+          reasoning_effort: parseEffortModel(model.id).effort,
         })),
       });
     });
@@ -398,7 +416,7 @@ export class TransgenticMcpServer {
           const base = { id, object: 'chat.completion.chunk', created, model: req.body.model };
           const delta = { role: 'assistant', ...(result.message.content != null ? { content: result.message.content } : {}), ...(result.message.tool_calls ? { tool_calls: result.message.tool_calls.map((call, index) => ({ index, ...call })) } : {}) };
           res.write(`data: ${JSON.stringify({ ...base, choices: [{ index: 0, delta, finish_reason: null }] })}\n\n`);
-          res.write(`data: ${JSON.stringify({ ...base, choices: [{ index: 0, delta: {}, finish_reason: result.finishReason }], ...(result.usage ? { usage: result.usage } : {}), transgentic: { provider: result.provider, providerModel: result.model, chatExecution: result.chatExecution, executionBranches: result.executionBranches, conversationId: result.conversationId, contextReset: result.contextReset, reviewError: result.reviewError } })}\n\n`);
+          res.write(`data: ${JSON.stringify({ ...base, choices: [{ index: 0, delta: {}, finish_reason: result.finishReason }], ...(result.usage ? { usage: result.usage } : {}), transgentic: { provider: result.provider, providerModel: parseEffortModel(result.model).model, reasoningEffort: parseEffortModel(result.model).effort, chatExecution: result.chatExecution, executionBranches: result.executionBranches, conversationId: result.conversationId, contextReset: result.contextReset, reviewError: result.reviewError } })}\n\n`);
           res.end('data: [DONE]\n\n');
           return;
         }
@@ -406,7 +424,7 @@ export class TransgenticMcpServer {
           id, object: 'chat.completion', created, model: req.body.model,
           choices: [{ index: 0, message: result.message, finish_reason: result.finishReason }],
           ...(result.usage ? { usage: result.usage } : {}),
-          transgentic: { provider: result.provider, providerModel: result.model, chatExecution: result.chatExecution, executionBranches: result.executionBranches, conversationId: result.conversationId, contextReset: result.contextReset, reviewError: result.reviewError },
+          transgentic: { provider: result.provider, providerModel: parseEffortModel(result.model).model, reasoningEffort: parseEffortModel(result.model).effort, chatExecution: result.chatExecution, executionBranches: result.executionBranches, conversationId: result.conversationId, contextReset: result.contextReset, reviewError: result.reviewError },
         });
       } catch (error: any) {
         apiLog.status = 'failed'; apiLog.outcome = controller.signal.aborted ? 'cancelled' : 'failed';
@@ -891,7 +909,7 @@ export class TransgenticMcpServer {
     }
     const service = ServiceManifestManager.getManifest().services[providerId];
     if (service?.providerType === 'api' || providerId.startsWith('api_')) {
-      const model = requestedModel ? service?.models?.find(item => item.id === requestedModel) : undefined;
+      const model = requestedModel ? service?.models?.find(item => item.id === parseEffortModel(requestedModel).model) : undefined;
       return [...(model?.attachmentKinds || service?.attachmentKinds || [])];
     }
     const adapter: any = globalSessionManager.getAdapter(providerId);
@@ -1007,6 +1025,11 @@ export class TransgenticMcpServer {
               type: 'string',
               description: 'Optional model ID discovered from the current provider picker, or default to keep its current selection. An unavailable explicit choice fails before submission.',
             },
+            reasoning_effort: { type: 'string', description: 'Provider effort ID for the selected base model.' },
+            models: { type: 'array', minItems: 1, maxItems: 20, uniqueItems: true, items: { type: 'string' }, description: 'Ordered model overrides for the selected provider.' },
+            provider_models: { type: 'object', additionalProperties: {
+              type: 'array', minItems: 1, maxItems: 20, uniqueItems: true, items: { type: 'string' },
+            }, description: 'Ordered model overrides keyed by routed provider ID.' },
             files: filesProperty,
             ...sessionProperties,
           },
@@ -1199,6 +1222,23 @@ export class TransgenticMcpServer {
       },
       { name: 'get_media_capabilities', description: 'Discover current media recipe settings, defaults, attachment limits and availability.', inputSchema: { type: 'object', properties: {} } },
       {
+        name: 'list_models',
+        description: 'List model IDs and availability for enabled providers. Use these IDs for model routing.',
+        inputSchema: { type: 'object', properties: {
+          provider: { type: 'string' },
+          mode: { type: 'string', enum: ['general', 'coding', 'writing', 'image', 'video', 'music'] },
+          refresh: { type: 'boolean' },
+        } },
+      },
+      {
+        name: 'get_model_routes',
+        description: 'Read saved provider order, default models, and model fallback order.',
+        inputSchema: { type: 'object', properties: {
+          mode: { type: 'string', enum: ['general', 'coding', 'writing', 'image', 'video', 'music'] },
+          pipeline: { type: 'string', enum: ['main', 'co'] },
+        } },
+      },
+      {
         name: 'get_status',
         description:
           'Diagnostic tool only. Returns health, authenticated providers, current rate limits, and model registry. Use ONLY when the user explicitly requests system health or diagnostics. NEVER call this tool prior to running prompt_model.',
@@ -1218,6 +1258,42 @@ export class TransgenticMcpServer {
     defaultMode?: AcceptedTaskMode,
     caller?: CallerContext
   ): Promise<any> {
+    if (name === 'list_models' || name === 'get_model_routes') {
+      const allowedModes = ['general', 'coding', 'writing', 'image', 'video', 'music'];
+      if (args.mode !== undefined && !allowedModes.includes(args.mode)) throw new Error('Invalid mode.');
+      const mode = args.mode === undefined ? undefined : normalizeRouteMode(args.mode);
+      if (name === 'get_model_routes') {
+        if (args.pipeline !== undefined && args.pipeline !== 'main' && args.pipeline !== 'co') throw new Error('Invalid pipeline.');
+        const pipelines = (['main', 'co'] as const).filter(pipeline => !args.pipeline || args.pipeline === pipeline);
+        const routes = Object.fromEntries(pipelines.map(pipeline => [pipeline,
+          Object.fromEntries((['general', 'coding', 'image', 'video', 'music'] as const)
+            .filter(routeMode => !mode || routeMode === mode)
+            .map(routeMode => [routeMode, DynamicRouter.getRule(routeMode, pipeline)])),
+        ]));
+        return { content: [{ type: 'text', text: JSON.stringify(routes) }], structuredContent: { routes } };
+      }
+      if (args.refresh !== undefined && typeof args.refresh !== 'boolean') throw new Error('refresh must be a boolean.');
+      const enabled = ServiceManifestManager.getEnabledProviders();
+      if (args.provider !== undefined && !enabled.includes(args.provider)) throw new Error('Provider is unavailable.');
+      const providers = enabled.filter(id => args.provider === undefined || id === args.provider);
+      const models = (await Promise.all(providers.map(async provider => {
+        const cli = isCliProvider(provider) ? await globalCliRuntime.discoverModels(provider, args.refresh === true) : undefined;
+        if (!cli && args.refresh) await globalSessionManager.refreshModels(provider, true).catch(() => {});
+        const service = ServiceManifestManager.getManifest().services[provider];
+        const choices = mode ? ServiceManifestManager.getModelsForMode(provider, mode) : service?.models || [];
+        return choices.filter(model => !isLegacyCurrentEffort(model.id)).map(model => ({
+          provider, id: model.id, displayName: model.displayName,
+          baseModel: parseEffortModel(model.id).model, reasoningEffort: parseEffortModel(model.id).effort,
+          modes: (model.modes || [model.mode || 'general']).filter(routeMode =>
+            !service || isModelAllowedForMode(service, model.id, routeMode)),
+          available: model.enabled !== false && model.userEnabled !== false && (model.id === 'default' || model.discoveredAvailable !== false),
+          source: model.id === 'default' ? 'provider_default' :
+            cli ? (cli.message?.includes('cache') ? 'native_cache' : 'native_cli') :
+            globalSessionManager.getAdapter(provider) instanceof CustomRecipeAdapter ? 'webview_catalog' : 'configured_catalog',
+        }));
+      }))).flat();
+      return { content: [{ type: 'text', text: JSON.stringify(models) }], structuredContent: { models } };
+    }
     if (name === 'get_media_capabilities') return { content: [{ type: 'text', text: JSON.stringify(this.getMediaCapabilities()) }], structuredContent: { capabilities: this.getMediaCapabilities() } };
     if (name === 'get_status') {
       return {
@@ -1252,7 +1328,9 @@ export class TransgenticMcpServer {
 
     let mode: AcceptedTaskMode = defaultMode || 'general';
     let provider: ProviderId | undefined = directProvider || args.provider;
-    const requestedModel: string | undefined = args.model;
+    const selection = parseEffortModel(typeof args.model === 'string' ? args.model : undefined, args.reasoning_effort);
+    if (args.reasoning_effort !== undefined && !selection.model) throw new Error('reasoning_effort requires a model.');
+    const requestedModel = selection.effort && selection.model ? effortModelId(selection.model, selection.effort) : selection.model;
     let isStrictExplicitMode = Boolean(defaultMode);
 
     if (name === 'ask_chatgpt') provider = 'chatgpt';
@@ -1288,12 +1366,37 @@ export class TransgenticMcpServer {
       isStrictExplicitMode = true;
     }
 
+    const modelInputs = [args.model, args.models, args.provider_models].filter(input => input !== undefined);
+    if (args.reasoning_effort !== undefined && typeof args.model !== 'string') throw new Error('reasoning_effort requires model.');
+    if (modelInputs.length > 1) throw new Error('Supply only one of model, models, or provider_models.');
+    const validModel = (value: unknown): value is string =>
+      typeof value === 'string' && value.length > 0 && value.length <= 200 && value.trim() === value;
+    if (args.model !== undefined && !validModel(args.model)) throw new Error('Invalid model ID.');
+    const parseModels = (value: unknown): string[] => {
+      if (!Array.isArray(value) || !value.length || value.length > 20 ||
+          !value.every(validModel) || new Set(value).size !== value.length) throw new Error('Invalid ordered model list.');
+      return value;
+    };
+    const modelOverrides = new Map<ProviderId, string[]>();
+    if (args.models !== undefined) {
+      if (!provider) throw new Error('models requires a selected provider.');
+      modelOverrides.set(provider, parseModels(args.models));
+    }
+    if (args.provider_models !== undefined) {
+      if (!args.provider_models || typeof args.provider_models !== 'object' || Array.isArray(args.provider_models)) throw new Error('Invalid provider_models.');
+      const enabled = ServiceManifestManager.getEnabledProviders();
+      for (const [id, models] of Object.entries(args.provider_models)) {
+        if (!enabled.includes(id) || (provider && id !== provider)) throw new Error('Invalid provider_models provider.');
+        modelOverrides.set(id, parseModels(models));
+      }
+    }
+
     let attachmentRequirement: 'image-only' | 'image-or-video' | undefined;
     if (name === 'edit_image') { mode = 'image'; isStrictExplicitMode = true; attachmentRequirement = 'image-only'; }
     if (name === 'edit_video') { mode = 'video'; isStrictExplicitMode = true; attachmentRequirement = 'image-or-video'; }
     if (attachmentRequirement && (!Array.isArray(args.files) || args.files.length === 0)) throw new Error(`${name} requires at least one attachment.`);
 
-    return await this.orchestratePrompt(prompt, mode, provider, projectName, requestedModel, abortSignal, threadId, newThread, undefined, isStrictExplicitMode, caller, args.files, attachmentRequirement, temporaryChat, normalizeMediaPreferences({ settings: args.settings, provider_settings: args.provider_settings }), chatSelection);
+    return await this.orchestratePrompt(prompt, mode, provider, projectName, requestedModel, abortSignal, threadId, newThread, undefined, isStrictExplicitMode, caller, args.files, attachmentRequirement, temporaryChat, normalizeMediaPreferences({ settings: args.settings, provider_settings: args.provider_settings }), chatSelection, modelOverrides);
   }
 
   private async executePipelineCandidateChain(params: {
@@ -1304,6 +1407,7 @@ export class TransgenticMcpServer {
     contextId: string;
     projectName?: string;
     requestedModel?: string;
+    modelOverrides?: ReadonlyMap<ProviderId, string[]>;
     abortSignal?: AbortSignal;
     effectiveThreadId: string;
     newThread?: boolean;
@@ -1346,7 +1450,7 @@ export class TransgenticMcpServer {
       taskIntent,
       maskedText,
       projectName,
-      requestedModel,
+      requestedModel: explicitModel,
       abortSignal,
       effectiveThreadId,
       newThread,
@@ -1379,10 +1483,33 @@ export class TransgenticMcpServer {
     let successfulTemporaryChat = false;
     let successfulFallbackReason: string | undefined;
 
-    for (let i = 0; i < candidateProviders.length; i++) {
-      const providerId = candidateProviders[i];
+    const attempts = candidateProviders.flatMap(providerId => {
+      const overrides = params.modelOverrides?.get(providerId);
+      const adapter = globalSessionManager.getAdapter(providerId);
+      const mediaModels = adapter instanceof CustomRecipeAdapter && (effectiveMode === 'image' || effectiveMode === 'video' || effectiveMode === 'music')
+        ? adapter.recipe.response.modes[effectiveMode]?.generation?.models : undefined;
+      return DynamicRouter.getModelAttempts(providerId, effectiveMode, pipeline,
+        explicitModel ? [explicitModel] : overrides, mediaModels).map(model => ({ providerId, model }));
+    });
+    for (let i = 0; i < attempts.length; i++) {
+      const { providerId, model: attemptModel } = attempts[i];
+      const { model: requestedModel, effort } = parseEffortModel(attemptModel);
+      if (effort && ((requestedModel === 'default' && providerId !== 'chatgpt') || (!globalSessionManager.getAdapter(providerId) && providerId !== 'cli_codex') ||
+          !['general', 'writing', 'coding'].includes(effectiveMode))) {
+        lastCandidateError = new Error('[MODEL_SELECTION_FAILED] This route does not expose reasoning effort.');
+        continue;
+      }
+      if ((explicitModel || params.modelOverrides?.has(providerId)) &&
+          ModelRegistryManager.getProviderConfig(providerId).allowMcpOverride === false) {
+        throw new Error('MCP model overrides are disabled for this provider.');
+      }
       throwIfCancelled(reqAbortController?.signal || abortSignal);
       const candidateAdapter = globalSessionManager.getAdapter(providerId);
+      if ((requestedModel && !DynamicRouter.isCompatibleModel(providerId, effectiveMode, requestedModel)) ||
+          (effort && attemptModel && !DynamicRouter.isCompatibleModel(providerId, effectiveMode, attemptModel))) {
+        lastCandidateError = new Error('[MODEL_SELECTION_FAILED] The requested model is unavailable for this mode.');
+        continue;
+      }
       const selectedMode = resolveChatMode(undefined, effectiveMode, providerId, params.chatSelection, temporaryChat);
       const supportsTemporary = candidateAdapter instanceof CustomRecipeAdapter && candidateAdapter.supportsChatMode(selectedMode);
       const observedAvailability = globalSessionManager.getStatus(providerId)?.temporaryChat;
@@ -1429,17 +1556,29 @@ export class TransgenticMcpServer {
           }
           if (effectiveMode === 'coding' && activeLocalLlmConfig?.enabled && activeLocalLlmConfig.localZeroLeak) prompt = globalLocalZeroLeakManager.sanitizePrompt(prompt, reqId).sanitizedText;
           if (effectiveMode === 'coding' && activeLocalLlmConfig?.enabled && activeLocalLlmConfig.localCompact) prompt = (await globalLocalCompactManager.compactPrompt(prompt, activeLocalLlmConfig, reqAbortController?.signal || abortSignal)).compactedText;
-          const explicitModel = cfg?.allowMcpOverride === false ? undefined : requestedModel;
-          const model = explicitModel || DynamicRouter.resolveTargetModel(providerId, effectiveMode, undefined, pipeline) || undefined;
+          const model = requestedModel;
+          if (effort && !(await globalCliRuntime.discoverModels(providerId)).models
+              .some(option => option.id === model && option.efforts?.includes(effort))) {
+            lastCandidateError = new Error('[MODEL_SELECTION_FAILED] The CLI model does not advertise this effort.');
+            continue;
+          }
+          const listed = ServiceManifestManager.getManifest().services[providerId]?.models?.find(entry => entry.id === model);
+          if (listed && (listed.enabled === false || listed.userEnabled === false || (model !== 'default' && listed.discoveredAvailable === false))) {
+            const error = new Error('[MODEL_SELECTION_FAILED] The configured CLI model is unavailable.');
+            if (forcedProvider && attempts[i + 1]?.providerId !== providerId) throw error;
+            lastCandidateError = error;
+            continue;
+          }
           reportProgress?.(`Queued for ${CLI_DEFINITIONS[providerId].name}`);
           this.updateCoreState('processing', providerId, `Processing on ${CLI_DEFINITIONS[providerId].name}`);
           executionResult = await globalCliRuntime.execute(providerId, prompt, { reqId, conversationKey: scopedThreadId, newThread: fresh,
-            model, signal: reqAbortController?.signal || abortSignal, progress: reportProgress, request: cliRequest, desktop: params.isQuickPrompt, reviewer: pipeline === 'co', attachments,
+            model, effort, signal: reqAbortController?.signal || abortSignal, progress: reportProgress, request: cliRequest, desktop: params.isQuickPrompt, reviewer: pipeline === 'co', attachments,
             beforeStart: async signal => {
               await globalRateLimiter.applyCliCooldown(providerId, signal);
               if (globalRateLimiter.isRateLimited(providerId)) throw new Error('[RATE_LIMIT] CLI service is cooling down.');
               globalRateLimiter.recordRequest(providerId);
             } });
+          if (effort && model) executionResult.modelUsed = effortModelId(executionResult.modelUsed || model, effort);
           if (fresh) globalThreadManager.removeSession(scopedThreadId, providerId);
           globalThreadManager.setSession(scopedThreadId, providerId, '', projectName);
           globalThreadManager.recordTurn(scopedThreadId, providerId, maskedText, executionResult.text);
@@ -1455,6 +1594,7 @@ export class TransgenticMcpServer {
           Object.assign(err, { chatExecution: { policy: chatPolicy, actualMode: 'normal', verified: false, ...(fallbackReason ? { fallbackReason } : {}) } });
           err.providerUsed = providerId; lastCandidateError = err;
           if (forcedProvider || err.noFallback || cliRequest.workspaceId) throw err;
+          while (attempts[i + 1]?.providerId === providerId) i++;
           continue;
         }
       }
@@ -1489,7 +1629,8 @@ export class TransgenticMcpServer {
         const isLocalNewChat = Boolean(newThread || isTooLong || !existingSession || !presetsAlreadySent);
 
         try {
-          const modelName = localLlmConfig.selectedModel || `local-${localLlmConfig.preset}`;
+          const model = requestedModel && requestedModel !== 'default' ? requestedModel : localLlmConfig.selectedModel;
+          const modelName = model || `local-${localLlmConfig.preset}`;
           this.updateCoreState('processing', 'localllm', `Processing on Local LLM (${modelName})...`);
 
           let llmPrompt = maskedText;
@@ -1513,7 +1654,7 @@ export class TransgenticMcpServer {
           ];
 
           reportProgress?.('Generating response with Local LLM');
-          const completion = await LocalLlmClient.generateCompletion(chatMessages, localLlmConfig, {
+          const completion = await LocalLlmClient.generateCompletion(chatMessages, { ...localLlmConfig, selectedModel: model }, {
             temperature: localLlmConfig.temperature,
             abortSignal: reqAbortController?.signal || abortSignal,
             attachments,
@@ -1587,6 +1728,7 @@ export class TransgenticMcpServer {
           err.providerUsed = providerId;
           lastCandidateError = err;
           if (forcedProvider) throw err;
+          while (attempts[i + 1]?.providerId === providerId) i++;
           continue;
         }
       }
@@ -1630,24 +1772,29 @@ export class TransgenticMcpServer {
 
       this.updateCoreState('routing', providerId, `Routing to ${providerId} (${activeAccount.alias})...`);
 
+      const isMedia = effectiveMode === 'image' || effectiveMode === 'video' || effectiveMode === 'music';
+      const mediaModels = isMedia && adapter instanceof CustomRecipeAdapter
+        ? adapter.recipe.response.modes[effectiveMode]?.generation?.models : undefined;
       const targetModel =
-        DynamicRouter.resolveTargetModel(providerId, effectiveMode, requestedModel, pipeline) ||
-        ModelRegistryManager.getEffectiveModel(providerId, requestedModel) ||
+        DynamicRouter.resolveTargetModel(providerId, effectiveMode, requestedModel, pipeline, mediaModels) ||
+        (!isMedia ? ModelRegistryManager.getEffectiveModel(providerId, requestedModel) : undefined) ||
         undefined;
       if (requestedModel && requestedModel !== 'default' && targetModel !== requestedModel) {
         const error = new Error(`[MODEL_SELECTION_FAILED] The requested model ${requestedModel} is unavailable for ${providerId}. The prompt was not submitted.`);
-        if (forcedProvider) throw error;
+        if (forcedProvider && attempts[i + 1]?.providerId !== providerId) throw error;
         lastCandidateError = error;
         continue;
       }
 
       let effectiveSettings: MediaSettings = {};
-      if (['image', 'video', 'music'].includes(effectiveMode)) {
+      if (isMedia) {
         try {
           if (!(adapter instanceof CustomRecipeAdapter)) throw new Error('[MEDIA_SETTINGS_UNSUPPORTED] Provider has no media recipe.');
-          if (requestedModel && targetModel !== requestedModel) throw new Error('[MEDIA_SETTINGS_UNSUPPORTED] The explicit media model is unavailable for this provider.');
+          if ((requestedModel && targetModel !== requestedModel) || (mediaModels?.length && !targetModel)) {
+            throw new Error('[MODEL_SELECTION_FAILED] No compatible model is available for this media request.');
+          }
           effectiveSettings = resolveMediaSettings(adapter.recipe, effectiveMode as MediaMode, params.requestEnvelope?.mediaPreferences, targetModel, providerId);
-        } catch (error) { lastCandidateError = error; if (forcedProvider) throw error; continue; }
+        } catch (error) { lastCandidateError = error; if (forcedProvider && attempts[i + 1]?.providerId !== providerId) throw error; continue; }
         params.onMediaState?.({ provider: providerId, model: targetModel, settings: effectiveSettings });
       }
 
@@ -1724,7 +1871,9 @@ export class TransgenticMcpServer {
             requestId: reqId,
           };
 
-          const scopedThreadId = `${effectiveThreadId}_${activeAccount.id}`;
+          const scopedThreadId = effort
+            ? JSON.stringify([effectiveThreadId, activeAccount.id, targetModel, effort])
+            : `${effectiveThreadId}_${activeAccount.id}`;
           const temporarySessionKey = JSON.stringify([scopedThreadId, providerId, activeAccount.id, pipeline]);
           let existingSession = globalThreadManager.getSession(scopedThreadId, providerId);
           const isTooLong = !newThread && existingSession && globalThreadManager.shouldRollover(scopedThreadId, providerId, 10, 30000);
@@ -1803,14 +1952,13 @@ export class TransgenticMcpServer {
           if (['image', 'video', 'music'].includes(effectiveMode) && executionAdapter instanceof CustomRecipeAdapter) {
             await executionAdapter.prepareMediaPage(effectiveMode);
           }
-          if (targetModel) {
-            if (requestedModel && requestedModel !== 'default' && ['image', 'video', 'music'].includes(effectiveMode)) {
-              if (!await ModelScraperEngine.switchModel(providerId, targetModel, contents)) {
-                throw new Error(`[MODEL_SELECTION_FAILED] The explicit media model ${targetModel} could not be verified. The prompt was not submitted.`);
-              }
-            } else {
-              await ModelScraperEngine.selectRequestedModel(providerId, targetModel, contents);
+          if (targetModel && requestedModel && requestedModel !== 'default' && ['image', 'video', 'music'].includes(effectiveMode)) {
+            if (!await ModelScraperEngine.switchModel(providerId, targetModel, contents)) {
+              throw new Error(`[MODEL_SELECTION_FAILED] The explicit media model ${targetModel} could not be verified. The prompt was not submitted.`);
             }
+          } else {
+            await ModelScraperEngine.selectModelAndEffort(providerId, targetModel ?? undefined, effort, contents);
+            globalSessionManager.recordVerifiedModelEffort(providerId, targetModel, effort, activeAccount.partitionKey);
           }
 
           let promptToSend = maskedText;
@@ -1949,7 +2097,7 @@ export class TransgenticMcpServer {
             text: cleanAdapterText,
             mediaPath: savedMediaRelPath,
             provider: providerId,
-            modelUsed: targetModel || undefined,
+            modelUsed: effort && targetModel ? effortModelId(targetModel, effort) : targetModel || undefined,
             effectiveSettings,
           };
         });
@@ -1969,9 +2117,11 @@ export class TransgenticMcpServer {
         candidateErr.providerUsed = providerId;
         candidateErr.chatExecution ??= { policy: chatPolicy, verified: false,
           ...(!candidateTemporaryChat ? { actualMode: 'normal', ...(fallbackReason ? { fallbackReason } : {}) } : {}) };
-        if (candidateErr.message?.includes('[MODEL_SELECTION_FAILED]')) {
+        if (!mediaSubmissionAttempted && candidateErr.message?.startsWith('[MODEL_SELECTION_FAILED]')) {
           globalSessionManager.updateProviderState(providerId, 'ready');
-          throw candidateErr;
+          if (forcedProvider && attempts[i + 1]?.providerId !== providerId) throw candidateErr;
+          lastCandidateError = candidateErr;
+          continue;
         }
         const isRateLimit =
           candidateErr.message?.includes('[RATE_LIMIT]') ||
@@ -1995,6 +2145,7 @@ export class TransgenticMcpServer {
         // merely because its response could not be observed, in any task mode.
         if (/SUBMISSION_UNCERTAIN/.test(candidateErr.message || '') || (['image', 'video', 'music'].includes(effectiveMode) && /MEDIA_NOT_GENERATED/.test(candidateErr.message || ''))) throw candidateErr;
         lastCandidateError = candidateErr;
+        while (attempts[i + 1]?.providerId === providerId) i++;
         console.warn(`[Transgentic] Provider ${providerId} (${activeAccount.alias}) failed: ${candidateErr.message}.`);
 
         if (chatPolicy === 'prefer-temporary' && candidateTemporaryChat && candidateErr.message?.includes('[TEMPORARY_CHAT_UNAVAILABLE]')) {
@@ -2114,7 +2265,8 @@ export class TransgenticMcpServer {
     attachmentRequirement?: 'image-only' | 'image-or-video',
     temporaryChat?: boolean,
     mediaPreferences?: MediaPreferences,
-    chatSelection?: ChatModeSelection
+    chatSelection?: ChatModeSelection,
+    modelOverrides?: ReadonlyMap<ProviderId, string[]>
   ): Promise<any> {
     const startTime = Date.now();
     this.requestCounter++;
@@ -2389,6 +2541,7 @@ export class TransgenticMcpServer {
             contextId,
             projectName,
             requestedModel,
+            modelOverrides,
             abortSignal,
             effectiveThreadId: `${effectiveThreadId}_main`,
             newThread,
@@ -2419,6 +2572,7 @@ export class TransgenticMcpServer {
             contextId,
             projectName,
             requestedModel,
+            modelOverrides,
             abortSignal,
             effectiveThreadId: `${effectiveThreadId}_co`,
             newThread,
@@ -2450,10 +2604,10 @@ export class TransgenticMcpServer {
         providers = [
           { role: 'main', status: dualResult.mainResult ? 'completed' : 'failed',
             provider: dualResult.mainResult?.provider || (dualResult.mainError as any)?.providerUsed || mainCandidates[0],
-            model: dualResult.mainResult?.modelUsed, error: dualResult.mainError?.message },
+            model: parseEffortModel(dualResult.mainResult?.modelUsed).model, reasoningEffort: parseEffortModel(dualResult.mainResult?.modelUsed).effort, error: dualResult.mainError?.message },
           { role: 'co', status: dualResult.coResult ? 'completed' : 'failed',
             provider: dualResult.coResult?.provider || (dualResult.coError as any)?.providerUsed || coCandidates[0],
-            model: dualResult.coResult?.modelUsed, error: dualResult.coError?.message },
+            model: parseEffortModel(dualResult.coResult?.modelUsed).model, reasoningEffort: parseEffortModel(dualResult.coResult?.modelUsed).effort, error: dualResult.coError?.message },
         ];
         artifacts = [...new Set([dualResult.mainResult?.mediaPath, dualResult.coResult?.mediaPath].filter((p): p is string => Boolean(p)))];
         temporaryChatSessionKeys = [dualResult.mainResult?.temporarySessionKey, dualResult.coResult?.temporarySessionKey]
@@ -2484,6 +2638,7 @@ export class TransgenticMcpServer {
           contextId,
           projectName,
           requestedModel,
+          modelOverrides,
           abortSignal,
           effectiveThreadId,
           newThread,
@@ -2515,7 +2670,7 @@ export class TransgenticMcpServer {
         wasRolledOver = pipelineResult.wasRolledOver;
         wasNewChat = pipelineResult.wasNewChat;
         contextReset = pipelineResult.contextReset;
-        providers = [{ role: 'main', status: 'completed', provider: successfulProvider!, model: executionResult.modelUsed }];
+        providers = [{ role: 'main', status: 'completed', provider: successfulProvider!, model: parseEffortModel(executionResult.modelUsed).model, reasoningEffort: parseEffortModel(executionResult.modelUsed).effort }];
         artifacts = activeMediaPath ? [activeMediaPath] : [];
         temporaryChatSessionKeys = pipelineResult.temporarySessionKey ? [pipelineResult.temporarySessionKey] : [];
         executionBranches = [pipelineResult.chatExecution];

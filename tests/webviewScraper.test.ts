@@ -29,6 +29,209 @@ function webview(document: any = {}) {
 }
 
 describe('Built-in web model controls', () => {
+  it('discovers enabled efforts and verifies selection in the picker-owned submenu', async () => {
+    let selected = 'Low';
+    const item = (label: string, locked = false) => ({
+      textContent: label,
+      getAttribute: () => null,
+      getClientRects: () => [1],
+      querySelectorAll: () => [],
+      matches: (selector: string) => selector.includes('aria-disabled') ? locked : selected === label,
+      click: () => { selected = label; },
+    });
+    const trigger = {
+      getClientRects: () => [1],
+      getAttribute: (key: string) => key === 'aria-controls' ? 'models' : 'true',
+    };
+    const submenu = {
+      textContent: 'Effort Medium',
+      getClientRects: () => [1],
+      getAttribute: (key: string) => key === 'aria-controls' ? 'effort' : key === 'aria-expanded' ? 'true' : null,
+      matches: () => false,
+    };
+    const menu = (choices: unknown[]) => ({ getClientRects: () => [1], querySelectorAll: () => choices });
+    const picker = menu([submenu]);
+    const efforts = menu([item('Low'), item('Medium'), item('Max', true)]);
+    const view = webview({
+      getElementById: (key: string) => key === 'models' ? picker : key === 'effort' ? efforts : null,
+      querySelectorAll: (selector: string) => selector.includes('aria-label') ? [trigger] : [],
+      dispatchEvent: () => {},
+    });
+    expect(await ModelScraperEngine.readEfforts('claude', view)).toEqual({ low: 'Low', medium: 'Medium' });
+    await ModelScraperEngine.selectEffort('claude', view, 'medium');
+    expect(selected).toBe('Medium');
+    await expect(ModelScraperEngine.selectEffort('claude', view, 'max')).rejects.toThrow('not be verified');
+  });
+
+  it('opens ChatGPT’s model list by native pointer and keeps an already visible model list open', async () => {
+    let expanded = false;
+    let pointerClicks = 0;
+    const trigger = {
+      getClientRects: () => [1],
+      getBoundingClientRect: () => ({ left: 10, top: 10, width: 20, height: 20 }),
+      getAttribute: (key: string) => key === 'aria-controls' ? 'picker' : key === 'aria-expanded' ? String(expanded) : null,
+      contains: (element: unknown) => element === trigger,
+    };
+    const toggle = { click: vi.fn(), getClientRects: () => [1], matches: () => false };
+    const model = {
+      textContent: 'GPT-5.6 Sol',
+      getClientRects: () => [1],
+      getAttribute: () => null,
+      matches: () => false,
+    };
+    const panel = {
+      contains: () => true,
+      getClientRects: () => expanded ? [1] : [],
+      querySelectorAll: (selector: string) => selector.includes('menuitemradio') ? [model] : [toggle],
+    };
+    const view = webview({
+      getElementById: () => panel,
+      elementFromPoint: () => trigger,
+      querySelectorAll: (selector: string) => selector.includes('Select ChatGPT model') ? [trigger] : [],
+    });
+    const sendCommand = vi.fn(async (_method: string, event: { type: string; key?: string }) => {
+      if (event.type === 'mouseReleased') expanded = ++pointerClicks === 2;
+      if (event.key === 'Escape') expanded = false;
+    });
+    view.debugger = { isAttached: () => true, sendCommand };
+
+    expect(await ModelScraperEngine.discoverModels('chatgpt', view)).toEqual([
+      { id: 'gpt-5-6-sol', displayName: 'GPT-5.6 Sol' },
+    ]);
+    expect(toggle.click).not.toHaveBeenCalled();
+    expect(pointerClicks).toBe(2);
+    expect(sendCommand).toHaveBeenCalledWith('Input.dispatchMouseEvent',
+      expect.objectContaining({ type: 'mousePressed', x: 20, y: 20 }));
+    expect(expanded).toBe(false);
+  });
+
+  it('enumerates the ChatGPT effort slider and restores its original position', async () => {
+    const ids = ['instant', 'medium', 'high', 'extra', 'pro'];
+    let index = 2;
+    const trigger = {
+      getClientRects: () => [1],
+      getAttribute: (key: string) => ({
+        'aria-controls': 'picker',
+        'aria-expanded': 'true',
+        'data-selected-reasoning-effort': ids[index],
+      } as Record<string, string>)[key] ?? null,
+    };
+    const slider = {
+      getClientRects: () => [1],
+      matches: (selector: string) => selector === '[role="slider"]',
+      tabIndex: 0,
+      focus: vi.fn(),
+      getAttribute: (key: string) => ({
+        'aria-valuenow': String(index),
+        'aria-valuemin': '0',
+        'aria-valuemax': '4',
+      } as Record<string, string>)[key] ?? null,
+    };
+    const panel = { contains: () => true, matches: () => false, getClientRects: () => [1], querySelectorAll: () => [slider] };
+    const view = webview({
+      getElementById: (key: string) => key === 'picker' ? panel : null,
+      querySelectorAll: (selector: string) => selector.includes('Select ChatGPT model') ? [trigger] : [],
+      dispatchEvent: () => {},
+    });
+    view.debugger = {
+      isAttached: () => true,
+      sendCommand: async (_command: string, event: { type: string; key: string }) => {
+        if (event.type === 'rawKeyDown' && event.key.startsWith('Arrow')) index += event.key === 'ArrowRight' ? 1 : -1;
+      },
+    };
+    const selected = vi.fn();
+
+    expect(await ModelScraperEngine.readEfforts('chatgpt', view, undefined, selected)).toEqual({
+      instant: 'Instant', medium: 'Medium', high: 'High', extra: 'Extra High', pro: 'Pro',
+    });
+    expect(selected).toHaveBeenCalledExactlyOnceWith('high');
+    expect(index).toBe(2);
+    await ModelScraperEngine.selectEffort('chatgpt', view, 'extra');
+    expect(index).toBe(3);
+  });
+
+  it('verifies only the committed ChatGPT effort when the slider is hidden', async () => {
+    const trigger = {
+      getClientRects: () => [1],
+      getAttribute: (key: string) => ({
+        'aria-controls': 'picker',
+        'aria-expanded': 'true',
+        'data-selected-reasoning-effort': 'medium',
+      } as Record<string, string>)[key] ?? null,
+    };
+    const panel = { contains: () => true, matches: () => false, getClientRects: () => [1], querySelectorAll: () => [] };
+    const view = webview({
+      getElementById: () => panel,
+      querySelectorAll: (selector: string) => selector.includes('Select ChatGPT model') ? [trigger] : [],
+    });
+    view.debugger = { isAttached: () => true, sendCommand: vi.fn() };
+
+    expect(await ModelScraperEngine.readEfforts('chatgpt', view)).toEqual({ medium: 'Medium' });
+    await expect(ModelScraperEngine.selectEffort('chatgpt', view, 'medium')).resolves.toBeUndefined();
+    await expect(ModelScraperEngine.selectEffort('chatgpt', view, 'high')).rejects.toThrow('not be verified');
+  });
+
+  it('opens the Gemini thinking submenu by pointer hover and reads its selected option', async () => {
+    let hovered = false;
+    const submenu = {
+      textContent: 'Thinking level',
+      getClientRects: () => [1],
+      getBoundingClientRect: () => ({ x: 10, y: 20, width: 40, height: 20 }),
+      getAttribute: (key: string) => key === 'aria-controls' ? 'levels' : null,
+      matches: () => false,
+      click: vi.fn(),
+    };
+    const trigger = {
+      getClientRects: () => [1],
+      getAttribute: (key: string) => key === 'aria-controls' ? 'models' : 'true',
+      click: vi.fn(),
+    };
+    const low = {
+      textContent: 'Low',
+      getAttribute: (key: string) => key === 'aria-checked' ? 'true' : null,
+      getClientRects: () => [1],
+      querySelectorAll: () => [],
+      matches: () => false,
+    };
+    const parent = { getClientRects: () => [1], querySelectorAll: () => [submenu] };
+    const levels = { getClientRects: () => hovered ? [1] : [], querySelectorAll: () => [low] };
+    const view = webview({
+      getElementById: (key: string) => key === 'models' ? parent : levels,
+      querySelectorAll: (selector: string) => selector.includes('Open mode picker') ? [trigger] : [],
+    });
+    const sendCommand = vi.fn(async () => { hovered = true; });
+    view.debugger = { isAttached: () => true, sendCommand };
+    const selected = vi.fn();
+
+    expect(await ModelScraperEngine.readEfforts('gemini', view, undefined, selected)).toEqual({ low: 'Low' });
+    expect(sendCommand).toHaveBeenCalledExactlyOnceWith('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 30, y: 30, buttons: 0 });
+    expect(submenu.click).not.toHaveBeenCalled();
+    expect(selected).toHaveBeenCalledExactlyOnceWith('low');
+  });
+
+  it('verifies the active model on a replacement trigger after selecting a choice', async () => {
+    const trigger = (label: string) => ({
+      textContent: label,
+      getClientRects: () => [1],
+      getAttribute: (key: string) => key === 'aria-expanded' ? 'true' : null,
+    });
+    let current = trigger('Fast');
+    const choice = {
+      textContent: 'Expert',
+      getAttribute: () => null,
+      getClientRects: () => [1],
+      matches: () => false,
+      classList: { contains: () => false },
+      click: vi.fn(() => { current = trigger('Expert'); }),
+    };
+    const view = webview({
+      querySelectorAll: (selector: string) => selector.includes('aria-label')
+        ? [current] : [choice],
+    });
+    expect(await ModelScraperEngine.switchModel('grok', 'expert', view)).toBe(true);
+    expect(choice.click).toHaveBeenCalledOnce();
+  });
+
   it('scopes choices to the controlled menu and excludes submenu and effort controls', async () => {
     const item = (role: string, label: string) => ({
       textContent: label + ' Description',
@@ -119,7 +322,7 @@ describe('Built-in web model controls', () => {
     expect(disabled.click).not.toHaveBeenCalled();
   });
 
-  it('selects and verifies one already-open Gemini choice', async () => {
+  it('selects Gemini from its picker when a sidebar chat title contains model', async () => {
     let current = 'Other model';
     let selected = false;
     const trigger = {
@@ -136,7 +339,11 @@ describe('Built-in web model controls', () => {
       click: vi.fn(() => { selected = true; current = 'Open mode picker, currently Flash'; }),
     };
     const view = webview({
-      querySelectorAll: (selector: string) => selector.includes('Open mode picker') ? [trigger] : [choice],
+      querySelectorAll: (selector: string) => {
+        if (!selector.includes('Open mode picker')) return [choice];
+        const sidebarButton = { getClientRects: () => [1], getAttribute: () => 'More options for MODEL_OK Confirmation' };
+        return selector.includes('aria-label*="model"') ? [trigger, sidebarButton] : [trigger];
+      },
     });
     await expect(ModelScraperEngine.selectRequestedModel('gemini', '3-8-flash', view)).resolves.toBeUndefined();
     expect(trigger.click).toHaveBeenCalledTimes(1);
@@ -236,6 +443,7 @@ describe('Recipe-driven custom model controls', () => {
     const view = webview();
     view.executeJavaScript.mockRejectedValue(new Error('page unavailable'));
     expect((await ModelScraperEngine.discoverModels('custom_example' as any, view))[0].id).toBe('model-a');
+    expect(await ModelScraperEngine.discoverModels('custom_example' as any, view, true)).toEqual([]);
   });
 
   it('preserves declarative controls and disclaimer text through validation', () => {

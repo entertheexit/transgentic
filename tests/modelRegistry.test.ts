@@ -1,4 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
+import { ServiceManifestManager } from '../src/main/registry/serviceManifest.js';
+import { effortModelId } from '../src/shared/modelEffort.js';
 import { ModelRegistryManager } from '../src/main/registry/modelRegistry.js';
 
 describe('ModelRegistryManager', () => {
@@ -23,6 +25,21 @@ describe('ModelRegistryManager', () => {
     ModelRegistryManager.toggleModel('chatgpt', 'new-model', false);
     expect(ModelRegistryManager.isModelUsable('chatgpt', 'new-model')).toBe(false);
     expect(ModelRegistryManager.getEffectiveModel('chatgpt', 'new-model')).toBe('default');
+  });
+
+  it('adds a verified effort without replacing the rest of the live catalog', () => {
+    const named = [
+      { id: 'gpt-6', displayName: 'GPT-6' },
+      { id: 'gpt-5-6-sol', displayName: 'GPT-5.6 Sol' },
+    ];
+    const effort = { id: effortModelId('gpt-5-6-sol', 'high'), displayName: 'GPT-5.6 Sol High' };
+    ModelRegistryManager.mergeDiscoveredModels('chatgpt', named);
+    ModelRegistryManager.mergeDiscoveredModels('chatgpt', [effort], true);
+
+    const visible = ServiceManifestManager.getModelsForMode('chatgpt', 'general');
+    expect(visible.map(model => model.id)).toEqual(['default', ...named.map(model => model.id), effort.id]);
+    expect(ModelRegistryManager.getProviderConfig('chatgpt').models.filter(model => model.discoveredAvailable).map(model => model.id))
+      .toEqual(['default', ...named.map(model => model.id), effort.id]);
   });
 
   it('preserves previous user settings while marking choices missing from the live picker unavailable', () => {

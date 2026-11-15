@@ -1,3 +1,6 @@
+import { effortModelId, parseEffortModel } from '../../shared/modelEffort.js';
+import { validateMediaArtifact } from '../media/artifacts.js';
+import { resolveMediaSettings } from '../../shared/media.js';
 import { resolveChatMode, validateChatMode, normalizeRouteMode, type ChatModeSelection } from '../../shared/types.js';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
@@ -149,6 +152,7 @@ export function parseProviderToolAwareResponse(raw: string, tools: CompletionToo
 
 function validateRequest(input: any): CompletionRequest {
   if (!input || typeof input !== 'object' || typeof input.model !== 'string') throw new Error('A model ID is required.');
+  const selection = parseEffortModel(input.model, input.reasoning_effort);
   if (!Array.isArray(input.messages) || input.messages.length === 0) throw new Error('At least one message is required.');
   const roles = new Set(['system', 'developer', 'user', 'assistant', 'tool']);
   for (const message of input.messages) if (!message || !roles.has(message.role)) throw new Error('One or more messages have an invalid role.');
@@ -165,7 +169,9 @@ function validateRequest(input: any): CompletionRequest {
     throw new Error('Unsupported tool_choice for WebView completion.');
   }
   if (choice === 'required' && !input.tools?.length) throw new Error('tool_choice required needs tools.');
-  return input as CompletionRequest;
+  return selection.effort
+    ? { ...input, model: effortModelId(selection.model!, selection.effort), reasoning_effort: undefined }
+    : input as CompletionRequest;
 }
 
 function completionAttachmentInputs(request: CompletionRequest): AttachmentInput[] {
@@ -219,7 +225,16 @@ export class CompletionGateway {
     for (const entry of Object.values(manifest.services)) {
       if (entry.id === 'localllm') continue;
       if (!this.isEligible(entry.id as ProviderId)) continue;
-      models.push({ id: `transgentic/provider/${entry.id}`, provider: entry.id as ProviderId, displayName: entry.name });
+      const provider = entry.id as ProviderId;
+      const route = `transgentic/provider/${provider}`;
+      models.push({ id: route, provider, displayName: entry.name });
+      for (const choice of ServiceManifestManager.getModelsForMode(provider, 'general')) {
+        if (!choice.enabled || choice.userEnabled === false || choice.discoveredAvailable === false) continue;
+        const { model, effort } = parseEffortModel(choice.id);
+        if (!model || model === 'default') continue;
+        const base = route + '/model/' + encodeURIComponent(model);
+        models.push({ id: effort ? effortModelId(base, effort) : base, provider, displayName: choice.displayName });
+      }
     }
     if (this.isEligible('localllm')) models.push({ id: 'transgentic/provider/localllm', provider: 'localllm', displayName: 'Local LLM' });
     return models;
@@ -236,9 +251,10 @@ export class CompletionGateway {
   }
 
   private resolveTarget(model: string): { mode: TaskMode; candidates: ProviderId[] } {
+    model = parseEffortModel(model).model!;
     const directPrefix = 'transgentic/provider/';
     if (model.startsWith(directPrefix)) {
-      const provider = model.slice(directPrefix.length) as ProviderId;
+      const provider = model.slice(directPrefix.length).split('/model/')[0] as ProviderId;
       if (!this.isEligible(provider)) throw new Error(`Provider "${provider}" is unavailable for completion.`);
       return { mode: 'general', candidates: [provider] };
     }
@@ -453,14 +469,60 @@ export class CompletionGateway {
       if (file.kind === 'image') content.push({ type: 'image_url', image_url: { url: dataUrl } });
       else content.push({ type: 'file', file: { filename: file.name, file_data: dataUrl } });
     }
+    const adapter = globalSessionManager.getAdapter(provider);
+    const isMedia = mode === 'image' || mode === 'video' || mode === 'music';
+    const mediaModels = isMedia && adapter instanceof CustomRecipeAdapter
+      ? adapter.recipe.response.modes[mode]?.generation?.models : undefined;
+    if (isMedia && adapter instanceof CustomRecipeAdapter && requestedModel &&
+        DynamicRouter.resolveTargetModel(provider, mode, requestedModel, pipeline, mediaModels) !== requestedModel) {
+      throw new Error('[MODEL_SELECTION_FAILED] No compatible model is available for this media request.');
+    }
     return this.dispatch(provider, mode, {
       model: `transgentic/provider/${provider}`,
       messages: [{ role: 'user', content: attachments.length ? content : prompt }],
       stream: false,
-    }, signal, requestedModel || DynamicRouter.resolveTargetModel(provider, mode, undefined, pipeline) || undefined);
+    }, signal, requestedModel, attachments, undefined, undefined, pipeline);
   }
 
   private async dispatch(provider: ProviderId, mode: TaskMode, request: CompletionRequest, signal?: AbortSignal, requestedModel?: string, attachments: readonly StagedAttachment[] = [], status?: ChatExecutionStatus,
+    session?: { retainedKey?: string; previousBinding?: { provider: ProviderId; accountId: string; partitionKey: string; model: string; selection?: ChatModeSelection; mode: 'normal' | 'temporary' }; modeChanged?: boolean; caller?: { principal?: string } }, pipeline: 'main' | 'co' = 'main'): Promise<CompletionResult> {
+    const adapter = globalSessionManager.getAdapter(provider);
+    const media = mode === 'image' || mode === 'video' || mode === 'music';
+    const allowed = media && adapter instanceof CustomRecipeAdapter
+      ? adapter.recipe.response.modes[mode]?.generation?.models : undefined;
+    const requestChoice = parseEffortModel(request.model, request.reasoning_effort);
+    const namedModel = requestChoice.model?.split('/model/')[1];
+    const explicit = requestedModel ?? (namedModel ? decodeURIComponent(namedModel) : undefined);
+    const attempts = DynamicRouter.getModelAttempts(provider, mode, pipeline,
+      explicit ? [explicit] : undefined, allowed);
+    let lastError: unknown;
+    for (const attempt of attempts) {
+      const choice = parseEffortModel(attempt);
+      if (choice.effort && requestChoice.effort && choice.effort !== requestChoice.effort) continue;
+      const { model, effort } = parseEffortModel(attempt, requestChoice.effort);
+      if (effort && (!model || (model === 'default' && provider !== 'chatgpt') || media)) {
+        lastError = new Error('[MODEL_SELECTION_FAILED] Reasoning effort requires a supported named text model.');
+        continue;
+      }
+      if (signal?.aborted) throw Object.assign(new Error('Request cancelled.'), { name: 'AbortError' });
+      if ((model && (!DynamicRouter.isCompatibleModel(provider, mode, model) || (allowed && !allowed.includes(model)))) ||
+          (choice.effort && attempt && !DynamicRouter.isCompatibleModel(provider, mode, attempt))) {
+        lastError = new Error('[MODEL_SELECTION_FAILED] No compatible model is available for this media request.');
+        continue;
+      }
+      try {
+        const result = await this.dispatchModel(provider, mode, { ...request, reasoning_effort: effort }, signal, model, attachments, status, session);
+        if (effort) result.model = effortModelId(result.model, effort);
+        return result;
+      } catch (error) {
+        if (!(error instanceof Error) || !error.message.startsWith('[MODEL_SELECTION_FAILED]')) throw error;
+        lastError = error;
+      }
+    }
+    throw lastError ?? new Error('[MODEL_SELECTION_FAILED] No model could be selected.');
+  }
+
+  private async dispatchModel(provider: ProviderId, mode: TaskMode, request: CompletionRequest, signal?: AbortSignal, requestedModel?: string, attachments: readonly StagedAttachment[] = [], status?: ChatExecutionStatus,
     session?: { retainedKey?: string; previousBinding?: { provider: ProviderId; accountId: string; partitionKey: string; model: string; selection?: ChatModeSelection; mode: 'normal' | 'temporary' }; modeChanged?: boolean; caller?: { principal?: string } }): Promise<CompletionResult> {
     if (this.isWebViewProvider(provider)) {
       return this.dispatchWebView(provider, mode, request, signal, requestedModel, attachments, status || { policy: 'normal', actualMode: 'normal', verified: false }, session);
@@ -469,9 +531,14 @@ export class CompletionGateway {
       const tools = request.tool_choice === 'none' ? undefined : request.tools;
       const prompt = serializeCompletionForProvider(messagesWithoutBinaryParts(request.messages), tools, false, request.tool_choice);
       const id = `completion_${crypto.randomUUID()}`;
-      const configuredModel = DynamicRouter.resolveTargetModel(provider, mode, undefined, 'main') || undefined;
+      const configuredModel = requestedModel;
+      const effort = request.reasoning_effort;
+      if (effort && (provider !== 'cli_codex' || !(await globalCliRuntime.discoverModels(provider)).models
+          .some(option => option.id === configuredModel && option.efforts?.includes(effort)))) {
+        throw new Error('[MODEL_SELECTION_FAILED] The CLI model does not advertise this effort.');
+      }
       const result = await globalCliRuntime.execute(provider, prompt, {
-        reqId: id, conversationKey: id, newThread: true, model: configuredModel || undefined,
+        reqId: id, conversationKey: id, newThread: true, model: configuredModel || undefined, effort,
         request: {}, signal, attachments,
       });
       const message = tools?.length
@@ -480,8 +547,9 @@ export class CompletionGateway {
       return { message, finishReason: message.tool_calls?.length ? 'tool_calls' : 'stop', provider, model: result.modelUsed || configuredModel || CLI_DEFINITIONS[provider].name, usage: result.usage };
     }
 
+    if (request.reasoning_effort) throw new Error('[MODEL_SELECTION_FAILED] This endpoint has no declared reasoning effort support.');
     const config = this.getConfig();
-    const service = provider === 'localllm' ? undefined : ServiceManifestManager.getManifest().services[provider];
+    const service = provider === 'localllm'  ? undefined : ServiceManifestManager.getManifest().services[provider];
     const baseUrl = provider === 'localllm' ? config?.localLLM?.baseUrl : service?.baseUrl;
     if (!baseUrl) throw new Error(`Provider "${provider}" has no completion endpoint.`);
     const endpoint = normalizeEndpoint(baseUrl);
@@ -525,25 +593,48 @@ export class CompletionGateway {
     const temporary = status.actualMode === 'temporary';
     const forceNew = Boolean(request.new_thread || session?.modeChanged || !binding);
     const submissionId = `api_${crypto.randomUUID()}`;
+    let submissionAttempted = false;
     try {
       return await AccountQueueManager.runTask(account.id, submissionId, async () => {
         if (signal?.aborted) throw Object.assign(new Error('Request cancelled.'), { name: 'AbortError' });
         const handle = temporary
           ? await globalSessionManager.ensureTemporaryConversation({ key, providerId: provider, accountId: account.id, partitionKey: account.partitionKey, forceNew, selection: status.actualSelection, abortSignal: signal })
           : await globalSessionManager.ensureNormalConversation({ key, providerId: provider, accountId: account.id, partitionKey: account.partitionKey, forceNew, abortSignal: signal });
-        const targetModel = requestedModel || DynamicRouter.resolveTargetModel(provider, mode, undefined, 'main') || undefined;
-        if (targetModel) await ModelScraperEngine.selectRequestedModel(provider, targetModel, handle.webContents);
+        const isMedia = mode === 'image' || mode === 'video' || mode === 'music';
+        const generation = isMedia ? handle.adapter.recipe?.response.modes[mode]?.generation : undefined;
+        const targetModel = requestedModel;
+        if (generation?.models?.length && !targetModel) {
+          throw new Error('[MODEL_SELECTION_FAILED] No compatible model is available for this media request.');
+        }
+        const mediaSettings = mode === 'image' || mode === 'video' || mode === 'music'
+          ? resolveMediaSettings(handle.adapter.recipe, mode, {}, targetModel, provider) : undefined;
         const tools = request.tool_choice === 'none' ? undefined : request.tools;
         const prompt = serializeCompletionForProvider(messagesWithoutBinaryParts(request.messages), tools, Boolean(binding && !forceNew), request.tool_choice, true);
         const release = await handle.adapter.acquireDomLock();
         let result;
-        try { result = await handle.adapter.executePrompt(prompt, mode, undefined, undefined, signal, attachments); }
+        try {
+          await ModelScraperEngine.selectModelAndEffort(provider, targetModel, request.reasoning_effort, handle.webContents);
+          globalSessionManager.recordVerifiedModelEffort(provider, targetModel, request.reasoning_effort, account.partitionKey);
+          result = await handle.adapter.executePrompt(
+            prompt, mode, undefined, undefined, signal, attachments, mediaSettings, targetModel,
+            () => { submissionAttempted = true; },
+          );
+        }
         finally { release(); }
         let responseText = result.text || '';
+        const expectsMedia = mode === 'image' || mode === 'video' || mode === 'music';
+        if (expectsMedia && !result.media) {
+          throw new Error('[MEDIA_NOT_GENERATED] The provider returned no usable media artifact.');
+        }
         if (result.media) {
-          const cookies = await handle.webContents.session.cookies.get({}).catch(() => []);
+          const data = result.media.data;
+          const mediaUrl = typeof data === 'string' && /^https?:\/\//.test(data) ? data : undefined;
+          const cookies = mediaUrl
+            ? await handle.webContents.session.cookies.get({ url: mediaUrl }).catch(() => [])
+            : [];
           const cookieHeader = cookies.length ? cookies.map(cookie => `${cookie.name}=${cookie.value}`).join('; ') : undefined;
-          const saved = await globalAssetManager.saveMediaAsset(result.media.data, result.media.type, result.media.suggestedName, cookieHeader, mode);
+          const saved = await globalAssetManager.saveMediaAsset(data, result.media.type, result.media.suggestedName, cookieHeader, mode);
+          if (expectsMedia) await validateMediaArtifact(saved.filePath, mode);
           responseText = `Local media asset saved to: ${saved.filePath}${responseText ? `\n\n${responseText}` : ''}`;
         }
         if (!tools?.length && responseText.includes('data:')) {
@@ -571,6 +662,10 @@ export class CompletionGateway {
           ...(request.conversation_id ? { conversationId: request.conversation_id } : {}) };
       });
     } catch (error) {
+      if (submissionAttempted && error instanceof Error && error.name !== 'AbortError' &&
+          !error.message.includes('SUBMISSION_UNCERTAIN')) {
+        error = new Error(`[WEBVIEW_SUBMISSION_UNCERTAIN] ${error.message}`, { cause: error });
+      }
       if (retainedKey && (!binding || session?.modeChanged || /\[(?:WEBVIEW_SUBMISSION_UNCERTAIN|TEMPORARY_CHAT_SUBMISSION_UNCERTAIN|CONVERSATION_ENDED)/.test(String((error as Error)?.message || '')))) {
         this.retained.delete(retainedKey);
         globalSessionManager.endTemporaryConversation(key);

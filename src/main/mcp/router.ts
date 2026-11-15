@@ -1,3 +1,4 @@
+import { parseEffortModel } from '../../shared/modelEffort.js';
 import { isBuiltinProvider } from '../../shared/providers.js';
 import { isCliProvider, cliSupportsMode } from '../../shared/cli.js';
 import { globalCliRuntime } from '../cli/cliRuntimeManager.js';
@@ -367,13 +368,26 @@ export class DynamicRouter {
     providerId: ProviderId,
     mode: TaskMode,
     explicitModel?: string,
-    pipeline: 'main' | 'co' = 'main'
+    pipeline: 'main' | 'co' = 'main',
+    mediaModels?: readonly string[]
   ): string | null {
     // WebView callers can explicitly retain the native selection even when a
     // custom recipe's named catalog does not contain a synthetic default entry.
     const service = ServiceManifestManager.getManifest().services[providerId];
     const isWebView = service?.providerType === 'webview' ||
       isBuiltinProvider(providerId);
+    if (isWebView && (mode === 'image' || mode === 'video' || mode === 'music')) {
+      const models = ServiceManifestManager.getModelsForMode(providerId, mode)
+        .filter(model => ServiceManifestManager.isModelEnabled(providerId, model.id) &&
+          (!mediaModels || mediaModels.includes(model.id)));
+      const compatible = new Set(models.map(model => model.id));
+      if (explicitModel) {
+        return (explicitModel === 'default' && !mediaModels) || compatible.has(explicitModel) ? explicitModel : null;
+      }
+      const route = this.getRule(mode, pipeline).providerModels?.[providerId];
+      const candidates = [route?.defaultModelId, ...(route?.fallbackModelIds || []), ...models.map(model => model.id)];
+      return candidates.find((id): id is string => id !== undefined && compatible.has(id)) ?? null;
+    }
     if (explicitModel === 'default' && isWebView) return 'default';
 
     const supportsModelRouting = ServiceManifestManager.supportsModelRouting(providerId);
@@ -410,7 +424,7 @@ export class DynamicRouter {
 
     // 4. Check manifest for any enabled model matching this mode
     const modeModels = ServiceManifestManager.getModelsForMode(providerId, normalizeRouteMode(mode));
-    const availableModeModel = modeModels.find((m) => m.enabled !== false);
+    const availableModeModel = modeModels.find(m => m.enabled !== false && !parseEffortModel(m.id).effort);
     if (availableModeModel) {
       return availableModeModel.id;
     }
@@ -418,6 +432,31 @@ export class DynamicRouter {
     // 5. Fall back to provider default
     const manifest = ServiceManifestManager.getManifest();
     return manifest.services[providerId]?.defaultModelId || null;
+  }
+
+  public static isCompatibleModel(provider: ProviderId, mode: TaskMode, model: string): boolean {
+    const service = ServiceManifestManager.getManifest().services[provider];
+    const entry = service?.models?.find(candidate => candidate.id === model);
+    if (!entry) return service?.providerType !== 'api' || ServiceManifestManager.isModelEnabled(provider, model);
+    if (entry.enabled === false || entry.userEnabled === false) return false;
+    if (model === 'default') return true;
+    const modes = entry.modes?.length ? entry.modes : entry.mode ? [entry.mode] : undefined;
+    return !modes || modes.includes(normalizeRouteMode(mode));
+  }
+
+  public static getModelAttempts(
+    provider: ProviderId, mode: TaskMode, pipeline: 'main' | 'co',
+    explicit?: readonly string[], mediaModels?: readonly string[],
+  ): Array<string | undefined> {
+    if (explicit) return [...explicit];
+    const route = this.getRule(mode, pipeline).providerModels?.[provider];
+    if (!route?.defaultModelId && !route?.fallbackModelIds?.length) {
+      return [this.resolveTargetModel(provider, mode, undefined, pipeline, mediaModels) ?? undefined];
+    }
+    const automatic = ServiceManifestManager.getModelsForMode(provider, normalizeRouteMode(mode))
+      .find(model => !parseEffortModel(model.id).effort && this.isCompatibleModel(provider, mode, model.id) && (!mediaModels || mediaModels.includes(model.id)));
+    const primary = route.defaultModelId ?? automatic?.id;
+    return [...new Set([primary, ...(route.fallbackModelIds || [])])];
   }
 
   public static resetRoutes(): Record<RouteMode, ModeRouteConfig> {

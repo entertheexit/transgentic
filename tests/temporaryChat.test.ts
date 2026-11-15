@@ -116,7 +116,8 @@ describe('Temporary Chat contracts', () => {
     await adapter.activateTemporaryChat();
 
     expect(loadURL).toHaveBeenCalledWith(BUILTIN_RECIPES.gemini.newChatUrl);
-    expect(click.mock.calls.map(([step]) => step.target.name)).toEqual(['Temporary chat']);
+    expect(click).toHaveBeenCalledTimes(1);
+    expect(click.mock.calls[0][0].target.selectors).toContain('button[aria-label="Turn on temporary chat" i]');
   });
 
   it('does not enter content when temporary state cannot be verified', async () => {

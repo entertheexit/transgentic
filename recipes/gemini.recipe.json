@@ -1,5 +1,5 @@
 {
-  "version": "1.1.6",
+  "version": "1.1.8",
   "id": "gemini",
   "title": "Google Gemini",
   "domainMatch": "gemini.google.com",
@@ -17,6 +17,7 @@
       "google.com"
     ],
     "requireAllCookies": false,
+    "requireLoggedInSelector": true,
     "minCookieLength": 20,
     "loggedInSelector": "button[aria-label*=\"Google Account\" i], img[alt*=\"profile\" i], img[alt*=\"Google Account\" i], a[aria-label*=\"Google Account\" i], [data-id=\"avatar-button\"]",
     "loggedOutSelector": "a[href*=\"accounts.google.com/ServiceLogin\"], a[href*=\"accounts.google.com/signin\"], a[aria-label*=\"Sign in\" i], button[aria-label*=\"Sign in\" i], a[data-g-label=\"sign-in\"]",
@@ -39,8 +40,10 @@
       {
         "action": "click",
         "target": {
-          "role": "button",
-          "name": "Temporary chat"
+          "selectors": [
+            "button[aria-label=\"Turn on temporary chat\" i]",
+            "button[aria-label=\"Temporary chat\" i]"
+          ]
         }
       }
     ],
@@ -51,7 +54,10 @@
       ]
     },
     "inactiveWhen": {
-      "selectors": "button[aria-label=\"Temporary chat\"] mat-icon[fonticon=\"gemini_chat_temp\"]"
+      "selectors": [
+        "button[aria-label=\"Turn on temporary chat\" i]",
+        "button[aria-label=\"Temporary chat\"] mat-icon[fonticon=\"gemini_chat_temp\"]"
+      ]
     }
   },
   "createdAt": "2026-01-01T00:00:00.000Z",
@@ -59,7 +65,28 @@
     "inputPrompt": "div.ql-editor, rich-textarea textarea, rich-textarea div[contenteditable=\"true\"], div[contenteditable=\"true\"]",
     "submitButton": "button[aria-label*=\"Send message\" i], button[aria-label*=\"Send prompt\" i], button[aria-label*=\"Send\" i], button[aria-label*=\"\u0e2a\u0e48\u0e07\" i], button.send-button, button[mattooltip*=\"Send\" i]",
     "stopButton": "button[aria-label*=\"Stop\" i], .streaming-indicator",
-    "modelDropdownTrigger": "button[aria-label*=\"Open mode picker\" i], button[aria-label*=\"model\" i], div.model-switcher"
+    "modelDropdownTrigger": "button[aria-label^=\"Open mode picker\" i]"
+  },
+  "modelSelection": {
+    "effort": {
+      "labels": {
+        "low": "Low",
+        "medium": "Medium",
+        "high": "High"
+      },
+      "submenuLabel": "Thinking level",
+      "submenuInput": "hover",
+      "submenu": "[role=\"menuitem\"], button[aria-haspopup=\"menu\"]",
+      "item": "[role=\"menuitemradio\"], [role=\"menuitem\"], [role=\"option\"]"
+    },
+    "trigger": "button[aria-label^=\"Open mode picker\" i]",
+    "item": "[role=\"menuitem\"], [role=\"menuitemradio\"], [role=\"option\"], button[data-mode-id]",
+    "name": ".label",
+    "namePattern": "^(?:Gemini )?\\d+(?:\\.\\d+)? (?:Flash(?:-Lite)?|Pro|[A-Z][a-z]+)$",
+    "disabledText": "Locked",
+    "openInput": "native",
+    "closeInput": "toggle",
+    "selectInput": "pointer"
   },
   "response": {
     "container": "model-response, response-container, structured-content-container, message-content",

@@ -6,6 +6,7 @@ import { InputSimulator, InputSimulatorOptions } from '../security/inputSimulato
 import { GhostCursor, GhostCursorOptions } from '../security/ghostCursor.js';
 import { DomObserver, DomInspectionResult } from './domObserver.js';
 import { TimeoutManager } from '../config/timeouts.js';
+import { toCombinedCssSelector, type CustomRecipe } from '../../shared/types/recipe.js';
 import type { StagedAttachment } from '../../shared/attachments.js';
 
 export interface ProviderAdapterResult {
@@ -59,6 +60,7 @@ export interface PollGenerationOptions {
   onChunk?: (chunk: string) => void;
   metadata?: ProjectMetadata;
   excludedMediaUrls?: string[];
+  previousResponse?: Pick<DomInspectionResult, 'text' | 'responseTurnCount'>;
 }
 
 export abstract class BaseProviderAdapter {
@@ -91,30 +93,37 @@ export abstract class BaseProviderAdapter {
     return this.webContents;
   }
 
-  protected isDomBusy = false;
-  private domLockQueue: (() => void)[] = [];
+  private static readonly viewLocks = new WeakMap<WebContents, { busy: boolean; queue: (() => void)[] }>();
+  private readonly detachedLock = { busy: false, queue: [] as (() => void)[] };
 
-  /**
-   * Acquires an exclusive DOM mutex lock for this provider.
-   * Prevents concurrent inputs, button clicks, or navigation events on the same webview.
-   */
-  public async acquireDomLock(): Promise<() => void> {
-    if (this.isDomBusy) {
-      await new Promise<void>((resolve) => this.domLockQueue.push(resolve));
+  private getDomLock() {
+    const view = this.webContents;
+    if (!view) return this.detachedLock;
+    let lock = BaseProviderAdapter.viewLocks.get(view);
+    if (!lock) {
+      lock = { busy: false, queue: [] };
+      BaseProviderAdapter.viewLocks.set(view, lock);
     }
-    this.isDomBusy = true;
+    return lock;
+  }
+
+  /** Serialize DOM operations across adapters attached to the same browser view. */
+  public async acquireDomLock(): Promise<() => void> {
+    const lock = this.getDomLock();
+    if (lock.busy) await new Promise<void>(resolve => lock.queue.push(resolve));
+    lock.busy = true;
+    let released = false;
     return () => {
-      this.isDomBusy = false;
-      const next = this.domLockQueue.shift();
-      if (next) {
-        this.isDomBusy = true;
-        next();
-      }
+      if (released) return;
+      released = true;
+      const next = lock.queue.shift();
+      if (next) next();
+      else lock.busy = false;
     };
   }
 
   public isLocked(): boolean {
-    return this.isDomBusy;
+    return this.getDomLock().busy;
   }
 
   /**
@@ -172,13 +181,13 @@ export abstract class BaseProviderAdapter {
               if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') {
                 el.select?.();
               } else {
-                const sel = window.getSelection();
+                const sel = el.getRootNode?.().getSelection?.() || window.getSelection();
                 const range = document.createRange();
                 range.selectNodeContents(el);
                 sel?.removeAllRanges();
                 sel?.addRange(range);
               }
-              return document.activeElement === el;
+              return (el.getRootNode?.() || document).activeElement === el;
             }
           } catch (e) {}
           return false;
@@ -214,21 +223,24 @@ export abstract class BaseProviderAdapter {
     buttonSelector: string,
     inputSelector?: string,
     options?: GhostCursorOptions,
-    requireButton = false
+    requireButton = false,
+    beforeSubmit?: () => void,
+    submitReadyTimeoutMs?: number,
   ): Promise<{ success: boolean; error?: string; method?: string }> {
     const effectiveButton = await this.getEffectiveSelector('submitButton', buttonSelector);
     const effectiveInput = inputSelector ? await this.getEffectiveSelector('inputPrompt', inputSelector) : undefined;
     if (this.webContents && typeof this.webContents.sendInputEvent === 'function') {
       type SubmitTarget = { x?: number; y?: number; ambiguous?: boolean; offscreen?: boolean; obscured?: boolean };
       let target: SubmitTarget | null;
-      const targetDeadline = Date.now() + 2_000;
+      const targetDeadline = Date.now() + (submitReadyTimeoutMs ?? 2_000);
       do {
         target = await this.executeScript<SubmitTarget | null>(
           InputDispatcher.getSubmitTargetScript(effectiveButton, effectiveInput)
         );
         // Closing provider menus can retain a pointer-intercepting backdrop
         // during their exit animation. Wait without clicking through it.
-        if (!target?.obscured && !target?.offscreen) break;
+        if (target && !target.obscured && !target.offscreen) break;
+        if (!target && !submitReadyTimeoutMs) break;
         if (Date.now() >= targetDeadline) break;
         await new Promise(resolve => setTimeout(resolve, 50));
       } while (true);
@@ -247,13 +259,15 @@ export abstract class BaseProviderAdapter {
             }
             const position = { x: target!.x!, y: target!.y!, button: 'left', clickCount: 1 };
             await debuggerApi.sendCommand('Input.dispatchMouseEvent', { type: 'mouseMoved', ...position, buttons: 0 });
+            beforeSubmit?.();
             pressed = true;
             // sendInputEvent requires a focused BrowserWindow. Protocol input is
             // trusted by the provider without focusing hidden execution windows.
             await debuggerApi.sendCommand('Input.dispatchMouseEvent', { type: 'mousePressed', ...position, buttons: 1 });
             await debuggerApi.sendCommand('Input.dispatchMouseEvent', { type: 'mouseReleased', ...position, buttons: 0 });
             return { success: true, method: 'trusted_button_click' };
-          } catch {
+          } catch (error) {
+            if (!pressed && error instanceof Error && error.name === 'AbortError') throw error;
             throw new Error(pressed
               ? '[WEBVIEW_SUBMISSION_UNCERTAIN] Trusted submission was attempted but could not be confirmed.'
               : '[WEBVIEW_INPUT_UNAVAILABLE] Trusted browser input is unavailable. The prompt was not submitted.');
@@ -263,6 +277,7 @@ export abstract class BaseProviderAdapter {
             } catch { /* A closing view must not change the submission outcome. */ }
           }
         }
+        beforeSubmit?.();
         try {
           const position = { x: target!.x!, y: target!.y!, button: 'left' as const, clickCount: 1 };
           this.webContents.sendInputEvent({ type: 'mouseDown', ...position });
@@ -274,9 +289,10 @@ export abstract class BaseProviderAdapter {
           throw new Error('[WEBVIEW_SUBMISSION_UNCERTAIN] Native submission was attempted but could not be confirmed.');
         }
       }
-      if (requireButton) return { success: false, error: 'The declared media submit control is unavailable.' };
+      if (requireButton) return { success: false, error: 'The declared submit control is unavailable.' };
     }
     const script = InputDispatcher.getSubmitScript(effectiveButton, effectiveInput, requireButton);
+    beforeSubmit?.();
     const res = await this.executeScript<{ success: boolean; error?: string; method?: string }>(script);
 
     // CRITICAL IDEMPOTENCY GUARD:
@@ -288,7 +304,7 @@ export abstract class BaseProviderAdapter {
           const el = ${InputDispatcher.getInputTargetScript(effectiveInput)};
           if (!el) return false;
           el.focus();
-          return document.activeElement === el;
+          return (el.getRootNode?.() || document).activeElement === el;
         })()`);
         if (focused && this.webContents && typeof this.webContents.sendInputEvent === 'function') {
           this.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Return' });
@@ -317,20 +333,32 @@ export abstract class BaseProviderAdapter {
    */
   public async abortGeneration(): Promise<boolean> {
     try {
+      const recipe = (this as BaseProviderAdapter & { recipe?: CustomRecipe }).recipe;
+      const declared = toCombinedCssSelector(recipe?.selectors.stopButton);
       const script = `
         (function() {
-          const directBtn = document.querySelector(
+          const findAll = selector => typeof queryAll === 'function'
+            ? queryAll(document, selector)
+            : Array.from(document.querySelectorAll(selector));
+          const declared = ${JSON.stringify(declared)};
+          const actionable = button => !button.disabled &&
+            button.getAttribute('aria-disabled') !== 'true' &&
+            !button.closest('[hidden], [inert], [aria-hidden="true"]') &&
+            button.getClientRects().length > 0 &&
+            getComputedStyle(button).visibility === 'visible';
+          const directBtn = findAll(declared || (
             'button[data-testid="stop-button"], ' +
             'button[aria-label*="Stop" i], ' +
             'button[aria-label*="Cancel" i], ' +
             'button.stop-button'
-          );
+          )).find(actionable);
           if (directBtn) {
             directBtn.click();
             return true;
           }
-          const buttons = Array.from(document.querySelectorAll('button, [role="button"]'));
-          for (const btn of buttons) {
+          if (declared) return false;
+          const buttons = findAll('button, [role="button"]');
+          for (const btn of buttons.filter(actionable)) {
             const label = (btn.getAttribute('aria-label') || '').toLowerCase();
             const text = (btn.textContent || '').toLowerCase();
             const hasSquare = !!btn.querySelector('.lucide-square, svg rect');
@@ -360,14 +388,17 @@ export abstract class BaseProviderAdapter {
    */
   public async pollGeneration(options: PollGenerationOptions): Promise<ProviderAdapterResult> {
     const { mode, abortSignal, onChunk } = options;
+    const expectsMedia = mode === 'image' || mode === 'video' || mode === 'music';
     let maxBudgetMs = options.timeoutMs || TimeoutManager.getTimeout(mode, this.providerId);
 
     const startTime = Date.now();
     let lastActivityTime = Date.now();
+    let previousInspectionText: string | undefined;
+    let previousInspectionMediaUrl: string | undefined;
     let lastText = '';
     let lastMediaUrl = '';
     let stableTicks = 0;
-    const inspectScript = DomObserver.getInspectionScript(this.providerId, mode, (this as any).recipe, options.excludedMediaUrls);
+    const inspectScript = DomObserver.getInspectionScript(this.providerId, mode, (this as any).recipe, options.excludedMediaUrls, !expectsMedia);
     const checkProviderState = (inspection: DomInspectionResult) => {
       if (inspection.error) {
         throw new Error(`[DOM_INSPECTION_FAILED] ${this.name}: ${inspection.error}`);
@@ -383,23 +414,48 @@ export abstract class BaseProviderAdapter {
       }
     };
 
-    while (Date.now() - startTime < maxBudgetMs) {
-      // 1. Check for request cancellation / client disconnect
-      if (abortSignal?.aborted) {
-        await this.abortGeneration();
-        throw new Error(`Request cancelled: ${this.name} generation aborted.`);
+    const readResponse = async () => {
+      const inspection = await this.executeScript<DomInspectionResult>(inspectScript);
+      checkProviderState(inspection);
+      // Some providers deliver music in an MP4 player. The saved artifact
+      // validator checks that the container actually has an audio track.
+      const matchesMode = !expectsMedia ||
+        (mode === 'music' ? inspection.mediaType === 'audio' || inspection.mediaType === 'video' : inspection.mediaType === mode);
+      if (!matchesMode && inspection.mediaUrl) {
+        inspection.mediaUrl = undefined;
+        inspection.mediaType = undefined;
       }
+      const previous = options.previousResponse;
+      if (previous?.responseTurnCount && inspection.responseTurnCount === previous.responseTurnCount &&
+          inspection.text === previous.text) {
+        return { ...inspection, text: '' };
+      }
+      return inspection;
+    };
+
+    const checkCancellation = async () => {
+      if (!abortSignal?.aborted) return;
+      await this.abortGeneration();
+      throw Object.assign(new Error(`Request cancelled: ${this.name} generation aborted.`), { name: 'AbortError' });
+    };
+
+    while (Date.now() - startTime < maxBudgetMs) {
+      await checkCancellation();
 
       await new Promise((r) => setTimeout(r, 1100));
 
-      const inspection = await this.executeScript<DomInspectionResult>(inspectScript);
-
-      checkProviderState(inspection);
+      await checkCancellation();
+      const inspection = await readResponse();
 
       // If model is actively thinking or rendering media, ensure budget accommodates deep reasoning & media generation (at least 420s)
       if (inspection.isThinking || inspection.isMediaRendering) {
         maxBudgetMs = Math.max(maxBudgetMs, (mode === 'video' || mode === 'music') ? 420_000 : 300_000);
       }
+
+      const previousText = previousInspectionText;
+      previousInspectionText = inspection.text;
+      const previousMediaUrl = previousInspectionMediaUrl;
+      previousInspectionMediaUrl = inspection.mediaUrl;
 
       // 2. Stream chunk updates if new text streamed
       if (inspection.text && inspection.text !== lastText) {
@@ -425,12 +481,12 @@ export abstract class BaseProviderAdapter {
       // 4. Completion Detection:
       const cleanCurrentText = cleanModelOutput(lastText);
       const effectiveMediaUrl = inspection.mediaUrl || lastMediaUrl;
-      const hasContent = (cleanCurrentText.length > 0) || !!effectiveMediaUrl;
+      const hasContent = expectsMedia ? !!inspection.mediaUrl : cleanCurrentText.length > 0 || !!effectiveMediaUrl;
       const isActivelyGenerating = inspection.isGenerating || inspection.isThinking || inspection.isMediaRendering;
 
       if (hasContent) {
-        const isMediaStable = !effectiveMediaUrl || (inspection.mediaUrl === lastMediaUrl);
-        const isTextStable = (inspection.text === lastText);
+        const isMediaStable = inspection.mediaUrl === previousMediaUrl;
+        const isTextStable = inspection.text === previousText;
         const isStable = isTextStable && isMediaStable;
 
         if (!isActivelyGenerating && inspection.hasActionButtons) {
@@ -457,24 +513,35 @@ export abstract class BaseProviderAdapter {
           await new Promise((r) => setTimeout(r, 800));
 
           // Grab final snapshot
-          const finalInspect = await this.executeScript<DomInspectionResult>(inspectScript);
-          checkProviderState(finalInspect);
+          await checkCancellation();
+          const finalInspect = await readResponse();
+          await checkCancellation();
+          if (expectsMedia && (
+            finalInspect.mediaUrl !== inspection.mediaUrl ||
+            finalInspect.isGenerating || finalInspect.isThinking || finalInspect.isMediaRendering
+          )) {
+            stableTicks = 0;
+            previousInspectionMediaUrl = finalInspect.mediaUrl;
+            continue;
+          }
           const rawFinal = (finalInspect.text && finalInspect.text.trim().length > 0) ? finalInspect.text : lastText;
           const finalText = cleanModelOutput(rawFinal);
 
           let finalMediaUrl = finalInspect.mediaUrl || effectiveMediaUrl;
           let finalMediaType = finalInspect.mediaType || inspection.mediaType || (mode === 'video' ? 'video' : mode === 'music' ? 'audio' : mode === 'image' ? 'image' : undefined);
 
-          // If the media URL is from contribution.usercontent.google.com (which requires authenticated Google session cookies),
-          // download the binary buffer directly within the authenticated webview session to guarantee 100% authenticated retrieval
-          if (finalMediaUrl && finalMediaUrl.includes('contribution.usercontent.google.com')) {
+          // Blob URLs belong to the provider view. Resolve them before the
+          // result reaches the main process asset downloader.
+          const isProviderBlob = finalMediaUrl?.startsWith('blob:') === true;
+          if (finalMediaUrl && (isProviderBlob || finalMediaUrl.includes('contribution.usercontent.google.com'))) {
             try {
               const inWebviewDataUrl = await this.executeScript<string | null>(`
                 (async function() {
                   try {
-                    const res = await window.fetch(${JSON.stringify(finalMediaUrl)}, { credentials: 'include' });
+                    const res = await window.fetch(${JSON.stringify(finalMediaUrl)}, { credentials: 'include', signal: AbortSignal.timeout(15000) });
                     if (!res.ok) return null;
                     const blob = await res.blob();
+                    if (!blob.size || blob.size > 100 * 1024 * 1024) return null;
                     return await new Promise((resolve) => {
                       const reader = new FileReader();
                       reader.onloadend = () => resolve(reader.result);
@@ -490,6 +557,9 @@ export abstract class BaseProviderAdapter {
                 finalMediaUrl = inWebviewDataUrl;
               }
             } catch {}
+            if (isProviderBlob && finalMediaUrl.startsWith('blob:')) {
+              throw new Error('[MEDIA_DOWNLOAD_FAILED] The provider view could not read the generated media.');
+            }
           }
 
           if ((mode === 'video' || finalMediaType === 'video') && finalMediaUrl) {
@@ -533,12 +603,12 @@ export abstract class BaseProviderAdapter {
       }
 
       // 6. Idle Watchdog Check (If dead/frozen with 0 activity for 40s while not thinking)
-      if (Date.now() - lastActivityTime > 40_000 && !inspection.isThinking && !inspection.isMediaRendering) {
+      if (!expectsMedia && Date.now() - lastActivityTime > 40_000 && !inspection.isThinking && !inspection.isMediaRendering) {
         if (effectiveMediaUrl) {
           return {
             text: cleanModelOutput(lastText),
             media: {
-              type: (inspection.mediaType || (mode === 'image' ? 'image' : mode === 'video' ? 'video' : 'audio')) as any,
+              type: inspection.mediaType || 'audio',
               data: effectiveMediaUrl,
               suggestedName: `${this.providerId}_${mode}`,
             },
@@ -551,11 +621,11 @@ export abstract class BaseProviderAdapter {
       }
     }
 
-    if (lastMediaUrl) {
+    if (lastMediaUrl && !expectsMedia) {
       return {
         text: cleanModelOutput(lastText),
         media: {
-          type: (mode === 'image' ? 'image' : mode === 'video' ? 'video' : 'audio') as any,
+          type: 'audio',
           data: lastMediaUrl,
           suggestedName: `${this.providerId}_${mode}`,
         },

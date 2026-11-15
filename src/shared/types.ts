@@ -465,7 +465,13 @@ export interface ServiceManifestEntry {
   accentColor?: string;
   iconName?: string;
   theme?: ServiceThemeConfig;
+  mediaModelAllowlist?: Partial<Record<'image' | 'video' | 'music', string[]>>;
   models: ServiceModelDef[];
+}
+
+export function isModelAllowedForMode(service: ServiceManifestEntry, modelId: string, mode: RouteMode): boolean {
+  if (mode !== 'image' && mode !== 'video' && mode !== 'music') return true;
+  return service.mediaModelAllowlist?.[mode]?.includes(modelId) ?? true;
 }
 
 export interface ServicesManifest {

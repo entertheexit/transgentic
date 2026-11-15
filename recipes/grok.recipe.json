@@ -51,6 +51,13 @@
     "stopButton": "button[aria-label*=\"Stop\" i]",
     "modelDropdownTrigger": "#model-select-trigger, button[aria-label=\"Model select\"]"
   },
+  "modelSelection": {
+    "trigger": "button[aria-label^=\"Model:\" i]",
+    "item": "[role=\"menuitemcheckbox\"], [role=\"menuitemradio\"]",
+    "closeInput": "toggle",
+    "selectInput": "keyboard",
+    "disabledText": "Requires SuperGrok"
+  },
   "response": {
     "container": "#last-reply-container [id^=\"response-\"], [id^=\"response-\"], [data-testid=\"assistant-message\"], div.items-start .message-bubble, .response-turn",
     "textSelector": ".response-content-markdown, .streamdown-chat-md, .prose",

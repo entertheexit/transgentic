@@ -1,6 +1,8 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import { TransgenticMcpServer } from '../src/main/mcp/server.js';
 import { ClientAuthManager } from '../src/main/security/clientAuth.js';
+
+import { effortModelId } from '../src/shared/modelEffort.js';
 
 describe('TransgenticMcpServer Integration', () => {
   let server: TransgenticMcpServer;
@@ -246,6 +248,49 @@ describe('TransgenticMcpServer Integration', () => {
     expect(directData.result.tools).toBeDefined();
 
     reader?.cancel();
+  });
+
+  it('returns mode-scoped model catalogs and saved routes through MCP', async () => {
+    async function call(name: string, args: Record<string, unknown>) {
+      const response = await fetch(`http://127.0.0.1:${testPort}/mcp`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } }),
+      });
+      expect(response.status).toBe(200);
+      return await response.json();
+    }
+    const catalog = await call('list_models', { provider: 'chatgpt', mode: 'general' });
+    expect(catalog.result.structuredContent.models).toEqual(expect.arrayContaining([
+      expect.objectContaining({ provider: 'chatgpt', id: 'default', available: true }),
+    ]));
+    const result = await call('get_model_routes', { mode: 'coding', pipeline: 'co' });
+    expect(Object.keys(result.result.structuredContent.routes)).toEqual(['co']);
+    expect(Object.keys(result.result.structuredContent.routes.co)).toEqual(['coding']);
+  });
+
+  it('routes both MCP effort formats to the same model override', async () => {
+    const combined = effortModelId('gpt-5-6-sol', 'medium');
+    const route = vi.spyOn(server as unknown as { orchestratePrompt: (...args: unknown[]) => Promise<unknown> }, 'orchestratePrompt')
+      .mockResolvedValue({ content: [{ type: 'text', text: 'OK' }] });
+    try {
+      for (const selection of [{ model: 'gpt-5-6-sol', reasoning_effort: 'medium' }, { model: combined }]) {
+        route.mockClear();
+        const res = await fetch(`http://127.0.0.1:${testPort}/mcp`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: {
+            name: 'ask_chatgpt', arguments: { prompt: 'Reply OK', ...selection },
+          } }),
+        });
+        expect(res.status).toBe(200);
+        expect((await res.json()).result.content[0].text).toBe('OK');
+        expect(route).toHaveBeenCalledOnce();
+        expect(route.mock.calls[0].slice(0, 5)).toEqual(['Reply OK', 'general', 'chatgpt', undefined, combined]);
+      }
+    } finally {
+      route.mockRestore();
+    }
   });
 
   it('should complete the direct Streamable HTTP initialization handshake', async () => {

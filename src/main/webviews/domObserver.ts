@@ -1,3 +1,4 @@
+import { providerQueryScript } from './domQuery.js';
 import { ProviderId, TaskMode } from '../../shared/types.js';
 import { CustomRecipe } from '../../shared/types/recipe.js';
 import { findMediaControl } from './mediaControls.js';
@@ -11,6 +12,7 @@ export interface DomInspectionResult {
   isSecurityWarning: boolean;
   securityWarningReason?: string;
   text: string;
+  responseTurnCount?: number;
   mediaUrl?: string;
   mediaType?: 'image' | 'video' | 'audio';
   error?: string;
@@ -18,8 +20,22 @@ export interface DomInspectionResult {
 }
 
 /** Self-contained because the inspector serializes it into the provider page. */
-export function codeBlockMarkdown(block: Element, code: Element): string {
-  const text = (code.textContent || '').trimEnd();
+export function codeBlockMarkdown(block: Element, code: Element, renderedCode?: HTMLElement): string {
+  // Highlighters can render each line as a separate element without any
+  // newline characters between them. The detached response clone has no layout.
+  const copy = code.cloneNode?.(true) as Element | undefined;
+  if (copy) {
+    for (const breakElement of copy.querySelectorAll('br')) {
+      breakElement.replaceWith('\n');
+    }
+    for (const line of copy.querySelectorAll(':scope > .line, :scope > div')) {
+      const next = line.nextSibling;
+      if (next && !line.textContent?.endsWith('\n') && !next.textContent?.startsWith('\n')) {
+        line.after('\n');
+      }
+    }
+  }
+  const text = (renderedCode?.innerText || copy?.textContent || code.textContent || '').trimEnd();
   const classHint = (code.getAttribute?.('class') || '').match(/(?:^|\s)(?:language|lang)-([^\s]+)/)?.[1];
   const toolbar = block.cloneNode?.(true) as Element | undefined;
   for (const element of toolbar?.querySelectorAll?.('pre, code, button, [role="button"], svg, [aria-hidden="true"]') || []) element.remove();
@@ -75,11 +91,12 @@ export class DomObserver {
    * Generates browser-side DOM inspection script tailored for each provider
    * to accurately detect streaming status, thinking states, media rendering, and completion.
    */
-  public static getInspectionScript(providerId: ProviderId, mode: TaskMode, recipeConfig?: CustomRecipe, excludedMediaUrls: string[] = []): string {
+  public static getInspectionScript(providerId: ProviderId, mode: TaskMode, recipeConfig?: CustomRecipe, excludedMediaUrls: string[] = [], resolveBlob = true): string {
     return `
       (async function() {
         try {
           const recipe = ${JSON.stringify(recipeConfig || null)};
+          ${providerQueryScript(recipeConfig?.openShadowDom === true)}
           const excludedMediaUrls = new Set(${JSON.stringify(excludedMediaUrls)});
           const extractToolProtocolCode = ${extractToolProtocolCode.toString()};
           const codeBlockMarkdown = ${codeBlockMarkdown.toString()};
@@ -103,19 +120,22 @@ export class DomObserver {
           // 3. Helper to verify element visibility in DOM
           const isVisible = (el) => {
             if (!el) return false;
-            if (el.closest?.('[hidden], [inert], [aria-hidden="true"]')) return false;
+            for (let scope = el; scope; scope = recipe?.openShadowDom ? scope.getRootNode?.()?.host : null) {
+              if (scope.closest?.('[hidden], [inert], [aria-hidden="true"]')) return false;
+            }
             const style = getComputedStyle(el);
             if (style.display === 'none' || style.visibility === 'hidden' || style.visibility === 'collapse' || style.opacity === '0') return false;
             // Some provider turn wrappers have no box of their own.
-            if (style.display === 'contents') return Array.from(el.children || []).some(isVisible);
+            if (style.display === 'contents') return Array.from(el.shadowRoot?.children || el.children || []).some(isVisible);
             return !!(el.offsetWidth || el.offsetHeight || (typeof el.getClientRects === 'function' && el.getClientRects().length > 0));
           };
 
-          const unavailableWhen = recipe?.response?.modes?.[${JSON.stringify(mode)}]?.generation?.unavailableWhen;
-          if (unavailableWhen && (${findMediaControl.toString()})(unavailableWhen, true)) {
+          const generation = recipe?.response?.modes?.[${JSON.stringify(mode)}]?.generation;
+          const unavailableWhen = generation?.unavailableWhen;
+          if (unavailableWhen && (${findMediaControl.toString()})(unavailableWhen, true, queryAll)) {
             return { isGenerating: false, isThinking: false, isMediaRendering: false,
               hasActionButtons: false, isRateLimited: false, isSecurityWarning: false, text: '',
-              mediaUnavailableReason: 'Native media access requires an account or subscription change.' };
+              mediaUnavailableReason: generation.unavailableMessage || 'Native media access requires an account or subscription change.' };
           }
 
           // Quoted prompts and assistant replies are not provider account notices.
@@ -176,7 +196,7 @@ export class DomObserver {
 
           let hasStopBtn = false;
           // Preserve recognizable Stop fallbacks, but only declared controls may use a generic Cancel label.
-          const allButtons = document.querySelectorAll('button, [role="button"]');
+          const allButtons = queryAll(document, 'button, [role="button"]');
           for (const btn of allButtons) {
             if (isStopBtn(btn)) {
               hasStopBtn = true;
@@ -260,7 +280,7 @@ export class DomObserver {
           // Helper to extract clean text from target markdown element
           const extractCleanText = (el) => {
             if (!el) return '';
-            const markdownEl = el.querySelector(
+            const markdownEl = queryOne(el,
               selectorString(recipe?.response?.textSelector) || '[data-markdown-text-style="assistant-message"], .response-content-markdown, .streamdown-chat-md, .markdown, .markdown-content, .prose, .prose-chat, [data-testid="message-text"], [data-testid="response-text"]'
             );
             const target = markdownEl || el;
@@ -268,11 +288,27 @@ export class DomObserver {
             try {
               const toolProtocolText = extractToolProtocolCode(target);
               if (toolProtocolText !== null) return toolProtocolText;
-              const clone = target.cloneNode(true);
+              const originalCode = new Map();
+              const cloneRendered = (node) => {
+                const copy = node.cloneNode(false);
+                if (node.nodeType !== 1) return copy;
+                if (node.matches('pre code')) originalCode.set(copy, node);
+                const assigned = node.localName === 'slot' ? node.assignedNodes({ flatten: true }) : [];
+                const children = assigned.length ? assigned : (node.shadowRoot || node).childNodes;
+                for (const child of children) copy.appendChild(cloneRendered(child));
+                return copy;
+              };
+              const clone = recipe?.openShadowDom ? cloneRendered(target) : target.cloneNode(true);
               if (clone && clone.querySelectorAll) {
+                if (!recipe?.openShadowDom) {
+                  const originals = target.querySelectorAll('pre code');
+                  clone.querySelectorAll('pre code').forEach((code, index) => {
+                    originalCode.set(code, originals[index]);
+                  });
+                }
                 const preserveCodeFence = (block, code) => {
                   const fenced = document.createElement('span');
-                  fenced.textContent = codeBlockMarkdown(block, code);
+                  fenced.textContent = codeBlockMarkdown(block, code, originalCode.get(code));
                   block.replaceWith(fenced);
                 };
                 if (recipe?.response?.codeBlockSelector) {
@@ -410,6 +446,7 @@ export class DomObserver {
           let mediaType = undefined;
           let hasActionButtons = false;
 
+          let responseTurnCount;
           switch (${JSON.stringify(providerId)}) {
             case 'chatgpt': {
               const assistantMessages = Array.from(document.querySelectorAll(
@@ -845,7 +882,10 @@ export class DomObserver {
                 if (Array.isArray(sel)) return sel.filter(Boolean).join(', ');
                 return String(sel);
               };
-              const containerSelector = toSelectorString(recipeCfg?.response?.container) || (
+              const modeStr = ${JSON.stringify(mode)};
+              const modeKey = ['general', 'coding', 'writing'].includes(modeStr) ? 'text' : modeStr;
+              const modeCfg = recipeCfg?.response?.modes?.[modeKey];
+              const containerSelector = toSelectorString(modeCfg?.responseContainer || recipeCfg?.response?.container) || (
                 '[data-message-author-role="assistant"], ' +
                 '[data-role="assistant"], ' +
                 'div[class*="message-assistant"], ' +
@@ -856,7 +896,7 @@ export class DomObserver {
                 '.markdown'
               );
 
-              const turns = Array.from(document.querySelectorAll(containerSelector)).filter(el => {
+              const turns = Array.from(queryAll(document, containerSelector)).filter(el => {
                 if (!isVisible(el)) return false;
                 if (el.tagName === 'MAIN' || el.tagName === 'BODY' || el.tagName === 'HTML') return false;
                 if (el.closest('form, nav, aside, header, footer, .message-input, [data-role="user"], [class*="disclaimer" i]')) return false;
@@ -864,11 +904,9 @@ export class DomObserver {
                 return true;
               });
 
+              responseTurnCount = turns.length;
               if (turns.length > 0) {
                 const lastTurn = turns[turns.length - 1];
-                const modeStr = ${JSON.stringify(mode)};
-                const modeKey = ['general', 'coding', 'writing'].includes(modeStr) ? 'text' : modeStr;
-                const modeCfg = recipeCfg?.response?.modes?.[modeKey];
 
                 // Image detection
                 const imgSelector = toSelectorString(modeCfg?.contentSelector) || (
@@ -881,11 +919,11 @@ export class DomObserver {
                   '.markdown-content img'
                 );
                 const imgCandidates = ['video', 'music'].includes(modeStr)
-                  ? [] : Array.from(lastTurn.querySelectorAll(imgSelector));
+                  ? [] : Array.from(queryAll(lastTurn, imgSelector));
 
                 const validImg = imgCandidates.find(im => {
-                  if (im.tagName !== 'IMG') return false;
-                  const src = im.src || im.getAttribute('src') || '';
+                  if (im.tagName !== 'IMG' || !im.complete || im.naturalWidth <= 0 || !isVisible(im)) return false;
+                  const src = im.currentSrc || im.src || im.getAttribute('src') || '';
                   if (!src || excludedMediaUrls.has(src)) return false;
                   if (
                     src.includes('organization-images') ||
@@ -904,7 +942,7 @@ export class DomObserver {
                 });
 
                 if (validImg) {
-                  let rawSrc = validImg.src || validImg.getAttribute('src') || '';
+                  let rawSrc = validImg.currentSrc || validImg.src || validImg.getAttribute('src') || '';
                   try {
                     if (validImg.complete && validImg.naturalWidth > 0) {
                       const canvas = document.createElement('canvas');
@@ -928,11 +966,11 @@ export class DomObserver {
                 const videoSelector = (modeCfg?.mediaKind === 'video' && toSelectorString(modeCfg.contentSelector)) || (
                   'video source, video[src], [data-testid="video"], video, a[data-testid="download-button"], a[download][href*="video"], a[href*="download-video"], a[href*="video"]'
                 );
-                const videoCandidates = Array.from(lastTurn.querySelectorAll(videoSelector));
+                const videoCandidates = ['image', 'music'].includes(modeStr) ? [] : queryAll(lastTurn, videoSelector);
                 for (const vid of videoCandidates) {
                   const player = vid.tagName === 'VIDEO' ? vid : vid.closest('video');
-                  if (player && player.readyState < 2) continue;
-                  let src = vid.src || vid.currentSrc || vid.getAttribute('src') || (vid.tagName === 'A' ? vid.href : '');
+                  if (!isVisible(player || vid) || (player && player.readyState < 2)) continue;
+                  let src = player?.currentSrc || vid.currentSrc || vid.src || vid.getAttribute('src') || (vid.tagName === 'A' ? vid.href : '');
                   if (src) {
                     if (src.includes('download-video?url=')) {
                       const urlParam = src.match(/url=([^&]+)/);
@@ -951,9 +989,11 @@ export class DomObserver {
                 const audioSelector = (modeCfg?.mediaKind === 'audio' && toSelectorString(modeCfg.contentSelector)) || (
                   'audio, audio source, audio a[href], audio[src], audio[src^="blob:"], audio[src^="data:audio/"], a[download][href*="audio"], a[download][href*="music"], a[href*="/music/"], a[href*=".mp3"], a[href*="download-audio"], a[href*="download-music"]'
                 );
-                const audioCandidates = Array.from(lastTurn.querySelectorAll(audioSelector));
+                const audioCandidates = ['image', 'video'].includes(modeStr) ? [] : queryAll(lastTurn, audioSelector);
                 for (const aud of audioCandidates) {
-                  let src = aud.src || aud.currentSrc || aud.getAttribute('src') || (aud.tagName === 'A' ? aud.href : '');
+                  const player = aud.tagName === 'AUDIO' || aud.tagName === 'VIDEO' ? aud : aud.closest('audio, video');
+                  if (!isVisible(player || aud) || (player && player.readyState < 2)) continue;
+                  let src = player?.currentSrc || aud.currentSrc || aud.src || aud.getAttribute('src') || (aud.tagName === 'A' ? aud.href : '');
                   if (src) {
                     if (src.includes('download-audio?url=') || src.includes('download-music?url=')) {
                       const urlParam = src.match(/url=([^&]+)/);
@@ -961,13 +1001,14 @@ export class DomObserver {
                         src = decodeURIComponent(urlParam[1]);
                       }
                     }
+                    if (excludedMediaUrls.has(src) || excludedMediaUrls.has(src.split('#')[0])) continue;
                     mediaUrl = src.split('#')[0];
                     mediaType = 'audio';
                     break;
                   }
                 }
 
-                const hasDoneImage = !!validImg && (validImg.complete !== false) && !!(validImg.src || validImg.getAttribute('src'));
+                const hasDoneImage = Boolean(validImg);
                 const hasDoneVideo = !!mediaUrl && mediaType === 'video';
                 const hasDoneAudio = !!mediaUrl && mediaType === 'audio';
 
@@ -982,7 +1023,7 @@ export class DomObserver {
                 );
 
                 const hasTurnThinking = !hasDoneImage && !hasDoneVideo && !hasDoneAudio && (
-                  !!lastTurn.querySelector(genIndicatorSelector) ||
+                  !!queryOne(lastTurn, genIndicatorSelector) ||
                   (lastTurn.textContent || '').includes('กำลังประมวลผล') ||
                   (lastTurn.textContent || '').includes('กำลังสร้างวิดีโอ') ||
                   (lastTurn.textContent || '').includes('กำลังสร้าง')
@@ -994,8 +1035,9 @@ export class DomObserver {
                 }
 
                 const textSelector = toSelectorString(recipeCfg?.response?.textSelector);
+                // A media wrapper may contain progress UI alongside the answer.
                 const textTarget = textSelector
-                  ? (lastTurn.querySelector(textSelector) || lastTurn)
+                  ? (queryOne(lastTurn, textSelector) || (modeCfg?.responseContainer ? null : lastTurn))
                   : lastTurn;
                 lastText = extractCleanText(textTarget);
 
@@ -1016,8 +1058,8 @@ export class DomObserver {
                 hasActionButtons = !isGenerating && !hasTurnThinking && (
                   hasDoneImage || hasDoneVideo || hasDoneAudio ||
                   (!!turnContainer && (
-                    !!turnContainer.querySelector(actionSelector) ||
-                    Array.from(turnContainer.querySelectorAll('button, a, span.sr-only')).some(b => {
+                    !!queryOne(turnContainer, actionSelector) ||
+                    Array.from(queryAll(turnContainer, 'button, a, span.sr-only')).some(b => {
                       const text = (b.textContent || '').toLowerCase();
                       return text.includes('copy message') || text.includes('copy') || text.includes('คัดลอก') || text.includes('download image') || text.includes('download') || text.includes('ดาวน์โหลด');
                     })
@@ -1032,13 +1074,15 @@ export class DomObserver {
           // Global Blob-to-DataURI Converter:
           // Browser-internal "blob:" URLs cannot be downloaded or saved by Node.js outside the browser.
           // Convert any blob media URL directly into a Base64 data URI within the page origin.
-          if (mediaUrl && mediaUrl.startsWith('blob:')) {
+          if (${resolveBlob} && mediaUrl && mediaUrl.startsWith('blob:')) {
             const controller = new AbortController();
             let blobTimeout;
             try {
               const blobData = (async () => {
                 const response = await fetch(mediaUrl, { signal: controller.signal });
+                if (!response.ok) return null;
                 const blob = await response.blob();
+                if (!blob.size || blob.size > 100 * 1024 * 1024) return null;
                 return await new Promise((resolve) => {
                   const reader = new FileReader();
                   reader.onloadend = () => resolve(reader.result);
@@ -1078,6 +1122,7 @@ export class DomObserver {
             isSecurityWarning,
             securityWarningReason,
             text: lastText,
+            responseTurnCount,
             mediaUrl,
             mediaType
           };

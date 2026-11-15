@@ -15,6 +15,17 @@ describe('DomObserver Multi-Provider & Media Scraping Tests', () => {
     expect(codeBlockMarkdown(block, code)).toContain('````typescript');
   });
 
+  it('preserves visually separated code lines when the DOM text concatenates them', () => {
+    const block = { getAttribute: () => null } as unknown as Element;
+    const code = {
+      textContent: '// Exampleconst answer = 42;',
+      getAttribute: () => null,
+    } as unknown as Element;
+    const rendered = { innerText: '// Example\nconst answer = 42;' } as HTMLElement;
+    expect(codeBlockMarkdown(block, code, rendered))
+      .toBe('\n```\n// Example\nconst answer = 42;\n```\n');
+  });
+
   it('preserves a lone literal transport code block without cleaning its code or disclaimer examples', () => {
     const text = 'TRANSGENTIC_TOOL_CALLS_V2\n[]\n# Heading\n```ts\nconst x = /\\d+/;\n```\nAI may make mistakes\n';
     const target = (outsideText: string, count = 1) => ({

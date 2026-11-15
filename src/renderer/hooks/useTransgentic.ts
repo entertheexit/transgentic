@@ -52,7 +52,7 @@ const DEFAULT_REGISTRY: RegistryStore = {
     hourlyLimit: 30,
     cooldownSeconds: 6,
     models: [
-      { id: 'default', displayName: 'Current provider model', discoveredAvailable: true, userEnabled: true, modes: ['general', 'coding', 'image'] },
+      { id: 'default', displayName: 'Current', discoveredAvailable: true, userEnabled: true, modes: ['general', 'coding', 'image'] },
     ],
   },
   claude: {
@@ -63,7 +63,7 @@ const DEFAULT_REGISTRY: RegistryStore = {
     hourlyLimit: 35,
     cooldownSeconds: 6,
     models: [
-      { id: 'default', displayName: 'Current provider model', discoveredAvailable: true, userEnabled: true, modes: ['general', 'coding'] },
+      { id: 'default', displayName: 'Current', discoveredAvailable: true, userEnabled: true, modes: ['general', 'coding'] },
     ],
   },
   gemini: {
@@ -74,7 +74,7 @@ const DEFAULT_REGISTRY: RegistryStore = {
     hourlyLimit: 50,
     cooldownSeconds: 5,
     models: [
-      { id: 'default', displayName: 'Current provider model', discoveredAvailable: true, userEnabled: true, modes: ['general', 'coding', 'image', 'video', 'music'] },
+      { id: 'default', displayName: 'Current', discoveredAvailable: true, userEnabled: true, modes: ['general', 'coding', 'image', 'video', 'music'] },
     ],
   },
   meta: {
@@ -84,7 +84,7 @@ const DEFAULT_REGISTRY: RegistryStore = {
     defaultModelId: 'default',
     hourlyLimit: 30,
     cooldownSeconds: 6,
-    models: [{ id: 'default', displayName: 'Current provider selection', discoveredAvailable: true, userEnabled: true, modes: ['general', 'coding'] }],
+    models: [{ id: 'default', displayName: 'Current', discoveredAvailable: true, userEnabled: true, modes: ['general', 'coding'] }],
   },
   grok: {
     serviceEnabled: true,
@@ -94,7 +94,7 @@ const DEFAULT_REGISTRY: RegistryStore = {
     hourlyLimit: 40,
     cooldownSeconds: 6,
     models: [
-      { id: 'default', displayName: 'Current provider model', discoveredAvailable: true, userEnabled: true, modes: ['general', 'coding', 'image', 'video'] },
+      { id: 'default', displayName: 'Current', discoveredAvailable: true, userEnabled: true, modes: ['general', 'coding', 'image', 'video'] },
     ],
   },
 };

@@ -37,6 +37,7 @@ export interface MediaSetting {
 interface RecipeGenerationBase {
   activationSteps: MediaStep[];
   unavailableWhen?: MediaLocator;
+  unavailableMessage?: string;
   settings: MediaSetting[];
   models?: string[];
   nativeDefaults?: Record<string, MediaValue>;
@@ -44,8 +45,8 @@ interface RecipeGenerationBase {
 
 /** Prompt-directed providers prove composer readiness; they do not claim a native tool toggle. */
 export type RecipeGeneration = RecipeGenerationBase & (
-  | { strategy?: 'controls'; activeWhen: MediaLocator; readyWhen?: never; promptInstruction?: never }
-  | { strategy: 'prompt'; readyWhen: MediaLocator; promptInstruction: string; activeWhen?: never }
+  | { strategy?: 'controls'; activeWhen: MediaLocator; afterInputWhen?: MediaLocator; activationMarker?: 'empty-composer'; readyWhen?: never; promptInstruction?: never }
+  | { strategy: 'prompt'; readyWhen: MediaLocator; promptInstruction: string; activeWhen?: never; afterInputWhen?: never; activationMarker?: never }
 );
 
 export function mediaGenerationPrompt(generation: RecipeGeneration | undefined, prompt: string): string {
@@ -188,16 +189,19 @@ export function validateGeneration(raw: unknown): RecipeGeneration {
   const base = {
     activationSteps: steps(raw.activationSteps),
     ...(raw.unavailableWhen ? { unavailableWhen: locator(raw.unavailableWhen) } : {}),
+    ...(typeof raw.unavailableMessage === 'string' && raw.unavailableMessage.trim()
+      ? { unavailableMessage: raw.unavailableMessage.trim().slice(0, 300) } : {}),
     settings,
     ...(raw.models ? { models: raw.models as string[] } : {}),
     ...(nativeDefaults ? { nativeDefaults } : {}),
   };
   if (raw.strategy === 'prompt') {
-    if (raw.activeWhen !== undefined || typeof raw.promptInstruction !== 'string' ||
+    if (raw.activeWhen !== undefined || raw.afterInputWhen !== undefined || raw.activationMarker !== undefined || typeof raw.promptInstruction !== 'string' ||
         !raw.promptInstruction.trim() || raw.promptInstruction.length > 1000 ||
         raw.promptInstruction.includes('\0') || settings.length > 0 || base.activationSteps.length > 0) return fail();
     return { ...base, strategy: 'prompt', readyWhen: locator(raw.readyWhen), promptInstruction: raw.promptInstruction.trim() };
   }
   if (raw.readyWhen !== undefined || raw.promptInstruction !== undefined) return fail();
-  return { ...base, ...(raw.strategy ? { strategy: 'controls' as const } : {}), activeWhen: locator(raw.activeWhen) };
+  if (raw.activationMarker !== undefined && (raw.activationMarker !== 'empty-composer' || raw.afterInputWhen || settings.length)) return fail();
+  return { ...base, ...(raw.activationMarker ? { activationMarker: 'empty-composer' as const } : {}), ...(raw.strategy ? { strategy: 'controls' as const } : {}), activeWhen: locator(raw.activeWhen), ...(raw.afterInputWhen ? { afterInputWhen: locator(raw.afterInputWhen) } : {}) };
 }

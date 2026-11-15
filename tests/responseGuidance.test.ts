@@ -290,7 +290,7 @@ describe('Actual provider answers with server-side reminders', () => {
     vi.mocked(DynamicRouter.getCandidateChain).mockReturnValue(['gemini', 'grok']);
     const mediaAdapter = new CustomRecipeAdapter(BUILTIN_RECIPES.gemini);
     vi.mocked(globalSessionManager.getAdapter).mockReturnValue(mediaAdapter);
-    vi.spyOn(mediaAdapter, 'createPinnedExecutionAdapter').mockReturnValue(mediaAdapter);
+    const pinExecution = vi.spyOn(mediaAdapter, 'createPinnedExecutionAdapter').mockReturnValue(mediaAdapter);
     vi.spyOn(mediaAdapter, 'prepareMediaPage').mockResolvedValue();
     vi.spyOn(mediaAdapter, 'navigateToNewChat').mockResolvedValue();
     vi.spyOn(mediaAdapter, 'checkRateLimit').mockResolvedValue({ isRateLimited: false });
@@ -313,7 +313,7 @@ describe('Actual provider answers with server-side reminders', () => {
       expect(result.content[0].text).toContain('[truncated]');
     }
     expect(execute).toHaveBeenCalledOnce();
-    expect(globalSessionManager.getAdapter).not.toHaveBeenCalledWith('grok');
+    expect(pinExecution).toHaveBeenCalledOnce();
     expect(completion).not.toHaveBeenCalled();
   });
 

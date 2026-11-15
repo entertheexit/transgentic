@@ -21,7 +21,6 @@ import { SessionProfileManager } from './security/antiDetection.js';
 import { CdpCompatibilityManager } from './security/cdpStealth.js';
 import { DynamicRouter } from './mcp/router.js';
 import { ModelRegistryManager } from './registry/modelRegistry.js';
-import { ModelScraperEngine } from './registry/modelScrapers.js';
 import { globalRateLimiter } from './mcp/rateLimiter.js';
 import { globalThreadManager } from './registry/threadManager.js';
 import { ServiceManifestManager } from './registry/serviceManifest.js';
@@ -517,7 +516,7 @@ function getStealthPreloadPath(): string | undefined {
 
     // Listen for URL changes, in-page navigation, and page load to auto-update auth state
     const handleNavigation = (url: string) => {
-      if (!url || globalSessionManager.isManagedConversation(contents)) return;
+      if (!url || globalSessionManager.isIsolatedProviderView(contents)) return;
       const matched = globalSessionManager.getProviderFromUrl(url);
       if (matched) {
         globalSessionManager.registerWebContents(matched, contents);
@@ -531,7 +530,7 @@ function getStealthPreloadPath(): string | undefined {
       const u = contents.getURL();
       handleNavigation(u);
       const matchedP = globalSessionManager.getProviderFromUrl(u);
-      if (matchedP && !globalSessionManager.isManagedConversation(contents)) {
+      if (matchedP && !globalSessionManager.isIsolatedProviderView(contents)) {
         globalHealingManager.handleWebContentsLoaded(matchedP, contents);
       }
     });
@@ -548,6 +547,14 @@ function getStealthPreloadPath(): string | undefined {
 
   // 5. Create Main Squircle Window
   const mainWindow = globalWindowManager.createMainWindow();
+
+  const refreshNativeModels = () => {
+    void Promise.allSettled(ServiceManifestManager.getEnabledProviders()
+      .map(id => refreshNonWebModels(id)));
+  };
+  refreshNativeModels();
+  nativeModelRefreshTimer = setInterval(refreshNativeModels, 60 * 60_000);
+  nativeModelRefreshTimer.unref();
 
   // Verify enabled native services in the background. Each connection check is
   // answer-only and runs without a registered workspace or project permissions.
@@ -1258,21 +1265,10 @@ function setupIpcHandlers() {
     return reg;
   });
   ipcMain.handle('models:resync', async (_, targetProvider?: ProviderId) => {
-    const providersToSync: ProviderId[] = targetProvider
-      ? [targetProvider]
-      : (ServiceManifestManager.getEnabledProviders().filter((p) => p !== 'localllm' && !isCliProvider(p) && !p.startsWith('api_')) as ProviderId[]);
-    for (const p of providersToSync) {
-      if (isCliProvider(p)) { await globalCliRuntime.probe(p); continue; }
-      try {
-        const contents = await globalSessionManager.ensureWebContents(p);
-        const discovered = await ModelScraperEngine.discoverModels(p, contents);
-        if (discovered && discovered.length > 0) {
-          ModelRegistryManager.mergeDiscoveredModels(p, discovered);
-        }
-      } catch (e: any) {
-        console.warn(`[Transgentic] Model resync notice for ${p}:`, e.message);
-      }
-    }
+    const providersToSync = targetProvider ? [targetProvider] : ServiceManifestManager.getEnabledProviders();
+    await Promise.allSettled(providersToSync.map(id =>
+      ServiceManifestManager.getManifest().services[id]?.providerType === 'webview'
+        ? globalSessionManager.refreshModels(id, true) : refreshNonWebModels(id, true)));
     return ModelRegistryManager.getRegistry();
   });
 
@@ -1695,8 +1691,38 @@ function setupIpcHandlers() {
   });
 }
 
+let nativeModelRefreshTimer: ReturnType<typeof setInterval> | undefined;
+const networkModelRefreshes = new Map<ProviderId, Promise<void>>();
+
+function refreshNonWebModels(id: ProviderId, force = false): Promise<unknown> {
+  if (isCliProvider(id)) {
+    if (force) return globalCliRuntime.probe(id).then(() => globalCliRuntime.discoverModels(id, true));
+    return globalCliRuntime.discoverModels(id);
+  }
+  const service = ServiceManifestManager.getManifest().services[id];
+  const local = id === 'localllm' ? currentConfig.localLLM : undefined;
+  const baseUrl = local?.enabled ? local.baseUrl : id !== 'localllm' && service?.providerType === 'api' ? service.baseUrl : undefined;
+  if (!baseUrl) return Promise.resolve();
+  const pending = networkModelRefreshes.get(id);
+  if (pending) return pending;
+  const apiKey = service?.apiKey;
+  const task = LocalLlmClient.fetchModels(baseUrl, local?.preset || 'custom', apiKey)
+    .then(models => {
+      if (!models.length || !ServiceManifestManager.isServiceEnabled(id)) return;
+      const active = ServiceManifestManager.getManifest().services[id];
+      if (local ? currentConfig.localLLM !== local : active !== service || active?.baseUrl !== baseUrl ||
+          active?.apiKey !== apiKey) return;
+      const catalog = [...new Set(models.filter(model => typeof model === 'string' && model.trim() && model.length <= 200))]
+        .slice(0, 200).map(model => ({ id: model, displayName: model }));
+      if (catalog.length) ModelRegistryManager.mergeDiscoveredModels(id, catalog);
+    }).finally(() => { networkModelRefreshes.delete(id); });
+  networkModelRefreshes.set(id, task);
+  return task;
+}
+
 app.on('before-quit', () => {
   globalWindowManager.isQuitting = true;
+  if (nativeModelRefreshTimer) clearInterval(nativeModelRefreshTimer);
   globalCliRuntime.dispose();
   globalMcpServer.stop();
   trayManager?.destroy();

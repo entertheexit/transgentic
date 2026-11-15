@@ -287,7 +287,7 @@ export class CookieSyncManager {
     adapter = adapter || globalSessionManager.getAdapter(providerId);
     const webContents = adapter?.getWebContents();
 
-    if (webContents && !webContents.isDestroyed()) {
+    if (webContents && !webContents.isDestroyed() && !adapter?.isLocked()) {
       if (payload.localStorage && Object.keys(payload.localStorage).length > 0) {
         const lsScript = `
           (function() {
@@ -324,7 +324,7 @@ export class CookieSyncManager {
       } else {
         webContents.reload();
       }
-    } else {
+    } else if (!adapter?.isLocked()) {
       const openWebContents = globalSessionManager.getWebContents(providerId);
       if (openWebContents && !openWebContents.isDestroyed()) {
         openWebContents.reload();

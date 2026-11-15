@@ -23,6 +23,7 @@ export interface CompletionTool {
 
 export interface CompletionRequest {
   model: string;
+  reasoning_effort?: string;
   messages: CompletionMessage[];
   tools?: CompletionTool[];
   tool_choice?: 'auto' | 'none' | 'required' | { type: 'function'; function: { name: string } };

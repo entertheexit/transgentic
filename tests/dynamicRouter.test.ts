@@ -67,18 +67,56 @@ describe('DynamicRouter Model Routing', () => {
     expect(genModel).toBe('gemini-3-1-flash-lite');
   });
 
+  it('skips a chat model configured on a media route and rejects it as an explicit media model', () => {
+    DynamicRouter.updateRouteConfig('image', {
+      providerModels: {
+        [TEST_WEBVIEW_ID]: {
+          defaultModelId: 'gemini-3-1-flash-lite',
+          fallbackModelIds: ['sample-image-lite'],
+        },
+      },
+    });
+
+    expect(DynamicRouter.resolveTargetModel(TEST_WEBVIEW_ID, 'image')).toBe('sample-image-lite');
+    expect(DynamicRouter.resolveTargetModel(TEST_WEBVIEW_ID, 'image', 'gemini-3-1-flash-lite')).toBeNull();
+    expect(DynamicRouter.resolveTargetModel(TEST_WEBVIEW_ID, 'general')).toBe('gemini-3-1-flash-lite');
+  });
+
+  it('chooses a recipe-compatible media model over a mode-compatible route default', () => {
+    DynamicRouter.updateRouteConfig('image', {
+      providerModels: {
+        [TEST_WEBVIEW_ID]: { defaultModelId: 'gpt-image-2', fallbackModelIds: [] },
+      },
+    });
+    const allowed = ['sample-image-lite'];
+    expect(DynamicRouter.resolveTargetModel(TEST_WEBVIEW_ID, 'image', undefined, 'main', allowed))
+      .toBe('sample-image-lite');
+    expect(DynamicRouter.resolveTargetModel(TEST_WEBVIEW_ID, 'image', 'gpt-image-2', 'main', allowed))
+      .toBeNull();
+  });
+
   it('should prioritize explicit model requests if valid and enabled', () => {
     // Requesting sample-image-lite explicitly for image mode
     const explicit = DynamicRouter.resolveTargetModel(TEST_WEBVIEW_ID, 'image', 'sample-image-lite');
     expect(explicit).toBe('sample-image-lite');
   });
 
-  it('should return null for services without supportsModelRouting to delegate to ModelRegistryManager', () => {
+  it('lists only recipe-compatible media models for a custom provider', () => {
+    const service = ServiceManifestManager.getManifest().services[TEST_WEBVIEW_ID];
+    service.mediaModelAllowlist = { image: ['gpt-image-2'], video: [] };
+    expect(ServiceManifestManager.getModelsForMode(TEST_WEBVIEW_ID, 'image').map(model => model.id))
+      .toEqual(['gpt-image-2']);
+    expect(ServiceManifestManager.getModelsForMode(TEST_WEBVIEW_ID, 'video')).toEqual([]);
+    expect(ServiceManifestManager.getModelsForMode(TEST_WEBVIEW_ID, 'general').map(model => model.id))
+      .toContain('gemini-3-1-flash-lite');
+  });
+
+  it('preserves the provider default before a named route is configured', () => {
     const chatgptModel = DynamicRouter.resolveTargetModel('chatgpt', 'general');
-    expect(chatgptModel).toBeNull();
+    expect(chatgptModel).toBe('default');
 
     const claudeModel = DynamicRouter.resolveTargetModel('claude', 'coding');
-    expect(claudeModel).toBeNull();
+    expect(claudeModel).toBe('default');
   });
 
   it('should respect custom route updates to providerModels per mode', () => {
@@ -99,6 +137,25 @@ describe('DynamicRouter Model Routing', () => {
     const rule = DynamicRouter.getRule('image');
     expect(rule.providerModels?.[TEST_WEBVIEW_ID]?.defaultModelId).toBe('sample-image-lite');
     expect(rule.providerModels?.[TEST_WEBVIEW_ID]?.fallbackModelIds).toEqual(['gpt-image-2', 'nano-banana-pro']);
+  });
+
+  it('uses the ordered model chain for the selected pipeline and lets explicit requests replace it', () => {
+    DynamicRouter.updateRouteConfig('image', {
+      providerModels: {
+        [TEST_WEBVIEW_ID]: {
+          defaultModelId: 'sample-image-lite',
+          fallbackModelIds: ['gpt-image-2', 'sample-image-lite', 'nano-banana-pro'],
+        },
+      },
+    });
+
+    expect(DynamicRouter.getModelAttempts(TEST_WEBVIEW_ID, 'image', 'main'))
+      .toEqual(['sample-image-lite', 'gpt-image-2', 'nano-banana-pro']);
+    expect(DynamicRouter.getModelAttempts(TEST_WEBVIEW_ID, 'image', 'co'))
+      .toEqual(['gpt-image-2']);
+    expect(DynamicRouter.getModelAttempts(TEST_WEBVIEW_ID, 'image', 'main', ['nano-banana-pro']))
+      .toEqual(['nano-banana-pro']);
+    expect(DynamicRouter.isCompatibleModel(TEST_WEBVIEW_ID, 'image', 'kimi-k2-7-code')).toBe(false);
   });
 
   it('should fall back to fallbackModelIds if defaultModelId is disabled', () => {

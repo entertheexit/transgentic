@@ -1,3 +1,5 @@
+import { effortModelId } from '../../shared/modelEffort.js';
+import { ServiceManifestManager } from '../registry/serviceManifest.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
@@ -74,7 +76,29 @@ export function parseCliModelText(output: string): CliModelOption[] {
 
 export function parseCodexModelList(items: unknown): CliModelOption[] {
   if (!Array.isArray(items)) return [];
-  return normalizeModelOptions(items.map((item: any) => ({ id: item?.model || item?.id, name: item?.displayName || item?.model || item?.id })));
+  return normalizeModelOptions(items.map((item: any) => ({
+    id: item?.model || item?.id, name: item?.displayName || item?.model || item?.id,
+  }))).map(model => {
+    const entry = items.find(item => (item?.model || item?.id) === model.id);
+    const levels = entry?.supportedReasoningEfforts;
+    const efforts: string[] = Array.isArray(levels)
+      ? [...new Set<string>(levels.map(level => level?.reasoningEffort)
+        .filter(effort => typeof effort === 'string' && /^[a-z][a-z0-9_-]{0,31}$/.test(effort)))] : [];
+    return efforts.length ? { ...model, efforts } : model;
+  });
+}
+
+export function parseCodexPickerCache(raw: unknown): CliModelOption[] {
+  const models = (raw as { models?: unknown } | null)?.models;
+  if (!Array.isArray(models)) return [];
+  return normalizeModelOptions(models
+    .filter(model => model?.visibility === 'list')
+    .map(model => ({ id: model.slug, name: model.display_name }))).map(model => {
+      const levels = models.find(entry => entry.slug === model.id)?.supported_reasoning_levels;
+      const efforts = Array.isArray(levels) ? levels.map(level => level?.effort)
+        .filter(effort => typeof effort === 'string' && /^[a-z][a-z0-9_-]{0,31}$/.test(effort)) : [];
+      return efforts.length ? { ...model, efforts } : model;
+    });
 }
 export function normalizeCliConfig(input?: CliConfig): CliConfig {
   return {
@@ -171,6 +195,15 @@ export class CliRuntimeManager {
     const pending = this.modelCatalogRequests.get(id);
     if (pending) return structuredClone(await pending);
     const request = this.discoverModelsUncached(id, executable).then(result => {
+      if (result.state === 'available') {
+        ServiceManifestManager.setDiscoveredWebModels(id, result.models.flatMap(model => [
+          { id: model.id, displayName: model.name },
+          ...(model.efforts || []).map(effort => ({
+            id: effortModelId(model.id, effort),
+            displayName: model.name + ' ' + effort,
+          })),
+        ]));
+      }
       this.modelCatalogCache.set(id, { fingerprint, result, expiresAt: Date.now() + (result.state === 'available' ? 10 * 60_000 : 30_000) });
       return result;
     }).finally(() => this.modelCatalogRequests.delete(id));
@@ -192,8 +225,12 @@ export class CliRuntimeManager {
     try {
       let models: CliModelOption[] = [];
       if (id === 'cli_codex') {
-        const launch = sandboxInvocation(executable, ['app-server', '--stdio'], policy, scratch, nativeStorage, this.gatewayPort, trustedExecutables, [], [], true);
-        proc = new CliProcess(launch.command, launch.args, { cwd: scratch, env: { ...cliEnvironment(), TMPDIR: scratch }, timeoutMs: 20_000 });
+        const launch = sandboxInvocation(executable, ['app-server', '--listen', 'stdio://'], policy, scratch, nativeStorage, this.gatewayPort, trustedExecutables, [], [], true);
+        proc = new CliProcess(launch.command, launch.args, {
+          cwd: scratch,
+          env: { ...cliEnvironment(), TMPDIR: scratch, CODEX_SQLITE_HOME: scratch },
+          timeoutMs: 20_000,
+        });
         await proc.request('initialize', { clientInfo: { name: 'transgentic', title: 'Transgentic', version: '1.0.1' }, capabilities: { experimentalApi: true, requestAttestation: false } });
         proc.write({ method: 'initialized' });
         let cursor: string | null = null;
@@ -215,6 +252,18 @@ export class CliRuntimeManager {
       if (!models.length) return { provider: id, state: 'error', models: [], message: 'The CLI returned no selectable models. You can enter a model manually.', fetchedAt };
       return { provider: id, state: 'available', models, fetchedAt };
     } catch {
+      if (id === 'cli_codex') {
+        try {
+          const cache = path.join(nativeStorage[0], 'models_cache.json');
+          if (fs.statSync(cache).size <= 8 * 1024 * 1024) {
+            const models = parseCodexPickerCache(JSON.parse(fs.readFileSync(cache, 'utf8')));
+            if (models.length) {
+              return { provider: id, state: 'available', models, fetchedAt,
+                message: 'Showing the native Codex picker cache. Live model discovery failed.' };
+            }
+          }
+        } catch { /* Keep the discovery error if the native cache is unavailable. */ }
+      }
       return { provider: id, state: 'error', models: [], message: 'Could not fetch this CLI model list. You can enter a model manually.', fetchedAt };
     } finally {
       if (proc) { proc.stop(); await proc.closed; }
@@ -239,7 +288,7 @@ export class CliRuntimeManager {
     await Promise.allSettled(Array.from(new Set(ids)).map(id => this.testConnection(id)));
   }
   async execute(id: CliProviderId, prompt: string, options: {
-    reqId: string; conversationKey: string; newThread?: boolean; model?: string; request?: CliRequestOptions; desktop?: boolean; reviewer?: boolean; signal?: AbortSignal; progress?: (message: string) => void; beforeStart?: (signal: AbortSignal) => Promise<void>; attachments?: readonly StagedAttachment[];
+    reqId: string; conversationKey: string; newThread?: boolean; model?: string; effort?: string; request?: CliRequestOptions; desktop?: boolean; reviewer?: boolean; signal?: AbortSignal; progress?: (message: string) => void; beforeStart?: (signal: AbortSignal) => Promise<void>; attachments?: readonly StagedAttachment[];
   }): Promise<CliResult> {
     throwIfCancelled(options.signal);
     const controller = new AbortController();
@@ -265,7 +314,7 @@ export class CliRuntimeManager {
         try {
           const policy = resolvePolicy(config, id, options.request || {}, options.desktop === true, scratch, options.reviewer);
           const nativeStorage = [path.join(os.homedir(), id === 'cli_codex' ? '.codex' : id === 'cli_claude_code' ? '.claude' : id === 'cli_grok' ? '.grok' : '.gemini/antigravity-cli')];
-          const fingerprint = crypto.createHash('sha256').update(JSON.stringify([executable, fs.statSync(executable).mtimeMs, config.services[id], options.model, policy.workspaceId, policy.allowCommands, policy.allowProjectEditing])).digest('hex');
+          const fingerprint = crypto.createHash('sha256').update(JSON.stringify([executable, fs.statSync(executable).mtimeMs, config.services[id], options.model, options.effort, policy.workspaceId, policy.allowCommands, policy.allowProjectEditing])).digest('hex');
           const key = JSON.stringify([id, options.conversationKey, fingerprint]);
           for (const [k, s] of this.sessions) if (Date.now() - s.lastUsed > 86400000) this.sessions.delete(k);
           if (options.newThread) this.sessions.delete(key);
@@ -282,7 +331,7 @@ export class CliRuntimeManager {
               attachments.push({ ...file, path: destination });
             }
           }
-          const input = { prompt, model, sessionId: previous?.id, policy, progress: options.progress, attachments };
+          const input = { prompt, model, effort: options.effort, sessionId: previous?.id, policy, progress: options.progress, attachments };
           // Fixed native helpers inherit the outer sandbox; granting them does
           // not grant provider-requested shells or other project commands.
           const trustedExecutables = cliHelperExecutables(id, executable);
@@ -306,7 +355,7 @@ export class CliRuntimeManager {
           if (result.permissionDenied) throw new Error('CLI could not perform an operation under the configured permissions. Review the activity and permission settings.');
           if (result.sessionId) this.sessions.set(key, { id: result.sessionId, lastUsed: Date.now() });
           this.setStatus(id, { state: 'ready', message: undefined, resetAt: undefined });
-          return { ...result, wasNewChat: !previous };
+          return { ...result, modelUsed: result.modelUsed || model, wasNewChat: !previous };
         } catch (error) {
           const err = error as Error & { noFallback?: boolean };
           if (mayHaveSideEffects) { err.noFallback = true; err.message += ' Project actions may already have occurred. Inspect the workspace before retrying; Transgentic will not replay this request on a fallback.'; }

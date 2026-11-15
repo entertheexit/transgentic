@@ -1,0 +1,30 @@
+name: Verify Yarn Classic
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: |
+          corepack enable yarn
+          corepack install --global yarn@1.22.22
+          yarn install --frozen-lockfile --non-interactive
+
+      - name: Build and test
+        run: |
+          yarn build
+          yarn test --maxWorkers=1

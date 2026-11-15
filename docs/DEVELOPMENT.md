@@ -14,16 +14,25 @@ Source setup, isolated tests, and desktop packaging for developers modifying Tra
 
 ## Source setup
 
-These commands obtain a source checkout governed by [LICENSE](../LICENSE). Install Git, Node.js 20 or later, and npm 10 or later. Check dependency engine requirements for the versions being installed.
+These commands obtain a source checkout governed by [LICENSE](../LICENSE). Install Git and Node.js 22.12 or later, then use npm 10+ or Yarn Classic 1.22.22.
 
 ```bash
 git clone https://github.com/entertheexit/transgentic.git
 cd transgentic
-npm install
-npm run dev
 ```
 
-If you already have a checkout, run the last two commands from its directory. Development mode starts the renderer and Electron watchers. The desktop is still a running application: it can load local configuration, session data, and enabled provider connections. These steps do not install a local model.
+Run the commands for your package manager from the checkout directory.
+
+| Task | npm | Yarn Classic |
+| :--- | :--- | :--- |
+| Install dependencies | `npm ci` | `yarn install --frozen-lockfile` |
+| Start development mode | `npm run dev` | `yarn dev` |
+| Run the test suite in an isolated checkout | `npm test` | `yarn test` |
+| Build from source and launch Electron | `npm start` | `yarn start` |
+
+Yarn Classic may warn about the presence of `package-lock.json`. Keep both lockfiles. Each package manager uses its own lockfile. Use a fresh checkout or remove `node_modules` before switching package managers. When changing dependencies, update and commit both lockfiles.
+
+Development mode starts the renderer and Electron watchers. The desktop is still a running application: it can load local configuration, session data, and enabled provider connections. These steps do not install a local model.
 
 ## Tests
 
@@ -44,7 +53,7 @@ The live test sends prompts to the configured model. A passing mocked test is no
 
 ## Builds
 
-Scripts are defined in [package.json](../package.json).
+Scripts are defined in [package.json](../package.json). Yarn uses the same script names, for example `yarn build`, `yarn build:mac`, and `yarn dist`.
 
 | Command | Purpose |
 | :--- | :--- |

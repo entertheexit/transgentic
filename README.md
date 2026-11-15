@@ -13,13 +13,13 @@
 </p>
 
 <p align="center">
-  <strong><a href="https://github.com/entertheexit/transgentic/releases/latest">Download desktop app</a></strong> ·
-  <strong><a href="https://github.com/entertheexit/transgentic/releases/latest/download/transgentic-sync-v1.2.1.zip">Download Chrome extension (.zip)</a></strong>
+  <strong><a href="https://github.com/entertheexit/transgentic/releases/latest">Download Desktop App</a></strong> ·
+  <strong><a href="https://github.com/entertheexit/transgentic/releases/latest/download/transgentic-sync-v1.2.1.zip">Download Chrome Extension (.zip)</a></strong>
 </p>
 
 <p align="center">
   <a href="https://buymeacoffee.com/patiparnne"><img src="docs/assets/badge-buy-me-a-coffee.svg" alt="Support on Buy Me a Coffee" height="30"></a>
-  <a href="https://www.patreon.com/patiparnne"><img src="docs/assets/badge-patreon.svg" alt="Support on Patreon" height="30"></a>
+  <a href="https://discord.gg/pW79MGa9e"><img src="docs/assets/badge-discord.svg" alt="Join our Discord" height="30"></a>
 </p>
 
 <p align="center">
@@ -141,7 +141,7 @@ Use the actual port shown in the app. Replace `YOUR_TOKEN` locally and do not co
 }
 ```
 
-Client formats vary; use the endpoint and header above in your client's supported configuration. After tool discovery, ask the agent:
+For setup and authentication in Codex, Cursor, Antigravity, Claude Desktop, VS Code, Bionic, Claude Code, and LM Studio, see the [client setup guide](docs/CONNECTING.md#client-setup). After tool discovery, ask the agent:
 
 > Use Transgentic MCP in coding mode to write a JavaScript function square(n) that returns n * n.
 
@@ -383,7 +383,7 @@ Model responses include `content` and structured fields such as `status`, `answe
 | [Settings and routing](docs/CONFIGURATION.md) | Balanced Mode, Double Agent, Recall, local models, fallbacks, media, updates |
 | [Custom webview recipes](docs/RECIPES.md) | Recipe fields, JSON examples, installation, consent, storage, selector repair |
 | [Architecture and data handling](docs/ARCHITECTURE.md) | Request flow, session lifecycle, credential masking, storage boundaries |
-| [Development and builds](docs/DEVELOPMENT.md) | Source setup, isolated tests, desktop packaging, documentation maintenance |
+| [Development and builds](docs/DEVELOPMENT.md) | Source setup with npm or Yarn Classic, isolated tests, desktop packaging |
 | [Weekly provider health check](docs/PROVIDER_HEALTH_CHECK.md) | Repeatable model, mode, Temporary Chat, CLI, transport, and recipe verification |
 | [Publication guidance](docs/PUBLICATION.md) | Source hygiene, release review, third-party notices, publication checks |
 
@@ -453,6 +453,7 @@ The [publication check](docs/PUBLICATION.md#source-hygiene-and-build-checks) is 
 
 - [Repository](https://github.com/entertheexit/transgentic)
 - [Issue tracker](https://github.com/entertheexit/transgentic/issues)
+- [Join the Transgentic Discord](https://discord.gg/pW79MGa9e)
 - Optional funding:
 
   [Buy Me a Coffee](https://buymeacoffee.com/patiparnne) · [Patreon](https://www.patreon.com/patiparnne)

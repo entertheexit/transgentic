@@ -6,7 +6,16 @@ import { CLI_IDS, builtInCliServices, defaultCliService } from '../src/shared/cl
 import { resolvePolicy, cliEnvironment, macSandboxProfile, validatedMacUserKeychainPaths } from '../src/main/cli/executionPolicy.js';
 import { JsonLineDecoder } from '../src/main/cli/processRunner.js';
 import { adapterArgs, executeAdapter } from '../src/main/cli/adapters.js';
-import { CliRuntimeManager, normalizeCliConfig, parseCliModelText, parseCodexModelList, resolveExecutable, cliHelperExecutables } from '../src/main/cli/cliRuntimeManager.js';
+import { CliRuntimeManager, normalizeCliConfig, parseCliModelText, parseCodexModelList, parseCodexPickerCache, resolveExecutable, cliHelperExecutables } from '../src/main/cli/cliRuntimeManager.js';
+
+it('lists only visible, valid Codex models from the native picker cache', () => {
+  expect(parseCodexPickerCache({ models: [
+    { slug: 'gpt-6-astra', display_name: 'GPT-6 Astra', visibility: 'list' },
+    { slug: 'hidden-model', visibility: 'hide' },
+    { slug: 'invalid slug', visibility: 'list' },
+  ] })).toEqual([{ id: 'gpt-6-astra', name: 'GPT-6 Astra' }]);
+  expect(parseCodexPickerCache(null)).toEqual([]);
+});
 
 vi.mock('electron', () => ({ app: undefined }));
 

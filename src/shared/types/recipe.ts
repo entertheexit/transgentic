@@ -54,6 +54,8 @@ export interface RecipeSelectors {
 }
 
 export interface RecipeModeResponse {
+  /** Optional media response wrapper when generated assets sit beside the Markdown. */
+  responseContainer?: SelectorCandidate;
   /** Explain an intentionally disabled workflow in capability discovery. */
   unavailableReason?: string;
   generation?: RecipeGeneration;
@@ -211,6 +213,23 @@ export interface CustomRecipeModelDef {
 
 /** Site-specific model controls are supplied by the recipe, never inferred from a provider catalog. */
 export interface RecipeModelSelection {
+  effort?: {
+    submenu?: string;
+    submenuLabel?: string;
+    submenuInput?: 'hover';
+    panel?: string;
+    item?: string;
+    slider?: string;
+    labels: Record<string, string>;
+  };
+  activeLabel?: string;
+  knownChoices?: Record<string, { id: string; displayName: string }>;
+  submenu?: string;
+  namePattern?: string;
+  disabledText?: string;
+  openInput?: 'pointerdown' | 'native';
+  closeInput?: 'toggle';
+  selectInput?: 'pointer' | 'keyboard';
   trigger?: string;
   item: string;
   name?: string;
@@ -224,6 +243,8 @@ export interface RecipeModelSelection {
 }
 
 export interface CustomRecipe {
+  /** Allow selectors to resolve inside nested open shadow roots. */
+  openShadowDom?: boolean;
   modeSchemaVersion?: 2;
   version: string;
   disclaimer?: string;
@@ -700,9 +721,25 @@ export function validateCustomRecipe(raw: any): { valid: boolean; errors: string
     ...(raw.disclaimerAcceptance && typeof raw.disclaimerAcceptance.version === 'string' && typeof raw.disclaimerAcceptance.text === 'string' && typeof raw.disclaimerAcceptance.acceptedAt === 'string'
       ? { disclaimerAcceptance: { version: raw.disclaimerAcceptance.version, text: raw.disclaimerAcceptance.text, acceptedAt: raw.disclaimerAcceptance.acceptedAt } } : {}),
     ...(raw.modelSelection && typeof raw.modelSelection.item === 'string' && raw.modelSelection.item.trim()
-      ? { modelSelection: Object.fromEntries(Object.entries(raw.modelSelection).filter(([key, value]) =>
-          ['trigger', 'item', 'name', 'idAttribute', 'tier', 'tabs', 'confirm', 'confirmText', 'close', 'scrollContainer'].includes(key) && typeof value === 'string'
-        ).map(([key, value]) => [key, (value as string).trim()])) as unknown as RecipeModelSelection } : {}),
+      ? { modelSelection: {
+          ...Object.fromEntries(Object.entries(raw.modelSelection).filter(([key, value]) =>
+            ['trigger', 'item', 'name', 'activeLabel', 'submenu', 'namePattern', 'disabledText', 'openInput', 'closeInput', 'selectInput', 'idAttribute', 'tier', 'tabs', 'confirm', 'confirmText', 'close', 'scrollContainer'].includes(key) && typeof value === 'string'
+          ).map(([key, value]) => [key, (value as string).trim()])),
+          ...(raw.modelSelection.effort && typeof raw.modelSelection.effort.labels === 'object' && raw.modelSelection.effort.labels ? {
+            effort: {
+              ...(raw.modelSelection.effort.submenuInput === 'hover' ? { submenuInput: 'hover' as const } : {}),
+              ...Object.fromEntries(['submenu', 'submenuLabel', 'panel', 'item', 'slider'].flatMap(key =>
+                typeof raw.modelSelection.effort[key] === 'string' ? [[key, raw.modelSelection.effort[key]]] : [])),
+              labels: Object.fromEntries(Object.entries(raw.modelSelection.effort.labels).filter(([key, label]) =>
+                /^[a-z][a-z0-9_-]{0,31}$/.test(key) && typeof label === 'string' && label.length > 0)),
+            },
+          } : {}),
+          ...(raw.modelSelection.knownChoices && typeof raw.modelSelection.knownChoices === 'object' ? {
+            knownChoices: Object.fromEntries(Object.entries(raw.modelSelection.knownChoices).filter(([, choice]) =>
+              choice && typeof (choice as { id?: unknown }).id === 'string' &&
+              typeof (choice as { displayName?: unknown }).displayName === 'string')),
+          } : {}),
+        } as RecipeModelSelection } : {}),
     id: raw.id.trim(),
     title: raw.title.trim(),
     domainMatch: raw.domainMatch.trim().toLowerCase(),
@@ -715,6 +752,7 @@ export function validateCustomRecipe(raw: any): { valid: boolean; errors: string
       ...(raw.selectors.contexts && typeof raw.selectors.contexts === 'object' ? { contexts: raw.selectors.contexts } : {}),
     },
     authStrategy: 'cookie_sync',
+    ...(raw.openShadowDom === true ? { openShadowDom: true } : {}),
     createdAt: raw.createdAt || new Date().toISOString(),
     updatedAt: raw.updatedAt || new Date().toISOString(),
     ...(raw.healedAt ? { healedAt: String(raw.healedAt) } : {}),
@@ -741,6 +779,7 @@ export function validateCustomRecipe(raw: any): { valid: boolean; errors: string
                 ...(raw.response.modes.image.generation ? { generation: validateGeneration(raw.response.modes.image.generation) } : {}),
                 ...(typeof raw.response.modes.image.unavailableReason === 'string' ? { unavailableReason: raw.response.modes.image.unavailableReason.trim() } : {}),
                 enabled: Boolean(raw.response.modes.image.enabled),
+                responseContainer: normalizeSelectorCandidate(raw.response.modes.image.responseContainer),
                 pageUrl: raw.response.modes.image.pageUrl?.trim() || undefined,
                 inputSelector: normalizeSelectorCandidate(raw.response.modes.image.inputSelector),
                 submitSelector: normalizeSelectorCandidate(raw.response.modes.image.submitSelector),
@@ -757,6 +796,7 @@ export function validateCustomRecipe(raw: any): { valid: boolean; errors: string
                 ...(raw.response.modes.video.generation ? { generation: validateGeneration(raw.response.modes.video.generation) } : {}),
                 ...(typeof raw.response.modes.video.unavailableReason === 'string' ? { unavailableReason: raw.response.modes.video.unavailableReason.trim() } : {}),
                 enabled: Boolean(raw.response.modes.video.enabled),
+                responseContainer: normalizeSelectorCandidate(raw.response.modes.video.responseContainer),
                 pageUrl: raw.response.modes.video.pageUrl?.trim() || undefined,
                 inputSelector: normalizeSelectorCandidate(raw.response.modes.video.inputSelector),
                 submitSelector: normalizeSelectorCandidate(raw.response.modes.video.submitSelector),
@@ -773,6 +813,7 @@ export function validateCustomRecipe(raw: any): { valid: boolean; errors: string
                 ...(raw.response.modes.music.generation ? { generation: validateGeneration(raw.response.modes.music.generation) } : {}),
                 ...(typeof raw.response.modes.music.unavailableReason === 'string' ? { unavailableReason: raw.response.modes.music.unavailableReason.trim() } : {}),
                 enabled: Boolean(raw.response.modes.music.enabled),
+                responseContainer: normalizeSelectorCandidate(raw.response.modes.music.responseContainer),
                 pageUrl: raw.response.modes.music.pageUrl?.trim() || undefined,
                 inputSelector: normalizeSelectorCandidate(raw.response.modes.music.inputSelector),
                 submitSelector: normalizeSelectorCandidate(raw.response.modes.music.submitSelector),

@@ -1,3 +1,4 @@
+import { isModelAllowedForMode } from '../../shared/types.js';
 import { isBuiltinProvider } from '../../shared/providers.js';
 import fs from "fs";
 import { builtInCliServices } from '../../shared/cli.js';
@@ -29,6 +30,7 @@ export class ServiceManifestManager {
       ...builtInCliServices(),
       chatgpt: {
         id: "chatgpt",
+        supportsModelRouting: true,
         name: "ChatGPT",
         company: "OpenAI",
         enabled: true,
@@ -48,11 +50,12 @@ export class ServiceManifestManager {
           glowClass: "shadow-[0_0_15px_rgba(16,185,129,0.15)]",
         },
         models: [
-          { id: "default", displayName: "Current provider model", enabled: true, discoveredAvailable: true, userEnabled: true, modes: ["general", "coding", "image"] },
+          { id: "default", displayName: "Current", enabled: true, discoveredAvailable: true, userEnabled: true, modes: ["general", "coding", "image"] },
         ],
       },
       claude: {
         id: "claude",
+        supportsModelRouting: true,
         name: "Claude",
         company: "Anthropic",
         enabled: true,
@@ -72,11 +75,12 @@ export class ServiceManifestManager {
           glowClass: "shadow-[0_0_15px_rgba(245,158,11,0.15)]",
         },
         models: [
-          { id: "default", displayName: "Current provider model", enabled: true, discoveredAvailable: true, userEnabled: true, modes: ["general", "coding"] },
+          { id: "default", displayName: "Current", enabled: true, discoveredAvailable: true, userEnabled: true, modes: ["general", "coding"] },
         ],
       },
       gemini: {
         id: "gemini",
+        supportsModelRouting: true,
         name: "Gemini",
         company: "Google",
         enabled: true,
@@ -96,11 +100,12 @@ export class ServiceManifestManager {
           glowClass: "shadow-[0_0_15px_rgba(59,130,246,0.15)]",
         },
         models: [
-          { id: "default", displayName: "Current provider model", enabled: true, discoveredAvailable: true, userEnabled: true, modes: ["general", "coding", "image", "video", "music"] },
+          { id: "default", displayName: "Current", enabled: true, discoveredAvailable: true, userEnabled: true, modes: ["general", "coding", "image", "video", "music"] },
         ],
       },
       grok: {
         id: "grok",
+        supportsModelRouting: true,
         name: "Grok",
         company: "xAI",
         enabled: true,
@@ -120,11 +125,12 @@ export class ServiceManifestManager {
           glowClass: "shadow-[0_0_15px_rgba(168,85,247,0.15)]",
         },
         models: [
-          { id: "default", displayName: "Current provider model", enabled: true, discoveredAvailable: true, userEnabled: true, modes: ["general", "coding", "image", "video", "music"] },
+          { id: "default", displayName: "Current", enabled: true, discoveredAvailable: true, userEnabled: true, modes: ["general", "coding", "image", "video"] },
         ],
       },
       meta: {
         id: 'meta',
+        supportsModelRouting: true,
         name: 'Meta AI',
         company: 'Meta',
         providerType: 'webview',
@@ -136,7 +142,7 @@ export class ServiceManifestManager {
         accentColor: 'blue',
         iconName: 'Sparkles',
         models: [
-          { id: 'default', displayName: 'Current provider selection', enabled: true, discoveredAvailable: true, userEnabled: true, modes: ['general', 'coding', 'image', 'video'] },
+          { id: 'default', displayName: 'Current', enabled: true, discoveredAvailable: true, userEnabled: true, modes: ['general', 'coding', 'image', 'video'] },
         ],
       },
       localllm: {
@@ -204,7 +210,9 @@ export class ServiceManifestManager {
               version: parsed.version || baseManifest.version,
               services: {
                 ...baseManifest.services,
-                ...parsed.services,
+                ...Object.fromEntries(Object.entries(parsed.services).map(([id, service]) => [
+                  id, { ...baseManifest.services[id], ...service as Partial<ServiceManifestEntry> },
+                ])),
               },
             };
           }
@@ -660,6 +668,7 @@ export class ServiceManifestManager {
       return [];
     }
     const matched = service.models.filter((m) => {
+      if (!isModelAllowedForMode(service, m.id, mode)) return false;
       if (m.mode === mode) return true;
       if (Array.isArray(m.modes) && m.modes.includes(mode)) return true;
       // If mode is 'general' and no explicit mode is defined, include it
@@ -697,22 +706,29 @@ export class ServiceManifestManager {
 
   public static setDiscoveredWebModels(
     providerId: ProviderId,
-    models: Array<{ id: string; displayName: string; requiresTier?: string }>
+    models: Array<{ id: string; displayName: string; requiresTier?: string }>,
+    preserveUnobserved = false,
   ): void {
-    if (!isBuiltinProvider(providerId)) return;
-    const service = this.currentManifest.services[providerId];
+    const service = this.getManifest().services[providerId];
     if (!service || models.length === 0) return;
     const previous = new Map((service.models || []).map(model => [model.id, model]));
+    const discovered = new Map(models.map(model => [model.id, model]));
+    // Preserve declared media routing and user choices when the text picker omits them.
+    const retained = (service.models || []).filter(model => model.id === 'default' ||
+      (!discovered.has(model.id) && (preserveUnobserved || model.id === service.defaultModelId ||
+        model.modes?.some(mode => mode === 'image' || mode === 'video' || mode === 'music') ||
+        model.mode === 'image' || model.mode === 'video' || model.mode === 'music')));
     service.models = [
-      ...(previous.get('default') ? [previous.get('default')!] : []),
+      ...retained,
       ...models.filter(model => model.id !== 'default').map(model => ({
+        ...previous.get(model.id),
         id: model.id,
         displayName: model.displayName,
         enabled: previous.get(model.id)?.enabled !== false,
-        discoveredAvailable: true,
         userEnabled: previous.get(model.id)?.userEnabled !== false,
-        requiresTier: model.requiresTier,
-        modes: ['general', 'coding'] as Array<'general' | 'coding'>,
+        discoveredAvailable: true,
+        requiresTier: model.requiresTier ?? previous.get(model.id)?.requiresTier,
+        modes: previous.get(model.id)?.modes || ['general', 'coding'],
       })),
     ];
     this.notify();

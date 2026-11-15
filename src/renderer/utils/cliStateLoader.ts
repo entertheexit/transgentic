@@ -2,7 +2,7 @@ import type { CliState } from '../../shared/cli.js';
 
 export async function loadCliState(api?: { getCliState?: () => Promise<CliState> }, timeoutMs = 10000): Promise<CliState> {
   if (typeof api?.getCliState !== 'function') {
-    throw new Error('The desktop bridge is out of date. Stop and restart npm run dev to load CLI Services.');
+    throw new Error('The desktop bridge is out of date. Stop and restart npm run dev or yarn dev to load CLI Services.');
   }
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
