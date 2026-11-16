@@ -141,6 +141,18 @@ describe('Provider response visibility', () => {
 
 describe('Provider intervention while polling', () => {
   const idle = { text: '', isGenerating: false, isThinking: false, isMediaRendering: false, isRateLimited: false, isSecurityWarning: false, hasActionButtons: false };
+  it('reports an idle submission before the full Coding response deadline', async () => {
+    vi.useFakeTimers();
+    const executeScript = vi.fn().mockResolvedValue(idle);
+    const pending = BaseProviderAdapter.prototype.pollGeneration.call(
+      { providerId: 'custom_example', name: 'Example', executeScript } as any,
+      { mode: 'coding', responseStartTimeoutMs: 45_000 },
+    );
+    const assertion = expect(pending).rejects.toThrow('No response activity was observed within 45s');
+    await vi.advanceTimersByTimeAsync(46_000);
+    await assertion;
+  });
+
   it('surfaces native media access blockers on the first polling tick', async () => {
     vi.useFakeTimers();
     const executeScript = vi.fn().mockResolvedValue({ ...idle, mediaUnavailableReason: 'Subscription required' });

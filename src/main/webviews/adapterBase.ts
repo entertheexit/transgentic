@@ -61,6 +61,7 @@ export interface PollGenerationOptions {
   metadata?: ProjectMetadata;
   excludedMediaUrls?: string[];
   previousResponse?: Pick<DomInspectionResult, 'text' | 'responseTurnCount'>;
+  responseStartTimeoutMs?: number;
 }
 
 export abstract class BaseProviderAdapter {
@@ -226,14 +227,17 @@ export abstract class BaseProviderAdapter {
     requireButton = false,
     beforeSubmit?: () => void,
     submitReadyTimeoutMs?: number,
+    abortSignal?: AbortSignal,
+    activation?: 'dom',
   ): Promise<{ success: boolean; error?: string; method?: string }> {
     const effectiveButton = await this.getEffectiveSelector('submitButton', buttonSelector);
     const effectiveInput = inputSelector ? await this.getEffectiveSelector('inputPrompt', inputSelector) : undefined;
     if (this.webContents && typeof this.webContents.sendInputEvent === 'function') {
-      type SubmitTarget = { x?: number; y?: number; ambiguous?: boolean; offscreen?: boolean; obscured?: boolean };
+      type SubmitTarget = { x?: number; y?: number; ambiguous?: boolean; offscreen?: boolean; obscured?: boolean; obstruction?: string };
       let target: SubmitTarget | null;
       const targetDeadline = Date.now() + (submitReadyTimeoutMs ?? 2_000);
       do {
+        abortSignal?.throwIfAborted();
         target = await this.executeScript<SubmitTarget | null>(
           InputDispatcher.getSubmitTargetScript(effectiveButton, effectiveInput)
         );
@@ -244,10 +248,28 @@ export abstract class BaseProviderAdapter {
         if (Date.now() >= targetDeadline) break;
         await new Promise(resolve => setTimeout(resolve, 50));
       } while (true);
+      abortSignal?.throwIfAborted();
       if (target?.ambiguous) return { success: false, error: 'Multiple declared submit controls are actionable.' };
-      if (target?.obscured) return { success: false, error: 'The declared submit control is covered by another provider control.' };
+      if (target?.obscured) {
+        const obstruction = target.obstruction ? ` (${target.obstruction})` : '';
+        return { success: false, error: `The declared submit control is covered by another provider control${obstruction}.` };
+      }
       if (target?.offscreen) return { success: false, error: 'The declared submit control is outside the provider viewport.' };
       if (Number.isFinite(target?.x) && Number.isFinite(target?.y)) {
+        if (activation === 'dom') {
+          beforeSubmit?.();
+          try {
+            const activated = await this.executeScript<SubmitTarget | null>(
+              InputDispatcher.getSubmitTargetScript(effectiveButton, effectiveInput, true),
+            );
+            if (Number.isFinite(activated?.x) && Number.isFinite(activated?.y)) {
+              return { success: true, method: 'declared_button_click' };
+            }
+            return { success: false, error: 'The declared submit control changed before activation.' };
+          } catch {
+            throw new Error('[WEBVIEW_SUBMISSION_UNCERTAIN] Button activation could not be confirmed.');
+          }
+        }
         const debuggerApi = this.webContents.debugger;
         if (debuggerApi && typeof debuggerApi.sendCommand === 'function') {
           let attachedHere = false;
@@ -291,6 +313,8 @@ export abstract class BaseProviderAdapter {
       }
       if (requireButton) return { success: false, error: 'The declared submit control is unavailable.' };
     }
+    abortSignal?.throwIfAborted();
+    if (requireButton) return { success: false, error: 'Native input for the declared submit control is unavailable.' };
     const script = InputDispatcher.getSubmitScript(effectiveButton, effectiveInput, requireButton);
     beforeSubmit?.();
     const res = await this.executeScript<{ success: boolean; error?: string; method?: string }>(script);
@@ -398,6 +422,8 @@ export abstract class BaseProviderAdapter {
     let lastText = '';
     let lastMediaUrl = '';
     let stableTicks = 0;
+    let lastInspection: DomInspectionResult | undefined;
+    let responseStarted = false;
     const inspectScript = DomObserver.getInspectionScript(this.providerId, mode, (this as any).recipe, options.excludedMediaUrls, !expectsMedia);
     const checkProviderState = (inspection: DomInspectionResult) => {
       if (inspection.error) {
@@ -446,6 +472,13 @@ export abstract class BaseProviderAdapter {
 
       await checkCancellation();
       const inspection = await readResponse();
+      lastInspection = inspection;
+      responseStarted ||= Boolean(inspection.text || inspection.mediaUrl || inspection.isGenerating ||
+        inspection.isThinking || inspection.isMediaRendering);
+      if (!responseStarted && options.responseStartTimeoutMs &&
+          Date.now() - startTime >= options.responseStartTimeoutMs) {
+        throw new Error(`No response activity was observed within ${options.responseStartTimeoutMs / 1000}s after submission.`);
+      }
 
       // If model is actively thinking or rendering media, ensure budget accommodates deep reasoning & media generation (at least 420s)
       if (inspection.isThinking || inspection.isMediaRendering) {
@@ -637,7 +670,10 @@ export abstract class BaseProviderAdapter {
       return { text: cleanedFinal };
     }
 
-    throw new Error(`Timeout after ${Math.round(maxBudgetMs / 1000)}s waiting for ${this.name} response completion.`);
+    const responseState = lastInspection && !expectsMedia
+      ? ` Background view: response turns ${options.previousResponse?.responseTurnCount ?? 'unknown'} → ${lastInspection.responseTurnCount ?? 'unknown'}, generating: ${lastInspection.isGenerating}, thinking: ${lastInspection.isThinking}.`
+      : '';
+    throw new Error(`Timeout after ${Math.round(maxBudgetMs / 1000)}s waiting for ${this.name} response completion.${responseState}`);
   }
 
   /**

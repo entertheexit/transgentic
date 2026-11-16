@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { providerQueryScript } from './domQuery.js';
 import { isBuiltinProvider } from '../../shared/providers.js';
 import { session } from 'electron';
@@ -589,6 +589,11 @@ export class CustomRecipeAdapter extends BaseProviderAdapter {
       : undefined;
     let attached = false;
     let submitted = false;
+    const submission = modeConfig?.submission;
+    const verifyTextSubmission = modeKey === 'text' && submission?.method === 'button';
+    let submittedDraftProbe: string | undefined;
+    let submissionUrl: string | undefined;
+    let draftAfterClick: string | undefined;
     let excludedMediaUrls: string[] | undefined;
     let previousResponse: DomInspectionResult | undefined;
     const editorGuard = modeConfig?.generation?.activationMarker === 'empty-composer'
@@ -678,14 +683,34 @@ export class CustomRecipeAdapter extends BaseProviderAdapter {
       // A shadow composer can render an attachment chip before its upload
       // finishes and only expose Submit once the upload is usable.
       const waitForAttachmentSubmit = Boolean(attachments.length && this.recipe.openShadowDom);
+      const requireSendButton = submission?.method === 'button';
+      if (verifyTextSubmission) {
+        const composer = await this.getEffectiveSelector('inputPrompt', inputSelector);
+        const expectedDigest = createHash('sha256').update(submittedPrompt.trim()).digest('hex');
+        submittedDraftProbe = `(async () => {
+          const editor = ${InputDispatcher.getInputTargetScript(composer)};
+          if (!editor) return 'unavailable';
+          const draft = (editor.value ?? editor.innerText ?? editor.textContent ?? '').trim();
+          if (!draft) return 'empty';
+          const bytes = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(draft));
+          const digest = Array.from(new Uint8Array(bytes), byte => byte.toString(16).padStart(2, '0')).join('');
+          return digest === ${JSON.stringify(expectedDigest)} ? 'unchanged' : 'changed';
+        })()`;
+        if (await this.executeScript<string>(submittedDraftProbe) !== 'unchanged') {
+          throw new Error('[WEBVIEW_INPUT_UNAVAILABLE] The composed prompt changed before submission.');
+        }
+        submissionUrl = contents.getURL();
+      }
+      const recipeTimeout = submission?.readyTimeoutMs ?? (requireSendButton ? 8_000 : undefined);
+      const submitTimeout = waitForAttachmentSubmit ? Math.max(15_000, recipeTimeout ?? 0) : recipeTimeout;
       const submitResult = await this.dispatchRealisticSubmit(
-        submitSelector, inputSelector, undefined, Boolean(verifyMedia) || waitForAttachmentSubmit, () => {
+        submitSelector, inputSelector, undefined, Boolean(verifyMedia) || waitForAttachmentSubmit || requireSendButton, () => {
           if (abortSignal?.aborted) {
             throw Object.assign(new Error('Request cancelled before submission.'), { name: 'AbortError' });
           }
           onSubmitted?.();
           submitted = true;
-        }, waitForAttachmentSubmit ? 15_000 : undefined,
+        }, submitTimeout, abortSignal, submission?.activation,
       );
       if (!submitResult?.success) throw new Error(`Failed to submit prompt to "${this.name}": ${submitResult?.error || 'No actionable submit control'}`);
       submitted = true;
@@ -700,6 +725,9 @@ export class CustomRecipeAdapter extends BaseProviderAdapter {
 
     // Short buffer for page to register submission and begin streaming
     await new Promise((r) => setTimeout(r, 600));
+    if (submittedDraftProbe) {
+      draftAfterClick = await this.executeScript<string>(submittedDraftProbe).catch(() => 'unavailable');
+    }
 
     if (this.temporaryChatRequired && !await this.verifyTemporaryChat()) {
       throw new Error('[TEMPORARY_CHAT_SUBMISSION_UNCERTAIN] The prompt may have been submitted, but the provider no longer confirms Temporary Chat. It was not retried elsewhere.');
@@ -707,7 +735,10 @@ export class CustomRecipeAdapter extends BaseProviderAdapter {
 
     // 5. Polling with dynamic timeout budget
     try {
-      const result = await this.pollGeneration({ mode, metadata: project, onChunk, abortSignal, excludedMediaUrls, previousResponse });
+      const result = await this.pollGeneration({
+        mode, metadata: project, onChunk, abortSignal, excludedMediaUrls, previousResponse,
+        ...(verifyTextSubmission ? { responseStartTimeoutMs: 45_000 } : {}),
+      });
       if (this.temporaryChatRequired && !await this.verifyTemporaryChat()) {
         throw new Error('[TEMPORARY_CHAT_SUBMISSION_UNCERTAIN] The provider response completed after Temporary Chat verification was lost. It was not retried elsewhere.');
       }
@@ -717,7 +748,15 @@ export class CustomRecipeAdapter extends BaseProviderAdapter {
       if (this.temporaryChatRequired && !String(error?.message || '').includes('[TEMPORARY_CHAT_')) {
         throw new Error(`[TEMPORARY_CHAT_SUBMISSION_UNCERTAIN] The prompt may have been submitted, and the response could not be completed: ${error?.message || 'unknown provider error'}`);
       }
-      if (!this.temporaryChatRequired) throw new Error(`[WEBVIEW_SUBMISSION_UNCERTAIN] The prompt may have been submitted, and the response could not be completed: ${error?.message || 'unknown provider error'}`);
+      if (!this.temporaryChatRequired) {
+        const draftAtFailure = submittedDraftProbe
+          ? await this.executeScript<string>(submittedDraftProbe).catch(() => 'unavailable')
+          : undefined;
+        const state = draftAtFailure
+          ? ` Composer after click: ${draftAfterClick}; at failure: ${draftAtFailure}; navigation observed: ${!contents.isDestroyed() && contents.getURL() !== submissionUrl}.`
+          : '';
+        throw new Error(`[WEBVIEW_SUBMISSION_UNCERTAIN] The prompt may have been submitted, and the response could not be completed: ${error?.message || 'unknown provider error'}${state}`);
+      }
       throw error;
     }
   }

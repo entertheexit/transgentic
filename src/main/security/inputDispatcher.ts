@@ -5,7 +5,7 @@
  */
 export class InputDispatcher {
   /** Resolve a unique declared button before any irreversible native input. */
-  public static getSubmitTargetScript(selector: string, inputSelector?: string): string {
+  public static getSubmitTargetScript(selector: string, inputSelector?: string, activate = false): string {
     return `(function() {
       let candidates = Array.from((typeof queryAll === 'function' ? queryAll.bind(null, document) : document.querySelectorAll.bind(document))(${JSON.stringify(selector)})).filter(el => {
         if (el.disabled || el.hasAttribute('disabled') || el.getAttribute('aria-disabled') === 'true') return false;
@@ -34,20 +34,33 @@ export class InputDispatcher {
       if (!candidates.length) return null;
       candidates[0].scrollIntoView?.({ block: 'nearest', inline: 'nearest', behavior: 'instant' });
       const rect = candidates[0].getBoundingClientRect();
-      const x = Math.round(rect.x + rect.width / 2);
-      const y = Math.round(rect.y + rect.height / 2);
-      if ((typeof innerWidth === 'number' && (x < 0 || x >= innerWidth)) ||
-          (typeof innerHeight === 'number' && (y < 0 || y >= innerHeight))) return { offscreen: true };
-      let hit = document.elementFromPoint?.(x, y);
-      if (typeof openShadowDom !== 'undefined' && openShadowDom) {
-        while (hit?.shadowRoot) {
-          const inner = hit.shadowRoot.elementFromPoint?.(x, y);
-          if (!inner || inner === hit) break;
-          hit = inner;
+      const left = Math.max(0, rect.x);
+      const top = Math.max(0, rect.y);
+      const right = Math.min(innerWidth, rect.x + rect.width);
+      const bottom = Math.min(innerHeight, rect.y + rect.height);
+      if (left >= right || top >= bottom) return { offscreen: true };
+      let coveringElement;
+      for (const [horizontal, vertical] of [[.5, .5], [.25, .5], [.75, .5], [.5, .25], [.5, .75]]) {
+        const x = left + (right - left) * horizontal;
+        const y = top + (bottom - top) * vertical;
+        let hit = document.elementFromPoint?.(x, y);
+        if (typeof openShadowDom !== 'undefined' && openShadowDom) {
+          while (hit?.shadowRoot) {
+            const inner = hit.shadowRoot.elementFromPoint?.(x, y);
+            if (!inner || inner === hit) break;
+            hit = inner;
+          }
         }
+        if (hit && (hit === candidates[0] || contains(candidates[0], hit))) {
+          if (${activate}) candidates[0].click();
+          return { x, y };
+        }
+        coveringElement ??= hit;
       }
-      if (hit && hit !== candidates[0] && !contains(candidates[0], hit)) return { obscured: true };
-      return { x, y };
+      const tag = coveringElement?.localName;
+      const role = coveringElement?.getAttribute?.('role');
+      const obstruction = [tag, role].filter(value => /^[a-z][a-z0-9-]{0,39}$/i.test(value || '')).join('/');
+      return { obscured: true, ...(obstruction ? { obstruction } : {}) };
     })()`;
   }
 

@@ -54,6 +54,8 @@ export interface RecipeSelectors {
 }
 
 export interface RecipeModeResponse {
+  /** Optional policy for submitting the composed prompt. */
+  submission?: { method: 'auto' | 'button'; readyTimeoutMs?: number; activation?: 'dom' };
   /** Optional media response wrapper when generated assets sit beside the Markdown. */
   responseContainer?: SelectorCandidate;
   /** Explain an intentionally disabled workflow in capability discovery. */
@@ -709,9 +711,33 @@ export function validateCustomRecipe(raw: any): { valid: boolean; errors: string
     }
   }
 
+  for (const mode of ['text', 'image', 'video', 'music'] as const) {
+    const submission = raw.response?.modes?.[mode]?.submission;
+    if (submission === undefined) continue;
+    const field = `response.modes.${mode}.submission`;
+    if (!submission || !['auto', 'button'].includes(submission.method)) {
+      errors.push(`${field}.method must be "auto" or "button".`);
+      continue;
+    }
+    const timeout = submission.readyTimeoutMs;
+    if (submission.activation !== undefined && (submission.method !== 'button' || submission.activation !== 'dom')) {
+      errors.push(`${field}.activation must be "dom" and requires button submission.`);
+    }
+    if (timeout !== undefined && (!Number.isInteger(timeout) || timeout < 1 || timeout > 30_000)) {
+      errors.push(`${field}.readyTimeoutMs must be an integer from 1 to 30000.`);
+    }
+  }
+
   if (errors.length > 0) {
     return { valid: false, errors };
   }
+
+  const preserveSubmission = (mode: keyof RecipeModes) => {
+    const submission = raw.response.modes[mode]?.submission;
+    if (!submission) return {};
+    const { method, readyTimeoutMs, activation } = submission;
+    return { submission: { method, ...(readyTimeoutMs !== undefined ? { readyTimeoutMs } : {}), ...(activation ? { activation } : {}) } };
+  };
 
   const sanitized: CustomRecipe = {
     modeSchemaVersion: 2,
@@ -768,7 +794,11 @@ export function validateCustomRecipe(raw: any): { valid: boolean; errors: string
       excludeSelectors: Array.isArray(raw.response.excludeSelectors) ? raw.response.excludeSelectors : [],
       modes: {
         text: {
+          ...preserveSubmission('text'),
           enabled: Boolean(raw.response.modes.text?.enabled ?? true),
+          responseContainer: normalizeSelectorCandidate(raw.response.modes.text?.responseContainer),
+          inputSelector: normalizeSelectorCandidate(raw.response.modes.text?.inputSelector),
+          submitSelector: normalizeSelectorCandidate(raw.response.modes.text?.submitSelector),
           contentSelector: normalizeSelectorCandidate(raw.response.modes.text?.contentSelector),
           mediaKind: 'text',
           ...(sanitizeAttachmentInput(raw.response.modes.text?.inputAttachments) ? { inputAttachments: sanitizeAttachmentInput(raw.response.modes.text.inputAttachments) } : {}),
@@ -776,6 +806,7 @@ export function validateCustomRecipe(raw: any): { valid: boolean; errors: string
         ...(raw.response.modes.image
           ? {
               image: {
+                ...preserveSubmission('image'),
                 ...(raw.response.modes.image.generation ? { generation: validateGeneration(raw.response.modes.image.generation) } : {}),
                 ...(typeof raw.response.modes.image.unavailableReason === 'string' ? { unavailableReason: raw.response.modes.image.unavailableReason.trim() } : {}),
                 enabled: Boolean(raw.response.modes.image.enabled),
@@ -793,6 +824,7 @@ export function validateCustomRecipe(raw: any): { valid: boolean; errors: string
         ...(raw.response.modes.video
           ? {
               video: {
+                ...preserveSubmission('video'),
                 ...(raw.response.modes.video.generation ? { generation: validateGeneration(raw.response.modes.video.generation) } : {}),
                 ...(typeof raw.response.modes.video.unavailableReason === 'string' ? { unavailableReason: raw.response.modes.video.unavailableReason.trim() } : {}),
                 enabled: Boolean(raw.response.modes.video.enabled),
@@ -810,6 +842,7 @@ export function validateCustomRecipe(raw: any): { valid: boolean; errors: string
         ...(raw.response.modes.music
           ? {
               music: {
+                ...preserveSubmission('music'),
                 ...(raw.response.modes.music.generation ? { generation: validateGeneration(raw.response.modes.music.generation) } : {}),
                 ...(typeof raw.response.modes.music.unavailableReason === 'string' ? { unavailableReason: raw.response.modes.music.unavailableReason.trim() } : {}),
                 enabled: Boolean(raw.response.modes.music.enabled),

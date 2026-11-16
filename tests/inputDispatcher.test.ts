@@ -312,7 +312,7 @@ it('scrolls the unique submit control into the provider viewport before resolvin
     getBoundingClientRect: () => ({ x: 20, y: scrolled ? 40 : 900, width: 100, height: 40 }),
   };
   const result = runInNewContext(InputDispatcher.getSubmitTargetScript('button'), {
-    document: { querySelectorAll: () => [button] },
+    document: { querySelectorAll: () => [button], elementFromPoint: () => button },
     getComputedStyle: () => ({ display: 'block', visibility: 'visible' }),
     innerWidth: 1024, innerHeight: 768,
   });
@@ -346,8 +346,12 @@ it('selects the send control in the active shadow composer', () => {
   };
   const otherButton = { ...button, getRootNode: () => ({ host: {} }) };
   expect(runInNewContext(InputDispatcher.getSubmitTargetScript('button', '.editor'), {
-    document: { querySelectorAll: (selector: string) => selector === '.editor' ? [input] : [otherButton, button] },
+    document: {
+      querySelectorAll: (selector: string) => selector === '.editor' ? [input] : [otherButton, button],
+      elementFromPoint: () => button,
+    },
     getComputedStyle: () => ({ display: 'block', visibility: 'visible' }),
+    innerWidth: 1024, innerHeight: 768,
     openShadowDom: true,
   })).toEqual({ x: 70, y: 60 });
 });
@@ -363,6 +367,36 @@ it('does not send trusted input through an overlay covering the submit button', 
     getComputedStyle: () => ({ display: 'block', visibility: 'visible' }),
     innerWidth: 1024, innerHeight: 768,
   })).toEqual({ obscured: true });
+});
+
+it('uses an exposed point on the declared button when its center is covered', () => {
+  const button = {
+    disabled: false, hasAttribute: () => false, getAttribute: () => 'Send', closest: () => null,
+    getBoundingClientRect: () => ({ x: 20, y: 40, width: 100, height: 40 }),
+    contains: () => false,
+  };
+  expect(runInNewContext(InputDispatcher.getSubmitTargetScript('button'), {
+    document: { querySelectorAll: () => [button], elementFromPoint: (x: number) => x < 60 ? button : {} },
+    getComputedStyle: () => ({ display: 'block', visibility: 'visible' }),
+    innerWidth: 1024, innerHeight: 768,
+  })).toEqual({ x: 45, y: 60 });
+});
+
+it('activates a declared button once only when the current hit test reaches it', () => {
+  const click = vi.fn();
+  const button = {
+    disabled: false, hasAttribute: () => false, getAttribute: () => 'Send', closest: () => null,
+    getBoundingClientRect: () => ({ x: 20, y: 40, width: 100, height: 40 }),
+    contains: () => false, click,
+  };
+  const document = { querySelectorAll: () => [button], elementFromPoint: vi.fn().mockReturnValue({}) };
+  const context = { document, getComputedStyle: () => ({ display: 'block', visibility: 'visible' }), innerWidth: 1024, innerHeight: 768 };
+  const script = InputDispatcher.getSubmitTargetScript('button', undefined, true);
+  expect(runInNewContext(script, context)).toEqual({ obscured: true });
+  expect(click).not.toHaveBeenCalled();
+  document.elementFromPoint.mockReturnValue(button);
+  expect(runInNewContext(script, context)).toEqual({ x: 70, y: 60 });
+  expect(click).toHaveBeenCalledOnce();
 });
 
 it('waits for the native submit button after an attachment without pressing Enter', async () => {
@@ -400,6 +434,30 @@ it('waits for a closing provider backdrop before sending exactly one click', asy
     await expect(pending).resolves.toMatchObject({ success: true });
     expect(executeScript).toHaveBeenCalledTimes(2);
     expect(sendInputEvent.mock.calls.map(call => call[0].type)).toEqual(['mouseDown', 'mouseUp']);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it('cancels while waiting for a declared button without dispatching input', async () => {
+  vi.useFakeTimers();
+  try {
+    const controller = new AbortController();
+    const sendInputEvent = vi.fn();
+    const adapter = {
+      getEffectiveSelector: async (_landmark: string, selector: string) => selector,
+      executeScript: vi.fn().mockResolvedValue(null),
+      webContents: { sendInputEvent },
+    };
+    const pending = (BaseProviderAdapter.prototype as any).dispatchRealisticSubmit.call(
+      adapter, 'button.send', '.editor', undefined, true, undefined, 8_000, controller.signal,
+    );
+    const rejected = expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+    await vi.advanceTimersByTimeAsync(100);
+    controller.abort();
+    await vi.advanceTimersByTimeAsync(50);
+    await rejected;
+    expect(sendInputEvent).not.toHaveBeenCalled();
   } finally {
     vi.useRealTimers();
   }

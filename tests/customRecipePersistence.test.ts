@@ -151,8 +151,37 @@ describe('Custom Recipe Session Persistence & Startup Tests', () => {
     expect(checkAfter.status).toBe('ready');
   });
 
-  it('should execute prompt with single-action submit and not trigger redundant duplicate clicks', async () => {
-    const adapter = new CustomRecipeAdapter(testRecipe as any);
+  it('preserves text selectors and submission policy across recipe imports', () => {
+    const textMode = {
+      enabled: true,
+      responseContainer: '.response',
+      inputSelector: '.composer',
+      submitSelector: '.send',
+      submission: { method: 'button', readyTimeoutMs: 12_000, activation: 'dom' },
+    };
+    const raw = { ...testRecipe, response: { container: '.reply', modes: { text: textMode } } };
+    const validated = validateCustomRecipe(structuredClone(raw));
+    expect(validated.errors).toEqual([]);
+    expect(validateCustomRecipe(JSON.parse(JSON.stringify(validated.recipe))).recipe?.response.modes.text)
+      .toMatchObject(textMode);
+    for (const readyTimeoutMs of [0, 30_001, 1.5, '8000']) {
+      const invalid = structuredClone(raw);
+      (invalid.response.modes.text.submission as { readyTimeoutMs: unknown }).readyTimeoutMs = readyTimeoutMs;
+      expect(validateCustomRecipe(invalid).valid).toBe(false);
+    }
+  });
+
+  it.each([
+    { provider: 'custom_test_persist_portal', mode: 'general', waitForSend: false, timeout: undefined },
+    { provider: 'webview_example', mode: 'general', waitForSend: true, timeout: 8_000 },
+    { provider: 'custom_example', mode: 'coding', waitForSend: true, timeout: 8_000 },
+  ] as const)('submits $provider in $mode once with its required Send policy', async ({ provider, mode, waitForSend, timeout }) => {
+    const adapter = new CustomRecipeAdapter({
+      ...testRecipe, id: provider,
+      ...(waitForSend ? {
+        response: { container: '.reply', modes: { text: { enabled: true, submission: { method: 'button' } } } },
+      } : {}),
+    } as any);
     (adapter as any).webContents = {
       isDestroyed: () => false,
       getURL: () => 'https://persist-ai.example.com/chat',
@@ -174,15 +203,19 @@ describe('Custom Recipe Session Persistence & Startup Tests', () => {
     });
 
     // Mock executeScript
-    const executeScriptSpy = vi.spyOn(adapter as any, 'executeScript').mockResolvedValue({});
+    const executeScriptSpy = vi.spyOn(adapter as any, 'executeScript').mockImplementation(async (script: string) =>
+      script.includes("return 'empty'") ? 'unchanged' : {},
+    );
 
     // Run executePrompt
-    const result = await adapter.executePrompt('test prompt', 'general');
+    const result = await adapter.executePrompt('test prompt', mode);
 
     expect(result.text).toBe('Mock response');
     // Verify dispatchRealisticSubmit was invoked exactly once
     expect(submitSpy).toHaveBeenCalledTimes(1);
-    expect(submitSpy).toHaveBeenCalledWith('button[type="submit"]', '#prompt-textarea', undefined, false, expect.any(Function), undefined);
+    expect(submitSpy).toHaveBeenCalledWith(
+      'button[type="submit"]', '#prompt-textarea', undefined, waitForSend, expect.any(Function), timeout, undefined, undefined,
+    );
 
     // Verify executeScript was NOT called with raw click cascades
     const executeScriptCalls = executeScriptSpy.mock.calls;
