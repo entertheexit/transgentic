@@ -1923,9 +1923,10 @@ export class TransgenticMcpServer {
             const backgroundOnly = adapter instanceof CustomRecipeAdapter &&
               (providerId === 'gemini' || (providerId === 'chatgpt' && effectiveMode === 'image'));
             contents = await globalSessionManager.ensureWebContents(providerId, activeAccount.partitionKey, backgroundOnly);
-            if ((backgroundOnly || ['image', 'video', 'music'].includes(effectiveMode) || attachments.length > 0) && adapter instanceof CustomRecipeAdapter) {
-              // Drawer registration can replace the shared adapter's view mid-request.
-              // Keep reference uploads, polling and cancellation on the submitted view.
+            if (adapter instanceof CustomRecipeAdapter) {
+              // Drawer or background navigation can replace the shared adapter's
+              // view during any request. Keep submission, polling and cancellation
+              // on the same account-bound view, including text-only requests.
               executionAdapter = adapter.createPinnedExecutionAdapter(contents, activeAccount.partitionKey);
             }
 

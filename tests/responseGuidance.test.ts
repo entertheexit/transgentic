@@ -133,6 +133,34 @@ it.each(['chatgpt', 'claude', 'gemini', 'grok'] as const)('never falls back afte
   expect(completion).not.toHaveBeenCalled();
 });
 
+it.each(['general', 'coding'] as const)('keeps a %s text request on its original view when the shared view changes', async mode => {
+  const source = new CustomRecipeAdapter(BUILTIN_RECIPES.chatgpt);
+  const originalView = { getURL: () => source.url, isDestroyed: () => false } as any;
+  const drawerView = { getURL: () => source.url, isDestroyed: () => false } as any;
+  const pinned = source.createPinnedExecutionAdapter(originalView, 'test');
+  vi.mocked(globalSessionManager.getAdapter).mockReturnValue(source);
+  vi.mocked(globalSessionManager.ensureWebContents).mockResolvedValue(originalView);
+  vi.spyOn(source, 'createPinnedExecutionAdapter').mockReturnValue(pinned);
+  vi.spyOn(pinned, 'navigateToNewChat').mockResolvedValue();
+  vi.spyOn(pinned, 'checkRateLimit').mockResolvedValue({ isRateLimited: false });
+  vi.spyOn(pinned, 'acquireDomLock').mockResolvedValue(() => {});
+  vi.spyOn(pinned, 'getConversationUrl').mockResolvedValue(source.url);
+  vi.spyOn(ModelScraperEngine, 'selectModelAndEffort').mockImplementation(async () => {
+    source.setWebContents(drawerView);
+  });
+  const execute = vi.spyOn(pinned, 'executePrompt').mockImplementation(async () => {
+    expect(source.getWebContents()).toBe(drawerView);
+    expect(pinned.getWebContents()).toBe(originalView);
+    return { text: answer };
+  });
+
+  const result = await run('Connection test', mode, 'chatgpt');
+
+  expect(result.isError).not.toBe(true);
+  expect(execute).toHaveBeenCalledOnce();
+  expect(source.createPinnedExecutionAdapter).toHaveBeenCalledWith(originalView, 'test');
+});
+
 it('never falls back when a coalesced normal-chat submission is uncertain', async () => {
   vi.spyOn(DynamicRouter, 'getCandidateChain').mockReturnValue(['claude', 'localllm']);
   vi.spyOn(DuplicateActionGuard, 'getInFlight').mockImplementation(() => ({
