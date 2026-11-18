@@ -675,8 +675,11 @@ export class CustomRecipeAdapter extends BaseProviderAdapter {
       if (editorGuard) {
         const intact = await this.executeScript<boolean>(`(() => {
           const editor = ${InputDispatcher.getInputTargetScript(inputSelector)};
+          // Rich-text editors can render paragraph breaks as multiple newlines.
+          const normalize = text => String(text ?? '').replace(/\\r\\n?/g, '\\n')
+            .replace(/\\u00a0/g, ' ').replace(/ *\\n(?: *\\n)* */g, '\\n').trim();
           return !!editor?.hasAttribute(${JSON.stringify(editorGuard)}) &&
-            (editor.value ?? editor.innerText ?? editor.textContent).trim() === ${JSON.stringify(submittedPrompt.trim())};
+            normalize(editor.value ?? editor.innerText ?? editor.textContent) === normalize(${JSON.stringify(submittedPrompt)});
         })()`);
         if (!intact) throw new Error('[MEDIA_SETTINGS_FAILED] The verified composer or draft changed before submission.');
       }

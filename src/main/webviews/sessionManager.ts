@@ -677,7 +677,7 @@ export class SessionManager {
               }
             }
           }
-          ModelRegistryManager.mergeDiscoveredModels(id, [...confirmed.values()]);
+          ModelRegistryManager.mergeDiscoveredModels(id, [...confirmed.values()], false, adapter.recipe.models);
           succeeded = true;
         }
       } finally {

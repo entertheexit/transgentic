@@ -28,6 +28,29 @@ describe("ServiceManifestManager", () => {
     expect(ServiceManifestManager.isModelEnabled("chatgpt", "gpt-4o")).toBe(true);
   });
 
+  it("skips a hidden account default and restores declared modes when it reappears", () => {
+    const provider = TEST_WEBVIEW_ID as `webview_${string}`;
+    const manifest = ServiceManifestManager.getManifest();
+    const shared = { id: "shared", displayName: "Shared", modes: ["general"] as RouteMode[] };
+    const restricted = { id: "restricted", displayName: "Restricted", modes: ["coding"] as RouteMode[] };
+    const other = { id: "other", displayName: "Other", modes: ["writing"] };
+    const declared = [shared, restricted, other];
+    manifest.services[provider] = {
+      ...manifest.services.chatgpt, id: provider, providerType: "webview",
+      supportsModelRouting: true, defaultModelId: restricted.id, models: [shared, restricted],
+    };
+
+    ServiceManifestManager.setDiscoveredWebModels(provider, [shared], false, declared);
+    expect(ServiceManifestManager.isModelEnabled(provider, restricted.id)).toBe(false);
+    expect(DynamicRouter.resolveTargetModel(provider, "general")).toBe(shared.id);
+    expect(DynamicRouter.isCompatibleModel(provider, "coding", restricted.id)).toBe(false);
+
+    ServiceManifestManager.setDiscoveredWebModels(provider, [shared, restricted, other], false, declared);
+    expect(ServiceManifestManager.isModelEnabled(provider, restricted.id)).toBe(true);
+    expect(ServiceManifestManager.getModelsForMode(provider, "coding").map(model => model.id))
+      .toEqual([restricted.id]);
+  });
+
   it("normalizes stored Writing model capabilities into shared General capabilities without duplicates", () => {
     const normalized = normalizeModelEntryModes({
       id: "legacy", displayName: "Legacy", discoveredAvailable: true, userEnabled: true,

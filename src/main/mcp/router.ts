@@ -240,7 +240,9 @@ export class DynamicRouter {
 
   public static savePersistedRoutes(): void {
     try {
-      const filePath = this.getStoragePath();
+      // Node tests can read the checked-in defaults, but only Electron persists user routes.
+      if (typeof app?.getPath !== 'function') return;
+      const filePath = path.join(app.getPath('userData'), 'mode_routes.json');
       const dir = path.dirname(filePath);
       if (!fs.existsSync(dir)) {
         fs.mkdirSync(dir, { recursive: true });
@@ -424,21 +426,22 @@ export class DynamicRouter {
 
     // 4. Check manifest for any enabled model matching this mode
     const modeModels = ServiceManifestManager.getModelsForMode(providerId, normalizeRouteMode(mode));
-    const availableModeModel = modeModels.find(m => m.enabled !== false && !parseEffortModel(m.id).effort);
+    const availableModeModel = modeModels.find(model => ServiceManifestManager.isModelEnabled(providerId, model.id) && !parseEffortModel(model.id).effort);
     if (availableModeModel) {
       return availableModeModel.id;
     }
 
     // 5. Fall back to provider default
     const manifest = ServiceManifestManager.getManifest();
-    return manifest.services[providerId]?.defaultModelId || null;
+    const defaultModel = manifest.services[providerId]?.defaultModelId;
+    return defaultModel && ServiceManifestManager.isModelEnabled(providerId, defaultModel) ? defaultModel : null;
   }
 
   public static isCompatibleModel(provider: ProviderId, mode: TaskMode, model: string): boolean {
     const service = ServiceManifestManager.getManifest().services[provider];
     const entry = service?.models?.find(candidate => candidate.id === model);
     if (!entry) return service?.providerType !== 'api' || ServiceManifestManager.isModelEnabled(provider, model);
-    if (entry.enabled === false || entry.userEnabled === false) return false;
+    if (!ServiceManifestManager.isModelEnabled(provider, model) || entry.userEnabled === false) return false;
     if (model === 'default') return true;
     const modes = entry.modes?.length ? entry.modes : entry.mode ? [entry.mode] : undefined;
     return !modes || modes.includes(normalizeRouteMode(mode));

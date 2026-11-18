@@ -713,18 +713,20 @@ export class ServiceManifestManager {
       if (isBuiltinProvider(providerId)) return true;
       return false;
     }
-    return model.enabled !== false;
+    return model.enabled !== false && (service.providerType !== 'webview' || model.discoveredAvailable !== false);
   }
 
   public static setDiscoveredWebModels(
     providerId: ProviderId,
     models: Array<{ id: string; displayName: string; requiresTier?: string }>,
     preserveUnobserved = false,
+    declaredModels: readonly { id: string; modes?: string[] }[] = [],
   ): void {
     const service = this.getManifest().services[providerId];
     if (!service || models.length === 0) return;
     const previous = new Map((service.models || []).map(model => [model.id, model]));
     const discovered = new Map(models.map(model => [model.id, model]));
+    const declaredModes = new Map(declaredModels.map(model => [model.id, model.modes?.map(normalizeRouteMode)]));
     // Preserve declared media routing and user choices when the text picker omits them.
     const retained = (service.models || []).filter(model => model.id === 'default' ||
       (!discovered.has(model.id) && (preserveUnobserved || model.id === service.defaultModelId ||
@@ -732,7 +734,9 @@ export class ServiceManifestManager {
         model.modes?.some(mode => mode === 'video' || mode === 'music') ||
         model.mode === 'image' || model.mode === 'video' || model.mode === 'music')));
     service.models = [
-      ...retained,
+      ...retained.map(model => service.providerType === 'webview' && model.id !== 'default' &&
+        !preserveUnobserved && !discovered.has(model.id) && !model.modes?.some(mode => ['image', 'video', 'music'].includes(mode))
+        ? { ...model, discoveredAvailable: false } : model),
       ...models.filter(model => model.id !== 'default').map(model => ({
         ...previous.get(model.id),
         id: model.id,
@@ -741,7 +745,7 @@ export class ServiceManifestManager {
         userEnabled: previous.get(model.id)?.userEnabled !== false,
         discoveredAvailable: true,
         requiresTier: model.requiresTier ?? previous.get(model.id)?.requiresTier,
-        modes: previous.get(model.id)?.modes || ['general', 'coding'],
+        modes: declaredModes.get(model.id) || previous.get(model.id)?.modes || ['general', 'coding'],
       })),
     ];
     normalizeServiceModelModes(service);

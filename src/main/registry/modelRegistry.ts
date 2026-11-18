@@ -350,6 +350,7 @@ export class ModelRegistryManager {
     providerId: ProviderId,
     discovered: Array<{ id: string; displayName: string; requiresTier?: string }>,
     preserveUnobserved = false,
+    declaredModels: readonly { id: string; modes?: string[] }[] = [],
   ): RegistryStore {
     if (!this.currentRegistry[providerId]) {
       this.currentRegistry[providerId] = {
@@ -360,7 +361,7 @@ export class ModelRegistryManager {
     const config = this.currentRegistry[providerId];
     if (!config) return this.getRegistry();
 
-    ServiceManifestManager.setDiscoveredWebModels(providerId, discovered, preserveUnobserved);
+    ServiceManifestManager.setDiscoveredWebModels(providerId, discovered, preserveUnobserved, declaredModels);
 
     const discoveredById = new Map(discovered.map(model => [model.id, model]));
     const nowIso = new Date().toISOString();
