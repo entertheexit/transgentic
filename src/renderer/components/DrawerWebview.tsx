@@ -529,17 +529,20 @@ Respond ONLY with valid JSON.`;
       </div>
 
       {/* Embedded Webview Container (Solid Opaque Interior) */}
-      <div className="flex-1 relative bg-[#0f1013] overflow-hidden">
+      <div className="flex-1 min-h-0 relative bg-[#0f1013]">
         {provider.url ? (
-          /* @ts-ignore */
-          <webview
-            key={`${provider.id}_${activePartition}_${provider.url}`}
-            ref={webviewRef}
-            src={provider.url}
-            partition={activePartition}
-            className="w-full h-full border-none"
-            allowpopups
-          />
+          <div className="absolute inset-0 overflow-x-auto overflow-y-hidden">
+            {/* @ts-ignore */}
+            <webview
+              key={`${provider.id}_${activePartition}_${provider.url}`}
+              ref={webviewRef}
+              src={provider.url}
+              partition={activePartition}
+              className="w-full h-full border-none flex mx-auto"
+              style={provider.viewportWidth === undefined ? undefined : { width: provider.viewportWidth }}
+              allowpopups
+            />
+          </div>
         ) : (
           <div className="flex flex-col items-center justify-center h-full text-slate-400 gap-3 p-6 text-center">
             <Globe className="w-10 h-10 text-teal-400/60 animate-pulse" />

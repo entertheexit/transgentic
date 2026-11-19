@@ -95,6 +95,15 @@ export class SessionManager {
   public registerAdapter(adapter: BaseProviderAdapter): void {
     const id = adapter.providerId;
     const previous = this.adapters.get(id);
+    const previousWidth = previous instanceof CustomRecipeAdapter ? previous.recipe.viewportWidth : undefined;
+    const viewportWidth = adapter instanceof CustomRecipeAdapter ? adapter.recipe.viewportWidth : undefined;
+    if (previousWidth !== viewportWidth) {
+      for (const [key, window] of this.backgroundWindows) {
+        if (!key.startsWith(`${id}:`) || window.isDestroyed()) continue;
+        const [, height] = window.getContentSize();
+        window.setContentSize(viewportWidth ?? 1024, height);
+      }
+    }
     if (
       previous instanceof CustomRecipeAdapter &&
       adapter instanceof CustomRecipeAdapter &&
@@ -109,6 +118,7 @@ export class SessionManager {
       name: adapter.name,
       url: adapter.url,
       partition: adapter.partition,
+      viewportWidth,
       state: 'disconnected',
       rateLimitCount: 0,
       isAuthenticated: false,
@@ -271,8 +281,10 @@ export class SessionManager {
 
     const preloadScript = getStealthPreloadPath();
     const normalizedUA = accountSession.getUserAgent();
+    const viewportWidth = adapter instanceof CustomRecipeAdapter ? adapter.recipe.viewportWidth : undefined;
     bgWin = new BrowserWindow({
-      width: 1024,
+      width: viewportWidth ?? 1024,
+      useContentSize: viewportWidth !== undefined,
       height: 768,
       show: false, // hidden in background
       webPreferences: {
@@ -538,10 +550,11 @@ export class SessionManager {
       a.recipe === b.recipe && a.recipeVersion === b.recipeVersion;
   }
 
-  private createAvailabilityProbeWindow(partition: string): BrowserWindow {
+  private createAvailabilityProbeWindow(partition: string, viewportWidth?: number): BrowserWindow {
     const session = this.configureSession(partition);
     const window = new BrowserWindow({
-      width: 1024, height: 768, show: false,
+      width: viewportWidth ?? 1024, height: 768, show: false,
+      useContentSize: viewportWidth !== undefined,
       webPreferences: {
         session, nodeIntegration: false, contextIsolation: true, sandbox: true,
         backgroundThrottling: false, preload: getStealthPreloadPath(),
@@ -601,8 +614,9 @@ export class SessionManager {
       let window: BrowserWindow | undefined;
       let succeeded = false;
       try {
-        const target = this.createAvailabilityProbeWindow(context.partition);
+        const target = this.createAvailabilityProbeWindow(context.partition, adapter.recipe.viewportWidth);
         window = target;
+        let probeAuthenticated = false;
         let baseModels: Awaited<ReturnType<typeof ModelScraperEngine.discoverModels>> = [];
         const variants: typeof baseModels = [];
         const models = await boundedTemporaryChatProbe(async () => {
@@ -610,7 +624,8 @@ export class SessionManager {
           if (target.isDestroyed()) return [];
           if (adapter.recipe.auth?.requireLoggedInSelector) {
             const probeAdapter = adapter.createPinnedExecutionAdapter(target.webContents, context.partition);
-            if (!await probeAdapter.checkAuthStatus()) return [];
+            probeAuthenticated = await probeAdapter.checkAuthStatus();
+            if (!probeAuthenticated) return [];
           }
           const switchDeadline = Date.now() + 24_000;
           // On ChatGPT the fresh picker shows the slider. Opening the model list
@@ -661,7 +676,8 @@ export class SessionManager {
         }, 40_000) ?? [...baseModels, ...variants];
         if (models.length && this.modelRefreshes.get(id) === entry &&
             ServiceManifestManager.isServiceEnabled(id) &&
-            this.adapters.get(id) === adapter && this.statuses.get(id)?.isAuthenticated !== false &&
+            this.adapters.get(id) === adapter &&
+            (probeAuthenticated || this.statuses.get(id)?.isAuthenticated !== false) &&
             this.sameAvailabilityContext(context, this.availabilityContext(id, adapter))) {
           const confirmed = new Map(models.map(model => [model.id, model]));
           const observations = this.verifiedModelEfforts.get(id);
@@ -707,7 +723,7 @@ export class SessionManager {
     const task = async () => {
       let observed: Awaited<ReturnType<typeof inspectTemporaryChatInBackground>>;
       try {
-        const window = this.createAvailabilityProbeWindow(context.partition);
+        const window = this.createAvailabilityProbeWindow(context.partition, adapter.recipe.viewportWidth);
         observed = await inspectTemporaryChatInBackground(adapter, window, context.partition);
       } catch { /* Surface a failed check without changing account authentication. */ }
       const active = this.adapters.get(id);

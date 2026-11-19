@@ -98,6 +98,7 @@ export interface ProviderStatus {
   rateLimitCount: number;
   modelName?: string;
   isAuthenticated: boolean;
+  viewportWidth?: number;
   temporaryChat?: TemporaryChatCapability;
 }
 

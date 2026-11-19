@@ -175,6 +175,25 @@ describe('Recipe Versioning, Storage & Self-Healing Tests', () => {
   });
 
   describe('Self-Healing Recipe Versioning, History & Rollback', () => {
+    it('inherits the bundled viewport for an older Gemini override and honors an explicit width', () => {
+      const bundled = recipeManager.getRecipe('gemini')!;
+      const override = { ...bundled, selectors: { ...bundled.selectors, inputPrompt: '#healed-input' } };
+      delete override.viewportWidth;
+      const healedFile = path.join(tempBaseDir, 'Recipes', 'Healed', 'gemini.json');
+      fs.writeFileSync(healedFile, JSON.stringify(override), 'utf8');
+      recipeManager.loadPersistedRecipes();
+
+      expect(recipeManager.getRecipe('gemini')).toMatchObject({
+        viewportWidth: 590,
+        selectors: { inputPrompt: '#healed-input' },
+      });
+      expect(JSON.parse(fs.readFileSync(healedFile, 'utf8')).viewportWidth).toBeUndefined();
+
+      fs.writeFileSync(healedFile, JSON.stringify({ ...override, viewportWidth: 640 }), 'utf8');
+      recipeManager.loadPersistedRecipes();
+      expect(recipeManager.getRecipe('gemini')?.viewportWidth).toBe(640);
+    });
+
     it('inherits a bundled Temporary Chat contract for an older built-in override without changing its file', () => {
       const bundled = recipeManager.getRecipe('chatgpt')!;
       const olderOverride = { ...bundled, selectors: { ...bundled.selectors, inputPrompt: '#personalized-input' } };

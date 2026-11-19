@@ -164,6 +164,8 @@ export interface RecipeResponseStructure {
   generatingIndicator?: SelectorCandidate;
   /** Selectors of elements to strip during text extraction (thinking accordions, timestamps, etc.) */
   excludeSelectors?: string[];
+  /** Complete assistant turns that indicate a provider-side generation failure. */
+  failureMessages?: string[];
   /** Mode-specific extraction configurations */
   modes: RecipeModes;
 }
@@ -230,6 +232,8 @@ export interface RecipeModelSelection {
   namePattern?: string;
   disabledText?: string;
   openInput?: 'pointerdown' | 'native';
+  /** Optional dismiss control for a provider overlay covering the picker trigger. */
+  openObstructionDismiss?: string;
   closeInput?: 'toggle';
   selectInput?: 'pointer' | 'keyboard';
   trigger?: string;
@@ -268,6 +272,8 @@ export interface CustomRecipe {
   url?: string;
   /** Direct URL to open for starting a clean / new chat */
   newChatUrl?: string;
+  /** Fixed embedded viewport width in CSS pixels. */
+  viewportWidth?: number;
   /** URL pathname patterns that should trigger navigation back to a valid chat view */
   resetUrlPatterns?: RecipeResetUrlRule[];
   /** Core interactive control selectors */
@@ -728,6 +734,10 @@ export function validateCustomRecipe(raw: any): { valid: boolean; errors: string
     }
   }
 
+  if (raw.viewportWidth !== undefined && (!Number.isSafeInteger(raw.viewportWidth) || raw.viewportWidth <= 0)) {
+    errors.push("viewportWidth must be a positive integer.");
+  }
+
   if (errors.length > 0) {
     return { valid: false, errors };
   }
@@ -749,7 +759,7 @@ export function validateCustomRecipe(raw: any): { valid: boolean; errors: string
     ...(raw.modelSelection && typeof raw.modelSelection.item === 'string' && raw.modelSelection.item.trim()
       ? { modelSelection: {
           ...Object.fromEntries(Object.entries(raw.modelSelection).filter(([key, value]) =>
-            ['trigger', 'item', 'name', 'activeLabel', 'submenu', 'namePattern', 'disabledText', 'openInput', 'closeInput', 'selectInput', 'idAttribute', 'tier', 'tabs', 'confirm', 'confirmText', 'close', 'scrollContainer'].includes(key) && typeof value === 'string'
+            ['trigger', 'item', 'name', 'activeLabel', 'submenu', 'namePattern', 'disabledText', 'openInput', 'openObstructionDismiss', 'closeInput', 'selectInput', 'idAttribute', 'tier', 'tabs', 'confirm', 'confirmText', 'close', 'scrollContainer'].includes(key) && typeof value === 'string'
           ).map(([key, value]) => [key, (value as string).trim()])),
           ...(raw.modelSelection.effort && typeof raw.modelSelection.effort.labels === 'object' && raw.modelSelection.effort.labels ? {
             effort: {
@@ -887,6 +897,7 @@ export function validateCustomRecipe(raw: any): { valid: boolean; errors: string
         }
       : {}),
     ...(temporaryChat ? { temporaryChat } : {}),
+    ...(raw.viewportWidth !== undefined ? { viewportWidth: raw.viewportWidth } : {}),
     ...(raw.newChatUrl ? { newChatUrl: String(raw.newChatUrl).trim() } : {}),
     ...(Array.isArray(raw.resetUrlPatterns) ? { resetUrlPatterns: raw.resetUrlPatterns } : {}),
   };

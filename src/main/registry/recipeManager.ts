@@ -224,6 +224,9 @@ export class RecipeManager {
 
     const withBundledCapabilities = (recipe: CustomRecipe): CustomRecipe => {
       const bundled = (BUILTIN_RECIPES as Record<string, CustomRecipe>)[cleanId];
+      if (recipe.id === cleanId && recipe.viewportWidth === undefined && bundled?.viewportWidth !== undefined) {
+        recipe = { ...recipe, viewportWidth: bundled.viewportWidth };
+      }
       if (recipe.id === cleanId && bundled?.modelSelection?.effort && !recipe.modelSelection?.effort) {
         recipe = { ...recipe, modelSelection: {
           ...bundled.modelSelection,
@@ -235,6 +238,28 @@ export class RecipeManager {
           bundled?.auth?.requireLoggedInSelector &&
           normalizeSelectorList(recipe.auth.loggedInSelector).join(',') === normalizeSelectorList(bundled.auth.loggedInSelector).join(',')) {
         recipe = { ...recipe, auth: { ...recipe.auth, requireLoggedInSelector: true } };
+      }
+      if (cleanId === 'gemini' && recipe.id === cleanId && bundled) {
+        const video = recipe.response.modes.video;
+        const generation = video?.generation;
+        const bundledVideo = bundled.response.modes.video?.generation;
+        const aspectRatio = bundledVideo?.settings?.find(setting => setting.key === 'aspect_ratio');
+        const settings = generation?.settings?.map(setting =>
+          aspectRatio && setting.key === 'aspect_ratio' &&
+          setting.options.some(option => option.closeSteps?.length) ? aspectRatio : setting);
+        recipe = { ...recipe, response: {
+          ...recipe.response,
+          failureMessages: [...new Set([...recipe.response.failureMessages ?? [], ...bundled.response.failureMessages ?? []])],
+          modes: {
+            ...recipe.response.modes,
+            ...(video && generation && bundledVideo ? { video: { ...video, generation: {
+              ...generation,
+              unavailableWhen: generation.unavailableWhen ?? bundledVideo.unavailableWhen,
+              unavailableMessage: generation.unavailableMessage ?? bundledVideo.unavailableMessage,
+              settings: settings ?? generation.settings,
+            } } } : {}),
+          },
+        } };
       }
       if (cleanId === 'chatgpt' && recipe.id === cleanId) {
         const image = recipe.response.modes.image;

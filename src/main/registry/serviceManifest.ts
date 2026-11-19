@@ -1,3 +1,4 @@
+import { parseEffortModel } from '../../shared/modelEffort.js';
 import { isModelAllowedForMode } from '../../shared/types.js';
 import { isBuiltinProvider } from '../../shared/providers.js';
 import fs from "fs";
@@ -26,11 +27,13 @@ function normalizeServiceModelModes(service: ServiceManifestEntry): void {
   if (!Array.isArray(service.models)) return;
   service.models = service.models.map(model => {
     const normalized = normalizeModelModes(model);
-    if (service.id !== 'chatgpt') return normalized;
+    const mediaModes: RouteMode[] = service.id === 'chatgpt' ? ['image'] :
+      service.id === 'gemini' && !parseEffortModel(model.id).effort ? ['image', 'video'] : [];
+    if (mediaModes.length === 0) return normalized;
 
-    // ChatGPT's Create image tool uses the same composer model picker.
+    // These media tools keep the native composer model picker available.
     const modes = normalized.modes ?? [normalized.mode ?? 'general'];
-    return { ...normalized, modes: [...new Set<RouteMode>([...modes, 'image'])] };
+    return { ...normalized, modes: [...new Set<RouteMode>([...modes, ...mediaModes])] };
   });
 }
 
@@ -730,8 +733,8 @@ export class ServiceManifestManager {
     // Preserve declared media routing and user choices when the text picker omits them.
     const retained = (service.models || []).filter(model => model.id === 'default' ||
       (!discovered.has(model.id) && (preserveUnobserved || model.id === service.defaultModelId ||
-        (providerId !== 'chatgpt' && model.modes?.includes('image')) ||
-        model.modes?.some(mode => mode === 'video' || mode === 'music') ||
+        (providerId !== 'chatgpt' && providerId !== 'gemini' && model.modes?.includes('image')) ||
+        model.modes?.some(mode => mode === 'music' || (providerId !== 'gemini' && mode === 'video')) ||
         model.mode === 'image' || model.mode === 'video' || model.mode === 'music')));
     service.models = [
       ...retained.map(model => service.providerType === 'webview' && model.id !== 'default' &&

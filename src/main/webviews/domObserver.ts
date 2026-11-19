@@ -13,6 +13,7 @@ export interface DomInspectionResult {
   securityWarningReason?: string;
   text: string;
   responseTurnCount?: number;
+  providerFailureNotice?: string;
   mediaUrl?: string;
   mediaType?: 'image' | 'video' | 'audio';
   error?: string;
@@ -103,6 +104,9 @@ export class DomObserver {
           const selectorString = value => Array.isArray(value) ? value.join(', ') : (value || '');
           const bodyText = document.body ? (document.body.innerText || '') : '';
           const noticeText = (${providerNoticeText.toString()})();
+          const providerFailureNotice = recipe?.response?.failureMessages?.find(message =>
+            noticeText.replace(/’/g, "'").replace(/\\s+/g, ' ').includes(message)
+          );
 
           // 1. Rate-Limit / Quota Exhaustion Detection
           const isRateLimited = 
@@ -598,6 +602,14 @@ export class DomObserver {
 
             case 'gemini': {
               const responseNodes = Array.from(document.querySelectorAll('model-response, response-container, structured-content-container, message-content')).filter(isVisible);
+              // A single response may contain several matching wrappers.
+              const visibleResponses = new Set(responseNodes);
+              responseTurnCount = responseNodes.filter(node => {
+                for (let parent = node.parentElement; parent; parent = parent.parentElement) {
+                  if (visibleResponses.has(parent)) return false;
+                }
+                return true;
+              }).length;
               if (responseNodes.length > 0) {
                 const targetNode = responseNodes[responseNodes.length - 1];
                 const turnContainer = targetNode.closest('model-response, response-container, structured-content-container') || targetNode.parentElement || targetNode;
@@ -1123,6 +1135,7 @@ export class DomObserver {
             securityWarningReason,
             text: lastText,
             responseTurnCount,
+            providerFailureNotice,
             mediaUrl,
             mediaType
           };

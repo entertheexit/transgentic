@@ -381,7 +381,8 @@ export const BUILTIN_RECIPES: Record<"chatgpt" | "claude" | "gemini" | "grok" | 
     }
   },
   "gemini": {
-    "version": "1.1.8",
+    "version": "1.1.14",
+    "viewportWidth": 590,
     "id": "gemini",
     "title": "Google Gemini",
     "domainMatch": "gemini.google.com",
@@ -467,10 +468,17 @@ export const BUILTIN_RECIPES: Record<"chatgpt" | "claude" | "gemini" | "grok" | 
       "namePattern": "^(?:Gemini )?\\d+(?:\\.\\d+)? (?:Flash(?:-Lite)?|Pro|[A-Z][a-z]+)$",
       "disabledText": "Locked",
       "openInput": "native",
+      "openObstructionDismiss": ":is(.cdk-overlay-pane, mat-bottom-sheet-container) button[jslog^=\"325142;\"]",
       "closeInput": "toggle",
       "selectInput": "pointer"
     },
     "response": {
+      "failureMessages": [
+        "I'm having a hard time fulfilling your request. Can I help you with something else instead?",
+        "Sorry, something went wrong. Please try your request again.",
+        "I seem to be encountering an error. Can I try something else for you?",
+        "I encountered an error doing what you asked. Could you try again?"
+      ],
       "container": "model-response, response-container, structured-content-container, message-content",
       "textSelector": ".response-content-markdown, .markdown, .prose",
       "actionButtons": "button[aria-label*=\"Copy\" i], button[aria-label*=\"Download\" i], copy-button, share-button",
@@ -1105,6 +1113,10 @@ export const BUILTIN_RECIPES: Record<"chatgpt" | "claude" | "gemini" | "grok" | 
             "activeWhen": {
               "selectors": "input-companion-chip button[jslog^=\"316870;\"]"
             },
+            "unavailableWhen": {
+              "selectors": ":is(.cdk-overlay-pane, mat-bottom-sheet-container):has([role=\"menuitemcheckbox\"][jslog^=\"255043;\"]:is([aria-disabled=\"true\"], .disabled))"
+            },
+            "unavailableMessage": "Gemini currently disables Create video for this account. Check the Video option in Gemini before retrying.",
             "settings": [
               {
                 "key": "aspect_ratio",
@@ -1152,53 +1164,16 @@ export const BUILTIN_RECIPES: Record<"chatgpt" | "claude" | "gemini" | "grok" | 
                     ],
                     "verificationSteps": [
                       {
-                        "action": "click",
+                        "action": "clickIfPresent",
                         "target": {
-                          "selectors": "input-companion-chip button[jslog^=\"316870;\"]"
+                          "selectors": ":is(.cdk-overlay-pane, mat-bottom-sheet-container) button[jslog^=\"325142;\"]",
+                          "name": "Try it"
                         }
                       }
                     ],
                     "selectedWhen": {
-                      "scope": ".cdk-overlay-pane:has(input-companion-item[role=\"menuitemradio\"])",
-                      "selectors": "input-companion-item[role=\"menuitemradio\"]",
-                      "index": 0,
-                      "expectedCount": 2,
-                      "identities": [
-                        "crop_16_9",
-                        "crop_9_16"
-                      ],
-                      "identityAttribute": "fonticon",
-                      "identitySelector": "mat-icon[fonticon]",
-                      "compact": {
-                        "scope": "mat-bottom-sheet-container:has(input-companion-item[role=\"menuitemradio\"])",
-                        "selectors": "input-companion-item[role=\"menuitemradio\"]",
-                        "index": 0,
-                        "expectedCount": 2,
-                        "identities": [
-                          "crop_16_9",
-                          "crop_9_16"
-                        ],
-                        "identityAttribute": "fonticon",
-                        "identitySelector": "mat-icon[fonticon]"
-                      },
-                      "requiredAttributes": {
-                        "aria-checked": "true"
-                      }
-                    },
-                    "closeSteps": [
-                      {
-                        "action": "escape"
-                      },
-                      {
-                        "action": "waitAbsent",
-                        "target": {
-                          "selectors": ".cdk-overlay-pane:has(input-companion-item[role=\"menuitemradio\"])",
-                          "compact": {
-                            "selectors": "mat-bottom-sheet-container:has(input-companion-item[role=\"menuitemradio\"])"
-                          }
-                        }
-                      }
-                    ]
+                      "selectors": "input-companion-chip button[jslog^=\"316870;\"]:is([aria-label=\"Aspect ratio, Landscape (16:9)\"], :has(mat-icon[fonticon=\"crop_16_9\"]))"
+                    }
                   },
                   {
                     "value": "9:16",
@@ -1240,53 +1215,16 @@ export const BUILTIN_RECIPES: Record<"chatgpt" | "claude" | "gemini" | "grok" | 
                     ],
                     "verificationSteps": [
                       {
-                        "action": "click",
+                        "action": "clickIfPresent",
                         "target": {
-                          "selectors": "input-companion-chip button[jslog^=\"316870;\"]"
+                          "selectors": ":is(.cdk-overlay-pane, mat-bottom-sheet-container) button[jslog^=\"325142;\"]",
+                          "name": "Try it"
                         }
                       }
                     ],
                     "selectedWhen": {
-                      "scope": ".cdk-overlay-pane:has(input-companion-item[role=\"menuitemradio\"])",
-                      "selectors": "input-companion-item[role=\"menuitemradio\"]",
-                      "index": 1,
-                      "expectedCount": 2,
-                      "identities": [
-                        "crop_16_9",
-                        "crop_9_16"
-                      ],
-                      "identityAttribute": "fonticon",
-                      "identitySelector": "mat-icon[fonticon]",
-                      "compact": {
-                        "scope": "mat-bottom-sheet-container:has(input-companion-item[role=\"menuitemradio\"])",
-                        "selectors": "input-companion-item[role=\"menuitemradio\"]",
-                        "index": 1,
-                        "expectedCount": 2,
-                        "identities": [
-                          "crop_16_9",
-                          "crop_9_16"
-                        ],
-                        "identityAttribute": "fonticon",
-                        "identitySelector": "mat-icon[fonticon]"
-                      },
-                      "requiredAttributes": {
-                        "aria-checked": "true"
-                      }
-                    },
-                    "closeSteps": [
-                      {
-                        "action": "escape"
-                      },
-                      {
-                        "action": "waitAbsent",
-                        "target": {
-                          "selectors": ".cdk-overlay-pane:has(input-companion-item[role=\"menuitemradio\"])",
-                          "compact": {
-                            "selectors": "mat-bottom-sheet-container:has(input-companion-item[role=\"menuitemradio\"])"
-                          }
-                        }
-                      }
-                    ]
+                      "selectors": "input-companion-chip button[jslog^=\"316870;\"]:is([aria-label=\"Aspect ratio, Portrait (9:16)\"], :has(mat-icon[fonticon=\"crop_9_16\"]))"
+                    }
                   }
                 ]
               }

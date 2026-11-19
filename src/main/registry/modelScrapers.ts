@@ -132,6 +132,11 @@ export class ModelScraperEngine {
           return { item, id, displayName };
         }).filter(choice => choice.id && choice.displayName && (!namePattern || namePattern.test(choice.displayName))) : [];
       };
+      const pickerIsOpen = trigger => {
+        if (!trigger) return false;
+        const expanded = trigger.getAttribute('aria-expanded');
+        return expanded === 'true' || (expanded === null && config.openInput === 'native' && choices(trigger).length > 0);
+      };
       const openPicker = trigger => {
         if (config.openInput === 'pointerdown' && typeof PointerEvent === 'function') {
           trigger.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, button: 0, pointerType: 'mouse', isPrimary: true }));
@@ -166,11 +171,18 @@ export class ModelScraperEngine {
       ${this.pickerScript(config)}
       const trigger = getTrigger();
       if (!trigger) return null;
-      if (trigger.getAttribute('aria-expanded') === 'true') return { open: true };
+      if (pickerIsOpen(trigger)) return { open: true };
       const rect = trigger.getBoundingClientRect();
       const x = rect.left + rect.width / 2;
       const y = rect.top + rect.height / 2;
-      return trigger.contains(document.elementFromPoint(x, y)) ? { x, y } : null;
+      if (trigger.contains(document.elementFromPoint(x, y))) return { x, y };
+      if (!config.openObstructionDismiss) return null;
+      const dismiss = [...document.querySelectorAll(config.openObstructionDismiss)].filter(element =>
+        visible(element) && !disabled(element));
+      if (dismiss.length !== 1) return null;
+      const bounds = dismiss[0].getBoundingClientRect();
+      const point = { x: bounds.left + bounds.width / 2, y: bounds.top + bounds.height / 2 };
+      return dismiss[0].contains(document.elementFromPoint(point.x, point.y)) ? point : null;
     })()`, true);
     const deadline = Date.now() + 4500;
     do {
@@ -197,7 +209,7 @@ export class ModelScraperEngine {
     const open = await contents.executeJavaScript(`(() => {
       ${this.pickerScript(config)}
       const trigger = getTrigger();
-      if (trigger?.getAttribute('aria-expanded') !== 'true') return false;
+      if (!pickerIsOpen(trigger)) return false;
       const menu = getMenu(trigger);
       if (menu && !menu.contains(document.activeElement)) menu.focus();
       return true;
@@ -208,7 +220,7 @@ export class ModelScraperEngine {
     await this.dispatchPickerInput(contents, 'Input.dispatchKeyEvent', { ...escape, type: 'keyUp' });
     await contents.executeJavaScript(`(async () => {
       ${this.pickerScript(config)}
-      for (let attempt = 0; attempt < 6 && getTrigger()?.getAttribute('aria-expanded') === 'true'; attempt++) {
+      for (let attempt = 0; attempt < 6 && pickerIsOpen(getTrigger()); attempt++) {
         await new Promise(resolve => setTimeout(resolve, 50));
       }
     })()`, true);
@@ -230,7 +242,7 @@ export class ModelScraperEngine {
             trigger = getTrigger();
           }
           if (!trigger) return [];
-          const opened = trigger.getAttribute('aria-expanded') !== 'true';
+          const opened = !pickerIsOpen(trigger);
           try {
             if (opened) openPicker(trigger);
             await openModelList(trigger);
@@ -274,7 +286,7 @@ export class ModelScraperEngine {
           const matches = () => choices(trigger).filter(choice =>
             choice.id === target || normalize(choice.displayName) === normalize(target));
           const selected = choice => isSelected(choice.item);
-          const opened = trigger.getAttribute('aria-expanded') !== 'true';
+          const opened = !pickerIsOpen(trigger);
           let pendingNativeClick = false;
           try {
             if (opened) openPicker(trigger);
@@ -312,13 +324,13 @@ export class ModelScraperEngine {
               const currentLabels = [currentTrigger.getAttribute('aria-label'), currentTrigger.textContent];
               if (currentLabels.some(current => normalize(current) === normalize(choice.displayName) ||
                 normalize(current).endsWith(normalize(choice.displayName)))) return true;
-              if (currentTrigger.getAttribute('aria-expanded') !== 'true') {
+              if (!pickerIsOpen(currentTrigger)) {
                 openPicker(currentTrigger);
                 await openModelList(currentTrigger);
               }
               const verified = choices(currentTrigger).filter(candidate => candidate.id === choice.id);
               if (verified.length === 1 && selected(verified[0])) {
-                if (currentTrigger.getAttribute('aria-expanded') === 'true') closeOpened(currentTrigger);
+                if (pickerIsOpen(currentTrigger)) closeOpened(currentTrigger);
                 return true;
               }
               await new Promise(resolve => setTimeout(resolve, 100));
@@ -326,7 +338,7 @@ export class ModelScraperEngine {
             return false;
           } finally {
             const currentTrigger = getTrigger() || trigger;
-            if (!pendingNativeClick && (opened || phase === 'verify') && currentTrigger.getAttribute('aria-expanded') === 'true') closeOpened(currentTrigger);
+            if (!pendingNativeClick && (opened || phase === 'verify') && pickerIsOpen(currentTrigger)) closeOpened(currentTrigger);
           }
         })()
       `, true);

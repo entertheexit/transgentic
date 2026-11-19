@@ -60,7 +60,7 @@ export interface PollGenerationOptions {
   onChunk?: (chunk: string) => void;
   metadata?: ProjectMetadata;
   excludedMediaUrls?: string[];
-  previousResponse?: Pick<DomInspectionResult, 'text' | 'responseTurnCount'>;
+  previousResponse?: Pick<DomInspectionResult, 'text' | 'responseTurnCount' | 'providerFailureNotice'>;
   responseStartTimeoutMs?: number;
 }
 
@@ -452,9 +452,18 @@ export abstract class BaseProviderAdapter {
         inspection.mediaType = undefined;
       }
       const previous = options.previousResponse;
+      if (inspection.providerFailureNotice && inspection.providerFailureNotice !== previous?.providerFailureNotice &&
+          !inspection.mediaUrl && !inspection.isGenerating && !inspection.isMediaRendering) {
+        throw new Error(`[PROVIDER_GENERATION_FAILED] ${this.name}: ${inspection.providerFailureNotice}`);
+      }
       if (previous?.responseTurnCount && inspection.responseTurnCount === previous.responseTurnCount &&
           inspection.text === previous.text) {
         return { ...inspection, text: '' };
+      }
+      const failureMessages = (this as { recipe?: CustomRecipe }).recipe?.response.failureMessages;
+      if (!inspection.isGenerating && !inspection.isThinking && !inspection.isMediaRendering &&
+          !inspection.mediaUrl && failureMessages?.includes((inspection.text ?? '').replace(/\s+/g, ' ').trim().replace(/’/g, "'"))) {
+        throw new Error(`[PROVIDER_GENERATION_FAILED] ${this.name}: ${inspection.text}`);
       }
       return inspection;
     };

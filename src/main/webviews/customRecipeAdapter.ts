@@ -71,6 +71,23 @@ export class CustomRecipeAdapter extends BaseProviderAdapter {
     return execution;
   }
 
+  public async hasEmptyComposer(partition: string): Promise<boolean> {
+    const view = this.webContents;
+    if (!view || view.isDestroyed() || view.session !== session.fromPartition(partition)) return false;
+    const selector = toCombinedCssSelector(this.recipe.selectors.inputPrompt);
+    const attachments = Object.values(this.recipe.response.modes).flatMap(({ inputAttachments }) =>
+      [inputAttachments?.ready, inputAttachments?.cleanup, inputAttachments?.preserveInComposer]
+        .map(toCombinedCssSelector).filter(Boolean));
+    const generating = toCombinedCssSelector(this.recipe.response.generatingIndicator);
+    const empty = await this.executeScript<boolean>(`(() => {
+      const editor = ${InputDispatcher.getInputTargetScript(selector)};
+      if (!editor || (editor.value ?? editor.innerText ?? editor.textContent ?? '').trim()) return false;
+      return !${JSON.stringify([...attachments, generating].filter(Boolean))}.some(selector =>
+        queryAll(document, selector).some(element => element.getClientRects().length > 0));
+    })()`).catch(() => false);
+    return empty && this.webContents === view && !view.isDestroyed();
+  }
+
   public async prepareMediaPage(mode: TaskMode): Promise<void> {
     const page = this.recipe.response?.modes?.[mode as keyof RecipeModes]?.pageUrl;
     if (!page || !this.webContents || this.webContents.isDestroyed()) return;
@@ -346,6 +363,13 @@ export class CustomRecipeAdapter extends BaseProviderAdapter {
                 const style = getComputedStyle(element);
                 return style.display !== 'none' && style.visibility !== 'hidden' && element.getClientRects().length > 0;
               })) {
+                return true;
+              }
+
+              // Gemini keeps the signed-in account link in its collapsed
+              // sidebar even when it hides the visible avatar.
+              if (${JSON.stringify(this.providerId === 'gemini')} &&
+                  queryOne(document, 'a[href^="https://accounts.google.com/SignOutOptions?"][aria-label^="Google Account:" i]')) {
                 return true;
               }
 
@@ -748,6 +772,7 @@ export class CustomRecipeAdapter extends BaseProviderAdapter {
       return result;
     } catch (error: any) {
       if (error?.name === 'AbortError') throw error;
+      if (String(error?.message || '').startsWith('[PROVIDER_GENERATION_FAILED]')) throw error;
       if (this.temporaryChatRequired && !String(error?.message || '').includes('[TEMPORARY_CHAT_')) {
         throw new Error(`[TEMPORARY_CHAT_SUBMISSION_UNCERTAIN] The prompt may have been submitted, and the response could not be completed: ${error?.message || 'unknown provider error'}`);
       }

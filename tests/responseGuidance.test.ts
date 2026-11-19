@@ -16,6 +16,7 @@ import { globalRateLimiter } from '../src/main/mcp/rateLimiter.js';
 import { DuplicateActionGuard } from '../src/main/security/duplicateActionGuard.js';
 import { AssetManager, globalAssetManager } from '../src/main/storage/assetManager.js';
 import * as artifacts from '../src/main/media/artifacts.js';
+import { MediaJobStore } from '../src/main/media/jobs.js';
 import { CustomRecipeAdapter } from '../src/main/webviews/customRecipeAdapter.js';
 import { BUILTIN_RECIPES } from '../src/shared/types/recipe.js';
 import type { ProviderId, TaskMode, TransgenticConfig } from '../src/shared/types.js';
@@ -161,14 +162,17 @@ it.each(['general', 'coding'] as const)('keeps a %s text request on its original
   expect(source.createPinnedExecutionAdapter).toHaveBeenCalledWith(originalView, 'test');
 });
 
-it('never falls back when a coalesced normal-chat submission is uncertain', async () => {
+it.each([
+  '[WEBVIEW_SUBMISSION_UNCERTAIN] shared response not observed',
+  '[PROVIDER_GENERATION_FAILED] the provider could not generate a response',
+])('never falls back after a coalesced submission fails with %s', async (message) => {
   vi.spyOn(DynamicRouter, 'getCandidateChain').mockReturnValue(['claude', 'localllm']);
   vi.spyOn(DuplicateActionGuard, 'getInFlight').mockImplementation(() => ({
-    promise: Promise.reject(new Error('[WEBVIEW_SUBMISSION_UNCERTAIN] shared response not observed')),
+    promise: Promise.reject(new Error(message)),
   }) as any);
   const result = await run('Connection test', 'general');
   expect(result.isError).toBe(true);
-  expect(result.content[0].text).toContain('SUBMISSION_UNCERTAIN');
+  expect(result.content[0].text).toContain(message);
   expect(adapter.executePrompt).not.toHaveBeenCalled();
   expect(completion).not.toHaveBeenCalled();
 });
@@ -318,7 +322,99 @@ describe('Actual provider answers with server-side reminders', () => {
     expect(adapter.executePrompt).not.toHaveBeenCalled();
   });
 
-  it.each(['text', 'empty', 'long', 'uncertain', 'timeout'])('never retries a submitted media request after a %s result', async kind => {
+  it.each(['image', 'video'] as const)('stops Gemini %s before submission when the active picker rejects a named model', async mode => {
+    configure(false, false, false);
+    const model = 'gemini-3-1-pro';
+    const mediaAdapter = new CustomRecipeAdapter(BUILTIN_RECIPES.gemini);
+    vi.mocked(DynamicRouter.getCandidateChain).mockReturnValue(['gemini']);
+    vi.mocked(DynamicRouter.resolveTargetModel).mockReturnValue(model);
+    vi.spyOn(DynamicRouter, 'getModelAttempts').mockReturnValue([model]);
+    vi.mocked(globalSessionManager.getAdapter).mockReturnValue(mediaAdapter);
+    vi.spyOn(mediaAdapter, 'createPinnedExecutionAdapter').mockReturnValue(mediaAdapter);
+    vi.spyOn(mediaAdapter, 'prepareMediaPage').mockResolvedValue();
+    vi.spyOn(mediaAdapter, 'navigateToNewChat').mockResolvedValue();
+    vi.spyOn(mediaAdapter, 'checkAuthStatus').mockResolvedValue(true);
+    vi.spyOn(mediaAdapter, 'checkRateLimit').mockResolvedValue({ isRateLimited: false });
+    vi.spyOn(mediaAdapter, 'acquireDomLock').mockResolvedValue(() => {});
+    const select = vi.spyOn(ModelScraperEngine, 'selectModelAndEffort')
+      .mockRejectedValue(new Error('[MODEL_SELECTION_FAILED] Picker rejected the model.'));
+    const submitted = vi.fn();
+    vi.spyOn(mediaAdapter, 'executePrompt').mockImplementation(async (...args) => {
+      expect(args[0]).toBe('Generate a test artifact.');
+      expect(select).not.toHaveBeenCalled();
+      const selectOnActiveTool = args[9];
+      expect(selectOnActiveTool).toBeTypeOf('function');
+      await selectOnActiveTool!();
+      submitted();
+      args[8]?.();
+      return { text: '' };
+    });
+
+    const result = await run('Generate a test artifact.', mode, 'gemini');
+    expect(select).toHaveBeenCalledWith('gemini', model, undefined, expect.anything());
+    expect(result.structuredContent.status).toBe('failed');
+    expect(result.content[0].text).toContain('MODEL_SELECTION_FAILED');
+    expect(submitted).not.toHaveBeenCalled();
+  });
+
+  it('returns a media job ID and retrieves its saved artifact after the original MCP call ends', async () => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'transgentic-mcp-job-'));
+    const file = path.join(directory, 'test.mp4');
+    fs.writeFileSync(file, 'video fixture');
+    const store = new MediaJobStore(path.join(directory, 'jobs.json'), () => directory);
+    const options = (server as any).mediaJobOptions;
+    vi.spyOn(options, 'store').mockReturnValue(store);
+    vi.spyOn(options, 'validate').mockImplementation(() => {});
+    vi.spyOn(artifacts, 'validateMediaArtifact').mockResolvedValue({ bytes: 13, mimeType: 'video/mp4' });
+    let finish!: () => void;
+    const pending = new Promise<void>(resolve => { finish = resolve; });
+    const execute = vi.spyOn(options, 'execute').mockImplementation(async (_request, _signal, report: any) => {
+      report({ submitted: true, model: '4-argon' });
+      await pending;
+      return { structuredContent: { status: 'completed', artifacts: [file] } };
+    });
+    const invoke = (server as any).executeMcpTool.bind(server);
+    const call = new AbortController();
+    try {
+      const request = { mode: 'video', provider: 'gemini', model: '4-argon', prompt: 'Test video.', idempotency_key: 'parity-test' };
+      const { structuredContent: started } = await invoke('start_media_job', request, undefined, call.signal);
+      expect(started.status).toBe('queued');
+      call.abort();
+      const { structuredContent: duplicate } = await invoke('start_media_job', request);
+      expect(duplicate.id).toBe(started.id);
+      finish();
+      await vi.waitFor(async () => {
+        const { structuredContent: status } = await invoke('get_media_job', { id: started.id });
+        expect(status.status).toBe('completed');
+        expect(status.artifacts[0]).toMatchObject({ name: 'test.mp4', mime_type: 'video/mp4' });
+      });
+      expect(execute).toHaveBeenCalledOnce();
+    } finally {
+      finish();
+      fs.rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  it('ignores an earlier Gemini failure and reports the same text in a new response turn', async () => {
+    const adapter = new CustomRecipeAdapter(BUILTIN_RECIPES.gemini);
+    const text = BUILTIN_RECIPES.gemini.response.failureMessages![0];
+    const previousResponse = { text, responseTurnCount: 1 };
+    const inspect = vi.spyOn(adapter as any, 'executeScript')
+      .mockResolvedValueOnce(previousResponse)
+      .mockResolvedValue({ text, responseTurnCount: 2 });
+    vi.useFakeTimers();
+    try {
+      const polling = adapter.pollGeneration({ mode: 'video', previousResponse });
+      const result = expect(polling).rejects.toThrow('[PROVIDER_GENERATION_FAILED]');
+      await vi.advanceTimersByTimeAsync(2_200);
+      await result;
+      expect(inspect).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it.each(['text', 'empty', 'long', 'uncertain', 'timeout', 'provider failure'])('never retries a submitted media request after a %s result', async kind => {
     configure(false, false, true);
     const provider = kind === 'timeout' ? 'chatgpt' : 'gemini';
     vi.mocked(DynamicRouter.getCandidateChain).mockReturnValue([provider, 'grok']);
@@ -334,6 +430,7 @@ describe('Actual provider answers with server-side reminders', () => {
     vi.spyOn(mediaAdapter, 'getConversationUrl').mockResolvedValue('https://gemini.google.com/app/test');
     const execute = vi.spyOn(mediaAdapter, 'executePrompt').mockImplementation(async (...args) => {
       args[8]?.();
+      if (kind === 'provider failure') throw new Error('[PROVIDER_GENERATION_FAILED] Gemini reported a failed generation.');
       if (kind === 'uncertain') throw new Error('Lost provider response after submission');
       if (kind === 'timeout') {
         vi.useFakeTimers();
@@ -354,7 +451,10 @@ describe('Actual provider answers with server-side reminders', () => {
     const result = await run('Create a square landscape illustration.', 'image');
     expect(result.isError).toBe(true);
     expect(result.structuredContent.status).toBe('failed');
-    expect(result.content[0].text).toContain(['uncertain', 'timeout'].includes(kind) ? 'WEBVIEW_SUBMISSION_UNCERTAIN' : 'MEDIA_NOT_GENERATED');
+    const expectedError = kind === 'provider failure' ? 'PROVIDER_GENERATION_FAILED'
+      : ['uncertain', 'timeout'].includes(kind) ? 'WEBVIEW_SUBMISSION_UNCERTAIN' : 'MEDIA_NOT_GENERATED';
+    expect(result.content[0].text).toContain(expectedError);
+    if (kind === 'provider failure') expect(result.content[0].text).not.toContain('WEBVIEW_SUBMISSION_UNCERTAIN');
     if (kind === 'timeout') expect(discard).toHaveBeenCalledOnce();
     if (kind === 'text') expect(result.content[0].text).toContain('Provider reply (no media produced): "Here is a plan for creating your image."');
     if (kind === 'empty') expect(result.content[0].text).not.toContain('Provider reply');

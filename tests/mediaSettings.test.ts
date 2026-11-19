@@ -22,6 +22,47 @@ function fixture({ values = ['short', 'standard'], width = 1000, hidden = false,
 const find = (l: MediaLocator, context: object) => vm.runInNewContext(`(${findMediaControl.toString()})(${JSON.stringify(l)})`, context);
 
 describe('Declarative media recipe contracts', () => {
+  it('preserves a fixed viewport through recipe validation and allows it to be omitted', () => {
+    expect(validateCustomRecipe(structuredClone(recipe)).recipe?.viewportWidth).toBe(590);
+    const legacy = structuredClone(recipe);
+    delete legacy.viewportWidth;
+    expect(validateCustomRecipe(legacy).recipe?.viewportWidth).toBeUndefined();
+  });
+
+  it.each([0, -1, 590.5, '590'])('rejects an invalid fixed viewport of %s', viewportWidth => {
+    expect(validateCustomRecipe({ ...structuredClone(recipe), viewportWidth }).valid).toBe(false);
+  });
+
+  it.each([590, 1024])('verifies Gemini portrait on the composer at %ipx without reopening the menu', async width => {
+    const generation = recipe.response.modes.video!.generation!;
+    const portrait = generation.settings[0].options.find(option => option.value === '9:16')!;
+    const selection = portrait.steps[1];
+    if (selection.action !== 'click') throw new Error('Expected a portrait selection step.');
+    const scope = width < 768 ? selection.target.compact!.scope : selection.target.scope;
+    let menuOpened = 0;
+    let selected = false;
+    const run = async <T>(script: string): Promise<T> => {
+      const target = JSON.parse(script.match(/\)\((\{[^\n]+\}), (?:true|false), queryAll\);/)![1]);
+      const click = script.includes('|| el).click()');
+      if (target.scope) {
+        expect(width < 768 ? target.compact.scope : target.scope).toBe(scope);
+        expect(menuOpened).toBe(1);
+        expect(click).toBe(true);
+        selected = true;
+        return true as T;
+      }
+      if (target.selectors === portrait.selectedWhen.selectors) return selected as T;
+      if (target.selectors === 'input-companion-chip button[jslog^="316870;"]') {
+        if (click) menuOpened++;
+        return true as T;
+      }
+      return false as T;
+    };
+    const verify = await applyMediaControls(generation, { aspect_ratio: '9:16' }, run);
+    await verify(true);
+    expect(menuOpened).toBe(1);
+  });
+
   it.each(['gemini', 'grok', 'chatgpt'])('validates built-in %s settings', id => {
     expect(validateCustomRecipe(BUILTIN_RECIPES[id]).valid).toBe(true);
   });

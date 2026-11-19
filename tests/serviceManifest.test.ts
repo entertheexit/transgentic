@@ -51,6 +51,19 @@ describe("ServiceManifestManager", () => {
       .toEqual([restricted.id]);
   });
 
+  it("exposes Gemini base choices in media and removes them when discovery no longer finds them", () => {
+    const model = { id: "gemini-3-1-pro", displayName: "3.1 Pro" };
+    const effort = { id: "transgentic/effort/gemini-3-1-pro/low", displayName: "3.1 Pro Low" };
+    ServiceManifestManager.setDiscoveredWebModels("gemini", [model, effort]);
+    for (const mode of ["image", "video"] as const) {
+      expect(ServiceManifestManager.getModelsForMode("gemini", mode).map(choice => choice.id))
+        .toEqual(["default", model.id]);
+      expect(DynamicRouter.resolveTargetModel("gemini", mode, model.id)).toBe(model.id);
+    }
+    ServiceManifestManager.setDiscoveredWebModels("gemini", [{ id: "gemini-flash", displayName: "Flash" }]);
+    expect(DynamicRouter.resolveTargetModel("gemini", "video", model.id)).toBeNull();
+  });
+
   it("normalizes stored Writing model capabilities into shared General capabilities without duplicates", () => {
     const normalized = normalizeModelEntryModes({
       id: "legacy", displayName: "Legacy", discoveredAvailable: true, userEnabled: true,

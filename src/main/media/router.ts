@@ -28,12 +28,34 @@ export function canonicalMediaIdentity(request: Omit<MediaRequest, 'files'>, att
   const ordered = (v: any): any => Array.isArray(v) ? v.map(ordered) : v && typeof v === 'object' ? Object.fromEntries(Object.keys(v).sort().filter(k => v[k] !== undefined).map(k => [k, ordered(v[k])])) : v;
   return crypto.createHash('sha256').update(JSON.stringify(ordered({ ...request, files: undefined, attachment_identity: attachments }))).digest('hex');
 }
-export function createMediaRouter(options: {
+export interface MediaJobOptions {
   store: () => MediaJobStore;
   capabilities: () => MediaCapability[];
   validate: (request: MediaRequest, files?: readonly StagedAttachment[]) => void;
   execute: (request: MediaRequest, signal: AbortSignal, progress: JobProgress, session: string) => Promise<any>;
-}) {
+}
+export async function enqueueMediaJob(options: MediaJobOptions, body: unknown, owner: string, loopback: boolean, key?: string) {
+  let cleanup: (() => Promise<void>) | undefined;
+  try {
+    const request = parseMediaRequest(body);
+    const staged = await AttachmentManager.stage(request.files, { loopback, mode: request.mode });
+    cleanup = staged.cleanup;
+    if (request.mode === 'music' && staged.envelope.files.length || staged.envelope.files.some(file => request.mode === 'image' ? file.kind !== 'image' : file.kind !== 'image' && file.kind !== 'video')) throw new Error('Only supported reference images/video files may be supplied to media jobs.');
+    const identity = canonicalMediaIdentity(request, staged.envelope.identity);
+    const store = options.store();
+    const existing = store.findIdempotent(owner, identity, key);
+    if (existing) { await cleanup(); cleanup = undefined; return store.publicView(existing); }
+    options.validate(request, staged.envelope.files);
+    const execution = { ...request, files: staged.envelope.files.map(f => ({ path: f.path, name: f.name, mimeType: f.mimeType })) };
+    const job = store.create(owner, identity, request.mode, key, (signal, progress) => options.execute(execution, signal, progress, `media_${owner}_${request.thread_id || identity}`), staged.cleanup);
+    cleanup = undefined;
+    return store.publicView(job);
+  } finally {
+    await cleanup?.();
+  }
+}
+
+export function createMediaRouter(options: MediaJobOptions) {
   const router = express.Router();
   router.use((req, res, next) => {
     const token = req.headers.authorization?.startsWith('Bearer ') ? req.headers.authorization.slice(7).trim() : undefined;
@@ -42,23 +64,14 @@ export function createMediaRouter(options: {
   });
   router.get('/capabilities', (_req, res) => res.json({ capabilities: options.capabilities(), attachment_limits: ATTACHMENT_LIMITS }));
   router.post('/jobs', async (req, res) => {
-    let cleanup: (() => Promise<void>) | undefined;
     try {
-      const request = parseMediaRequest(req.body);
       const remote = req.socket.remoteAddress || '';
-      const staged = await AttachmentManager.stage(request.files, { loopback: ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(remote), mode: request.mode });
-      cleanup = staged.cleanup;
-      if (request.mode === 'music' && staged.envelope.files.length || staged.envelope.files.some(file => request.mode === 'image' ? file.kind !== 'image' : file.kind !== 'image' && file.kind !== 'video')) throw new Error('Only supported reference images/video files may be supplied to media jobs.');
-      const identity = canonicalMediaIdentity(request, staged.envelope.identity);
-      const store = options.store();
-      const existing = store.findIdempotent(res.locals.mediaOwner, identity, req.get('Idempotency-Key'));
-      if (existing) { await cleanup(); cleanup = undefined; res.status(202).json(store.publicView(existing)); return; }
-      options.validate(request, staged.envelope.files);
-      const execution = { ...request, files: staged.envelope.files.map(f => ({ path: f.path, name: f.name, mimeType: f.mimeType })) };
-      const job = store.create(res.locals.mediaOwner, identity, request.mode, req.get('Idempotency-Key'), (signal, progress) => options.execute(execution, signal, progress, `media_${res.locals.mediaOwner}_${request.thread_id || identity}`), staged.cleanup);
-      cleanup = undefined;
-      res.status(202).json(store.publicView(job));
-    } catch (error: any) { await cleanup?.(); res.status(/IDEMPOTENCY_CONFLICT/.test(error.message) ? 409 : 400).json({ error: { code: 'invalid_media_request', message: error.message } }); }
+      const loopback = ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(remote);
+      const job = await enqueueMediaJob(options, req.body, res.locals.mediaOwner, loopback, req.get('Idempotency-Key'));
+      res.status(202).json(job);
+    } catch (error: any) {
+      res.status(/IDEMPOTENCY_CONFLICT/.test(error.message) ? 409 : 400).json({ error: { code: 'invalid_media_request', message: error.message } });
+    }
   });
   router.get('/jobs/:id', (req, res) => { const store = options.store(), job = store.get(req.params.id, res.locals.mediaOwner); if (!job) { res.sendStatus(404); return; } res.json(store.publicView(job)); });
   router.post('/jobs/:id/cancel', (req, res) => { const store = options.store(), job = store.cancel(req.params.id, res.locals.mediaOwner); if (!job) { res.sendStatus(404); return; } res.json(store.publicView(job)); });

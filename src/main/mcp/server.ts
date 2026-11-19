@@ -2,7 +2,7 @@ import { effortModelId, isLegacyCurrentEffort, parseEffortModel } from '../../sh
 import { BUILTIN_PROVIDER_IDS } from '../../shared/providers.js';
 import { isModelAllowedForMode, resolveChatMode, validateChatMode, normalizeRouteMode, temporaryChatModeRestriction, type ChatModeSelection } from '../../shared/types.js';
 import { MediaJobStore } from '../media/jobs.js';
-import { createMediaRouter } from '../media/router.js';
+import { createMediaRouter, enqueueMediaJob, type MediaJobOptions } from '../media/router.js';
 import { mediaCapability, normalizeMediaPreferences, resolveMediaSettings, type MediaPreferences, type MediaSettings, type MediaMode } from '../../shared/media.js';
 import { CustomRecipeAdapter } from '../webviews/customRecipeAdapter.js';
 import { validateMediaArtifact } from '../media/artifacts.js';
@@ -160,7 +160,9 @@ export class TransgenticMcpServer {
           DynamicRouter.resolveTargetModel(adapter.providerId, m, requested, 'main', declared);
         const models = model ? [model] : [...new Set([
           resolve() || undefined,
-          ...(declared || []).filter(id => resolve(id) === id),
+          ...(declared || (adapter.providerId === 'gemini' && (m === 'image' || m === 'video')
+            ? ServiceManifestManager.getModelsForMode(adapter.providerId, m).map(model => model.id)
+            : [])).filter(id => resolve(id) === id),
         ])];
         return models.flatMap(id => {
           const compatible = id !== undefined && resolve(id) === id;
@@ -175,11 +177,27 @@ export class TransgenticMcpServer {
     });
   }
 
-  public getDesktopMediaConfiguration(mode: MediaMode) {
+  public async getDesktopMediaConfiguration(mode: MediaMode) {
     if (!['image', 'video', 'music'].includes(mode)) return [];
     const rule = DynamicRouter.getRule(mode);
     const ids = [rule.defaultService ?? rule.primary, ...(rule.fallbackChain || rule.fallbacks || [])].filter(Boolean);
-    return [...new Set(ids)].flatMap(id => {
+    const providers = [...new Set(ids)];
+    // Quick Prompt takes this snapshot before dispatch. Join discovery when a
+    // saved route needs a model whose capabilities are not available yet.
+    await Promise.all(providers.map(async id => {
+      const model = rule.providerModels?.[id]?.defaultModelId;
+      const adapter = globalSessionManager.getAdapter(id);
+      if (!model || model === 'default' || !(adapter instanceof CustomRecipeAdapter)) return;
+      const mediaModels = adapter.recipe.response.modes[mode]?.generation?.models;
+      if (mediaModels && !mediaModels.includes(model)) return;
+      if (DynamicRouter.resolveTargetModel(id, mode, model, 'main', mediaModels)) return;
+      // A new drawer may still be waiting for its first status probe. Recipes
+      // with a login landmark verify the account in the discovery window.
+      if (!adapter.recipe.auth?.requireLoggedInSelector &&
+          globalSessionManager.getStatus(id)?.isAuthenticated !== true) return;
+      await globalSessionManager.refreshModels(id).catch(() => {});
+    }));
+    return providers.flatMap(id => {
       const adapter = globalSessionManager.getAdapter(id);
       if (!(adapter instanceof CustomRecipeAdapter)) return [];
       const model = DynamicRouter.resolveTargetModel(id, mode, undefined, 'main', adapter.recipe.response.modes[mode]?.generation?.models) || undefined;
@@ -326,31 +344,7 @@ export class TransgenticMcpServer {
       next();
     });
 
-    this.app.use('/v1/media', createMediaRouter({
-      store: () => this.mediaJobs ||= new MediaJobStore(path.join(electronApp.getPath('userData'), 'media_jobs.json'), () => globalAssetManager.getLibraryDirectory()),
-      capabilities: () => this.getMediaCapabilities(),
-      validate: (request, files) => {
-        const providers = request.provider ? [request.provider] : DynamicRouter.getCandidateChain(request.mode, undefined, false);
-        let supported = false, lastError: any;
-        for (const id of providers) {
-          const adapter = globalSessionManager.getAdapter(id);
-          try {
-            if (!(adapter instanceof CustomRecipeAdapter)) throw new Error('Provider has no media recipe.');
-            const model = DynamicRouter.resolveTargetModel(id, request.mode, request.model, 'main', adapter.recipe.response.modes[request.mode]?.generation?.models) || undefined;
-            if (request.model && !model) throw new Error('[MODEL_SELECTION_FAILED] The requested model is unavailable for this media mode.');
-            resolveMediaSettings(adapter.recipe, request.mode, request, model, id);
-            if (files?.length) {
-              const upload = adapter.recipe.response.modes[request.mode]?.inputAttachments;
-              if (!upload || (!upload.multiple && files.length > 1) || files.some(file => !upload.acceptedKinds.includes(file.kind) || upload.acceptedMimeTypes?.length && !upload.acceptedMimeTypes.some(mime => mime === file.mimeType || mime.endsWith('/*') && file.mimeType.startsWith(mime.slice(0, -1))))) throw new Error('The provider does not accept these reference attachments.');
-            }
-            supported = true;
-          } catch (error) { lastError = error; }
-        }
-        if (!supported) throw lastError || new Error('No configured provider supports this media request.');
-      },
-      execute: (request, signal, progress, session) => this.orchestratePrompt(request.prompt, request.mode, request.provider, request.project_name, request.model, signal, request.thread_id, request.new_thread, false, true,
-        { profile: 'plain', sessionId: session, isLoopback: true, transport: 'api', onMediaState: progress, reportProgress: message => progress({ progress: message }) }, request.files, undefined, request.temporary_chat, request, request.chat_mode),
-    }));
+    this.app.use('/v1/media', createMediaRouter(this.mediaJobOptions));
 
     // OpenAI-compatible provider surface. This path deliberately bypasses the
     // MCP prompt/history pipeline: the caller owns its conversation and tools.
@@ -641,6 +635,10 @@ export class TransgenticMcpServer {
         const providerToUse = directProvider || sseClient?.targetProvider;
         const modeToUse = defaultMode || sseClient?.targetMode;
         try {
+          if (toolName === 'start_media_job' || toolName === 'get_media_job' || toolName === 'cancel_media_job') {
+            const token = req.headers.authorization?.startsWith('Bearer ') ? req.headers.authorization.slice(7).trim() : undefined;
+            if (!ClientAuthManager.verifyToken(token)) throw new Error('Media job tools require a Bearer token.');
+          }
           caller.reportProgress?.('Request accepted');
           const callResult = await this.executeMcpTool(toolName, args, providerToUse, reqContext.abortController.signal, modeToUse, caller);
           if (reqContext.abortController.signal.aborted) return null;
@@ -952,6 +950,32 @@ export class TransgenticMcpServer {
     return capable;
   }
 
+  private readonly mediaJobOptions: MediaJobOptions = {
+    store: () => this.mediaJobs ||= new MediaJobStore(path.join(electronApp.getPath('userData'), 'media_jobs.json'), () => globalAssetManager.getLibraryDirectory()),
+    capabilities: () => this.getMediaCapabilities(),
+    validate: (request, files) => {
+      const providers = request.provider ? [request.provider] : DynamicRouter.getCandidateChain(request.mode, undefined, false);
+      let supported = false, lastError: any;
+      for (const id of providers) {
+        const adapter = globalSessionManager.getAdapter(id);
+        try {
+          if (!(adapter instanceof CustomRecipeAdapter)) throw new Error('Provider has no media recipe.');
+          const model = DynamicRouter.resolveTargetModel(id, request.mode, request.model, 'main', adapter.recipe.response.modes[request.mode]?.generation?.models) || undefined;
+          if (request.model && !model) throw new Error('[MODEL_SELECTION_FAILED] The requested model is unavailable for this media mode.');
+          resolveMediaSettings(adapter.recipe, request.mode, request, model, id);
+          if (files?.length) {
+            const upload = adapter.recipe.response.modes[request.mode]?.inputAttachments;
+            if (!upload || (!upload.multiple && files.length > 1) || files.some(file => !upload.acceptedKinds.includes(file.kind) || upload.acceptedMimeTypes?.length && !upload.acceptedMimeTypes.some(mime => mime === file.mimeType || mime.endsWith('/*') && file.mimeType.startsWith(mime.slice(0, -1))))) throw new Error('The provider does not accept these reference attachments.');
+          }
+          supported = true;
+        } catch (error) { lastError = error; }
+      }
+      if (!supported) throw lastError || new Error('No configured provider supports this media request.');
+    },
+    execute: (request, signal, progress, session) => this.orchestratePrompt(request.prompt, request.mode, request.provider, request.project_name, request.model, signal, request.thread_id, request.new_thread, false, true,
+      { profile: 'plain', sessionId: session, isLoopback: true, transport: 'api', onMediaState: progress, reportProgress: message => progress({ progress: message }) }, request.files, undefined, request.temporary_chat, request, request.chat_mode),
+  };
+
   private getToolDefinitions() {
     const chatgptModels = ModelRegistryManager.getUsableModels('chatgpt').map((m) => m.id);
     const claudeModels = ModelRegistryManager.getUsableModels('claude').map((m) => m.id);
@@ -1003,6 +1027,34 @@ export class TransgenticMcpServer {
     };
 
     return [
+      {
+        name: 'start_media_job',
+        description: 'Start an asynchronous media request. Use for video that may exceed the MCP call deadline. Poll get_media_job with the returned id.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            prompt: { type: 'string' },
+            mode: { type: 'string', enum: ['image', 'video', 'music'] },
+            provider: { type: 'string' },
+            model: { type: 'string' },
+            settings: { type: 'object' },
+            provider_settings: { type: 'object' },
+            files: filesProperty,
+            new_thread: { type: 'boolean' },
+            temporary_chat: { type: 'boolean' },
+            chat_mode: { type: 'string' },
+            thread_id: { type: 'string' },
+            project_name: { type: 'string' },
+            idempotency_key: { type: 'string', description: 'Reuse this key when retrying an interrupted start call.' },
+          },
+          required: ['mode', 'prompt'],
+        },
+      },
+      ...['get_media_job', 'cancel_media_job'].map(name => ({
+        name,
+        description: name === 'get_media_job' ? 'Get media job status and completed artifacts.' : 'Cancel a media job without submitting it again.',
+        inputSchema: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] },
+      })),
       ...CLI_IDS.map(id => ({ name: ({ cli_codex: 'ask_codex_cli', cli_claude_code: 'ask_claude_code_cli', cli_antigravity: 'ask_antigravity_cli', cli_grok: 'ask_grok_cli' })[id], description: `Query the configured ${CLI_DEFINITIONS[id].name}. Editing and commands require local grants.`, inputSchema: { type: 'object', properties: { prompt: { type: 'string' }, mode: { type: 'string', enum: ['general', 'coding', 'writing'] }, model: { type: 'string' }, files: filesProperty, ...sessionProperties }, required: ['prompt'] } })),
       {
         name: 'prompt_model',
@@ -1143,7 +1195,7 @@ export class TransgenticMcpServer {
       {
         name: 'generate_video',
         description:
-          'Generates a video via Grok, Gemini, or Meta AI, downloads to local assets, and returns the short file path. Recommended for storyboard scenes and dynamic animations. Automatically activates video mode.',
+          'Generates a video via Grok, Gemini, or Meta AI, downloads to local assets, and returns the short file path. Automatically activates video mode. Use start_media_job and get_media_job when generation may exceed the MCP call deadline.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -1259,6 +1311,22 @@ export class TransgenticMcpServer {
     defaultMode?: AcceptedTaskMode,
     caller?: CallerContext
   ): Promise<any> {
+    if (name === 'start_media_job' || name === 'get_media_job' || name === 'cancel_media_job') {
+      const owner = crypto.createHash('sha256').update(ClientAuthManager.getMasterToken()).digest('hex');
+      const options = this.mediaJobOptions;
+      if (name === 'start_media_job') {
+        const { idempotency_key: key, ...request } = args;
+        if (key !== undefined && typeof key !== 'string') throw new Error('Invalid idempotency_key.');
+        const job = await enqueueMediaJob(options, { ...request, provider: request.provider ?? directProvider }, owner, caller?.isLoopback === true, key);
+        return { content: [{ type: 'text', text: JSON.stringify(job) }], structuredContent: job };
+      }
+      if (typeof args.id !== 'string' || !args.id) throw new Error('A media job id is required.');
+      const store = options.store();
+      const job = name === 'get_media_job' ? store.get(args.id, owner) : store.cancel(args.id, owner);
+      if (!job) throw new Error('Media job not found.');
+      const result = store.publicView(job);
+      return { content: [{ type: 'text', text: JSON.stringify(result) }], structuredContent: result };
+    }
     if (name === 'list_models' || name === 'get_model_routes') {
       const allowedModes = ['general', 'coding', 'writing', 'image', 'video', 'music'];
       if (args.mode !== undefined && !allowedModes.includes(args.mode)) throw new Error('Invalid mode.');
@@ -1829,7 +1897,9 @@ export class TransgenticMcpServer {
         } catch (err) {
           throwIfCancelled(reqAbortController?.signal || abortSignal);
           lastCandidateError = err;
-          if (forcedProvider || /SUBMISSION_UNCERTAIN/.test((err as Error).message || '') || (['image', 'video', 'music'].includes(effectiveMode) && /MEDIA_NOT_GENERATED/.test((err as Error).message || ''))) throw err;
+          const message = (err as Error).message || '';
+          if (forcedProvider || message.startsWith('[PROVIDER_GENERATION_FAILED]') ||
+              /SUBMISSION_UNCERTAIN/.test(message) || (isMedia && /MEDIA_NOT_GENERATED/.test(message))) throw err;
           continue;
         }
       }
@@ -1920,8 +1990,9 @@ export class TransgenticMcpServer {
               existingSession = null;
               isNewChat = true;
             }
-            const backgroundOnly = adapter instanceof CustomRecipeAdapter &&
-              (providerId === 'gemini' || (providerId === 'chatgpt' && effectiveMode === 'image'));
+            const needsIsolatedComposer = providerId === 'chatgpt' && effectiveMode === 'image';
+            const backgroundOnly = adapter instanceof CustomRecipeAdapter && (needsIsolatedComposer ||
+              (providerId === 'gemini' && (!params.isQuickPrompt || !await adapter.hasEmptyComposer(activeAccount.partitionKey))));
             contents = await globalSessionManager.ensureWebContents(providerId, activeAccount.partitionKey, backgroundOnly);
             if (adapter instanceof CustomRecipeAdapter) {
               // Drawer or background navigation can replace the shared adapter's
@@ -1969,13 +2040,18 @@ export class TransgenticMcpServer {
             await ModelScraperEngine.selectModelAndEffort(providerId, targetModel, effort, contents);
             globalSessionManager.recordVerifiedModelEffort(providerId, targetModel, effort, activeAccount.partitionKey);
           };
-          // Verify the selected model and effort on the active image composer.
-          const selectMediaModel = chatGptImage &&
+          // Verify the named model with the native media tool active.
+          const hasMediaModelPicker = chatGptImage ||
+            (providerId === 'gemini' && (effectiveMode === 'image' || effectiveMode === 'video'));
+          const selectMediaModel = hasMediaModelPicker &&
             targetModel && targetModel !== 'default' ? selectModel : undefined;
           if (!selectMediaModel) await selectModel();
 
-          let promptToSend = maskedText;
-          if (isNewChat) {
+          const directGeminiMedia = providerId === 'gemini' && ['image', 'video', 'music'].includes(effectiveMode);
+          const formatNewChatPrompt = () => {
+            // Gemini's native media tool already supplies its own task context.
+            if (directGeminiMedia) return maskedText;
+            let promptToSend = maskedText;
             if (isAgenticClient && isBalanced) {
               promptToSend = wrapBalancedAgenticPrompt(promptToSend, taskIntent || effectiveMode);
             } else if (isAgenticClient) {
@@ -1984,7 +2060,9 @@ export class TransgenticMcpServer {
             if (this.config?.recall && recall.enabled) {
               promptToSend = applyRecallPipeline(promptToSend, this.config.recall, effectiveMode);
             }
-          }
+            return promptToSend;
+          };
+          let promptToSend = isNewChat ? formatNewChatPrompt() : maskedText;
 
           // Local Zero-Leak & Compact (Coding mode only)
           if (effectiveMode === 'coding' && activeLocalLlmConfig?.enabled && activeLocalLlmConfig?.localZeroLeak) {
@@ -2010,19 +2088,53 @@ export class TransgenticMcpServer {
             try {
               adapterResult = await executionAdapter.executePrompt(promptToSend, effectiveMode, projectMeta, undefined, reqAbortController?.signal || abortSignal, attachments, effectiveSettings, targetModel, mediaSubmitted, selectMediaModel);
             } catch (promptErr: any) {
-              if (!mediaSubmissionAttempted && !candidateTemporaryChat && promptErr?.message && /conversation (?:is getting|too) long|context[ _]length/i.test(promptErr.message)) {
+              const retryGeminiVideo = params.isQuickPrompt && providerId === 'gemini' &&
+                effectiveMode === 'video' && mediaSubmissionAttempted && !candidateTemporaryChat &&
+                attachments.length === 0 && promptErr?.message?.startsWith('[PROVIDER_GENERATION_FAILED]');
+              const failedChatUrl = retryGeminiVideo ? contents?.getURL() || '' : '';
+              if (retryGeminiVideo && executionAdapter instanceof CustomRecipeAdapter &&
+                  /^https:\/\/gemini\.google\.com\/app\/[^/?#]+/.test(failedChatUrl) &&
+                  await executionAdapter.hasEmptyComposer(activeAccount.partitionKey) &&
+                  contents?.getURL() === failedChatUrl) {
+                throwIfCancelled(reqAbortController?.signal || abortSignal);
+                const retrySignal = reqAbortController?.signal || abortSignal;
+                reportProgress?.('Checking the Gemini session before retrying in the same chat');
+                // Rebuild the composer and its media controls after the failed turn.
+                // The exact chat URL and empty composer were verified above.
+                await contents.loadURL(failedChatUrl).catch(() => {});
+                const authDeadline = Date.now() + 5_000;
+                while (contents.getURL() === failedChatUrl && Date.now() < authDeadline) {
+                  throwIfCancelled(retrySignal);
+                  if (await executionAdapter.checkAuthStatus() &&
+                      await executionAdapter.hasEmptyComposer(activeAccount.partitionKey)) break;
+                  await new Promise(resolve => setTimeout(resolve, 250));
+                }
+                throwIfCancelled(retrySignal);
+                if (contents.getURL() !== failedChatUrl ||
+                    !await executionAdapter.hasEmptyComposer(activeAccount.partitionKey) ||
+                    contents.getURL() !== failedChatUrl ||
+                    !await executionAdapter.checkAuthStatus() ||
+                    contents.getURL() !== failedChatUrl) {
+                  throw new Error(`${promptErr.message} Same-chat retry stopped before Send because Gemini's chat, empty composer, or sign-in could not be verified.`);
+                }
+                console.info('[Transgentic] Retrying one explicitly failed Gemini video in the same chat.');
+                reportProgress?.('Retrying video generation in the same Gemini chat');
+                let retrySubmitted = false;
+                try {
+                  adapterResult = await executionAdapter.executePrompt(promptToSend, effectiveMode, projectMeta, undefined, retrySignal, attachments, effectiveSettings, targetModel, () => {
+                    mediaSubmitted();
+                    retrySubmitted = true;
+                  }, selectMediaModel);
+                } catch (retryError) {
+                  throwIfCancelled(retrySignal);
+                  if (retrySubmitted) throw retryError;
+                  throw new Error(`${promptErr.message} Same-chat retry stopped before Send: ${retryError instanceof Error ? retryError.message : String(retryError)}`);
+                }
+              } else if (!mediaSubmissionAttempted && !candidateTemporaryChat && promptErr?.message && /conversation (?:is getting|too) long|context[ _]length/i.test(promptErr.message)) {
                 await executionAdapter.navigateToNewChat({ forceReload: true, assumeLocked: true });
                 globalThreadManager.removeSession(scopedThreadId, providerId);
                 wasRolledOver = true;
-                let rolloverPrompt = maskedText;
-                if (isAgenticClient && isBalanced) {
-                  rolloverPrompt = wrapBalancedAgenticPrompt(rolloverPrompt, taskIntent || effectiveMode);
-                } else if (isAgenticClient) {
-                  rolloverPrompt = wrapUnbalancedAgenticPrompt(rolloverPrompt, taskIntent || effectiveMode);
-                }
-                if (this.config?.recall && recall.enabled) {
-                  rolloverPrompt = applyRecallPipeline(rolloverPrompt, this.config.recall, effectiveMode);
-                }
+                const rolloverPrompt = formatNewChatPrompt();
                 adapterResult = await executionAdapter.executePrompt(rolloverPrompt, effectiveMode, projectMeta, undefined, reqAbortController?.signal || abortSignal, attachments, effectiveSettings, targetModel, mediaSubmitted, selectMediaModel);
               } else {
                 throw promptErr;
@@ -2127,7 +2239,8 @@ export class TransgenticMcpServer {
         wasNewChat = isNewChat;
         break;
       } catch (candidateErr: any) {
-        if (mediaSubmissionAttempted && !/SUBMISSION_UNCERTAIN|MEDIA_NOT_GENERATED/.test(candidateErr.message || '') && candidateErr.name !== 'AbortError') {
+        const providerGenerationFailed = candidateErr.message?.startsWith('[PROVIDER_GENERATION_FAILED]');
+        if (mediaSubmissionAttempted && !providerGenerationFailed && !/SUBMISSION_UNCERTAIN|MEDIA_NOT_GENERATED/.test(candidateErr.message || '') && candidateErr.name !== 'AbortError') {
           candidateErr = new Error(`[WEBVIEW_SUBMISSION_UNCERTAIN] Media submission was attempted; no fallback was submitted. ${candidateErr.message || candidateErr}`);
         }
         rejectInFlight(candidateErr);
@@ -2141,17 +2254,17 @@ export class TransgenticMcpServer {
           lastCandidateError = candidateErr;
           continue;
         }
-        const isRateLimit =
+        const isRateLimit = !providerGenerationFailed && (
           candidateErr.message?.includes('[RATE_LIMIT]') ||
           candidateErr.message?.includes('rate limit') ||
           candidateErr.message?.includes('capacity') ||
-          candidateErr.message?.includes('429');
+          candidateErr.message?.includes('429'));
 
         if (isRateLimit) {
           AccountRegistryManager.markRateLimited(providerId, activeAccount.id, 3600);
           globalRateLimiter.markRateLimited(providerId);
           globalSessionManager.updateProviderState(providerId, 'rate_limited');
-        } else if (candidateErr.message?.includes('[TEMPORARY_CHAT_') || /MEDIA_NOT_GENERATED|MEDIA_SETTINGS_|MEDIA_UNAVAILABLE/.test(candidateErr.message || '')) {
+        } else if (providerGenerationFailed || candidateErr.message?.includes('[TEMPORARY_CHAT_') || /MEDIA_NOT_GENERATED|MEDIA_SETTINGS_|MEDIA_UNAVAILABLE/.test(candidateErr.message || '')) {
           AccountRegistryManager.markReady(providerId, activeAccount.id);
           globalSessionManager.updateProviderState(providerId, 'ready');
         } else {
@@ -2161,7 +2274,7 @@ export class TransgenticMcpServer {
 
         // A dispatched prompt must never be retried on another account/provider
         // merely because its response could not be observed, in any task mode.
-        if (/SUBMISSION_UNCERTAIN/.test(candidateErr.message || '') || (['image', 'video', 'music'].includes(effectiveMode) && /MEDIA_NOT_GENERATED/.test(candidateErr.message || ''))) throw candidateErr;
+        if (providerGenerationFailed || /SUBMISSION_UNCERTAIN/.test(candidateErr.message || '') || (['image', 'video', 'music'].includes(effectiveMode) && /MEDIA_NOT_GENERATED/.test(candidateErr.message || ''))) throw candidateErr;
         lastCandidateError = candidateErr;
         while (attempts[i + 1]?.providerId === providerId) i++;
         console.warn(`[Transgentic] Provider ${providerId} (${activeAccount.alias}) failed: ${candidateErr.message}.`);
