@@ -143,6 +143,7 @@ export class AssetManager {
     suggestedName?: string,
     cookieHeader?: string,
     taskCategory?: string,
+    referenceHashes: readonly string[] = [],
   ): Promise<{ filePath: string; relativePath: string; fileName: string; sizeBytes: number }> {
     this.ensureDirectoryExists();
 
@@ -187,6 +188,10 @@ export class AssetManager {
       buffer = Buffer.from(data, 'base64');
     } else {
       buffer = Buffer.from(String(data), 'utf-8');
+    }
+
+    if (referenceHashes.length && referenceHashes.includes(crypto.createHash('sha256').update(buffer).digest('hex'))) {
+      throw new Error('[MEDIA_NOT_GENERATED] The provider returned the original reference rather than a generated asset.');
     }
 
     // Inspect magic bytes if buffer is long enough

@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import vm from 'node:vm';
+import { createHash } from 'node:crypto';
 import { DomObserver, providerNoticeText } from '../src/main/webviews/domObserver.js';
 import { BaseProviderAdapter } from '../src/main/webviews/adapterBase.js';
 
@@ -49,8 +50,8 @@ describe('Provider response visibility', () => {
     response.cloneNode = () => {
       const clone = {
         textContent: 'TypeScript' + source,
-        querySelectorAll: (selector: string) => selector === 'pre[role="group"][aria-label$=" code"]'
-          ? [{ querySelector: () => ({ textContent: source }), parentElement: { parentElement: {
+        querySelectorAll: (selector: string) => selector === 'pre:has(code)'
+          ? [{ matches: () => true, querySelector: () => ({ textContent: source }), parentElement: { parentElement: {
             replaceWith: (node: { textContent: string }) => { clone.textContent = node.textContent; },
           } } }]
           : [],
@@ -141,6 +142,25 @@ describe('Provider response visibility', () => {
 
 describe('Provider intervention while polling', () => {
   const idle = { text: '', isGenerating: false, isThinking: false, isMediaRendering: false, isRateLimited: false, isSecurityWarning: false, hasActionButtons: false };
+  it('keeps polling after a Grok candidate matches the attached reference bytes', async () => {
+    vi.useFakeTimers();
+    const reference = Buffer.from('reference');
+    const referenceUrl = 'data:image/png;base64,' + reference.toString('base64');
+    const generatedUrl = 'data:image/png;base64,' + Buffer.from('generated').toString('base64');
+    const executeScript = vi.fn(async (script: string) => ({
+      ...idle,
+      hasActionButtons: true,
+      mediaType: 'image',
+      mediaUrl: script.includes(JSON.stringify([referenceUrl])) ? generatedUrl : referenceUrl,
+    }));
+    const pending = BaseProviderAdapter.prototype.pollGeneration.call(
+      { providerId: 'grok', name: 'Grok', executeScript } as any,
+      { mode: 'image', referenceImageHashes: [createHash('sha256').update(reference).digest('hex')] },
+    );
+    const assertion = expect(pending).resolves.toMatchObject({ media: { type: 'image', data: generatedUrl } });
+    await vi.advanceTimersByTimeAsync(12_000);
+    await assertion;
+  });
   it('reports an idle submission before the full Coding response deadline', async () => {
     vi.useFakeTimers();
     const executeScript = vi.fn().mockResolvedValue(idle);

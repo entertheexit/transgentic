@@ -227,7 +227,9 @@ export class RecipeManager {
       if (recipe.id === cleanId && recipe.viewportWidth === undefined && bundled?.viewportWidth !== undefined) {
         recipe = { ...recipe, viewportWidth: bundled.viewportWidth };
       }
-      if (recipe.id === cleanId && bundled?.modelSelection?.effort && !recipe.modelSelection?.effort) {
+      if (recipe.id === cleanId && bundled?.modelSelection && !recipe.modelSelection) {
+        recipe = { ...recipe, modelSelection: bundled.modelSelection };
+      } else if (recipe.id === cleanId && bundled?.modelSelection?.effort && !recipe.modelSelection?.effort) {
         recipe = { ...recipe, modelSelection: {
           ...bundled.modelSelection,
           ...recipe.modelSelection,

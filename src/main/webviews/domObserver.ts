@@ -92,7 +92,7 @@ export class DomObserver {
    * Generates browser-side DOM inspection script tailored for each provider
    * to accurately detect streaming status, thinking states, media rendering, and completion.
    */
-  public static getInspectionScript(providerId: ProviderId, mode: TaskMode, recipeConfig?: CustomRecipe, excludedMediaUrls: string[] = [], resolveBlob = true): string {
+  public static getInspectionScript(providerId: ProviderId, mode: TaskMode, recipeConfig?: CustomRecipe, excludedMediaUrls: string[] = [], resolveBlob = true, grokChatImage = false): string {
     return `
       (async function() {
         try {
@@ -328,10 +328,25 @@ export class DomObserver {
                   }
                 }
                 if (${JSON.stringify(providerId)} === 'grok') {
-                  for (const pre of clone.querySelectorAll('pre[role="group"][aria-label$=" code"]')) {
+                  for (const pre of clone.querySelectorAll('pre:has(code)')) {
                     const code = pre.querySelector('code');
-                    const block = pre.parentElement?.parentElement;
-                    if (code && block) preserveCodeFence(block, code);
+                    const wrapper = pre.parentElement?.parentElement;
+                    if (!code) continue;
+                    if (pre.matches('[role="group"][aria-label$=" code"]') && wrapper && wrapper !== clone) {
+                      preserveCodeFence(wrapper, code);
+                      continue;
+                    }
+                    // Grok also renders unlabelled pre elements beside a language toolbar.
+                    for (const candidate of [pre.parentElement, wrapper]) {
+                      if (!candidate || candidate === clone || candidate.querySelectorAll('pre').length !== 1) continue;
+                      const toolbar = candidate.cloneNode(true);
+                      toolbar.querySelectorAll('pre, button, [role="button"], svg, [aria-hidden="true"]').forEach(el => el.remove());
+                      if (/^(?:javascript|typescript|python|html|css|json|bash|shell|sql|rust|ruby|go|java|c[+][+]|c#)$/i.test(toolbar.textContent.trim())) {
+                        preserveCodeFence(candidate, code);
+                        break;
+                      }
+                    }
+                    if (clone.contains(pre)) preserveCodeFence(pre, code);
                   }
                 }
                 if (${JSON.stringify(providerId)} === 'claude') {
@@ -810,7 +825,10 @@ export class DomObserver {
                 // Generated previews may be portalled outside the main canvas.
                 // Keep recipe URL selectors and the pre-submit asset exclusion
                 // list, rather than assuming every result belongs to <main>.
-                const elements = Array.from(document.querySelectorAll(selectorString(modeConfig.contentSelector)));
+                const selector = ${JSON.stringify(grokChatImage)}
+                  ? '[data-testid="generated-image-row"] img'
+                  : selectorString(modeConfig.contentSelector);
+                const elements = Array.from(document.querySelectorAll(selector));
                 const asset = elements.find(el => {
                   if (el.closest('form, nav, aside, a[href*="/template/"]')) return false;
                   const src = el.currentSrc || el.src || el.getAttribute('src');

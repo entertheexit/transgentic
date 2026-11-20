@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { createHash } from 'node:crypto';
 import { AssetManager } from '../src/main/storage/assetManager.js';
 
 describe('Generated media data URI storage', () => {
@@ -14,6 +15,15 @@ describe('Generated media data URI storage', () => {
     assets = new AssetManager(directory);
   });
   afterEach(() => fs.rmSync(directory, { recursive: true, force: true }));
+
+  it('rejects a media candidate that exactly matches a request attachment', async () => {
+    const reference = Buffer.from('test reference bytes');
+    const digest = createHash('sha256').update(reference).digest('hex');
+    await expect(assets.saveMediaAsset(reference, 'image', undefined, undefined, 'image', [digest]))
+      .rejects.toThrow('[MEDIA_NOT_GENERATED]');
+    const imageDir = path.join(directory, 'Library', 'Images');
+    expect(fs.existsSync(imageDir) ? fs.readdirSync(imageDir) : []).toEqual([]);
+  });
 
   it.each(['video/mp4', 'video/mp4;codecs=avc1', 'application/octet-stream', 'application/vnd.test.media'])('decodes %s into media bytes', async mime => {
     const saved = await assets.saveMediaAsset(`data:${mime};base64,${mp4.toString('base64')}`, 'video');

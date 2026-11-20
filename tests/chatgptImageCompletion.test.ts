@@ -69,16 +69,16 @@ describe('ChatGPT image-only completion detection', () => {
 });
 
 describe('ChatGPT inline image composer', () => {
-  const enter = (CustomRecipeAdapter.prototype as any).dispatchPromptAfterImagePill;
-  const verifyImageDraft = (CustomRecipeAdapter.prototype as any).verifyImageDraft;
-  const imageDraftNormalizationScript = (CustomRecipeAdapter.prototype as any).imageDraftNormalizationScript;
+  const enter = (CustomRecipeAdapter.prototype as any).dispatchPromptAfterModeMarker;
+  const verifyModeMarkerDraft = (CustomRecipeAdapter.prototype as any).verifyModeMarkerDraft;
+  const modeMarkerDraftNormalizationScript = (CustomRecipeAdapter.prototype as any).modeMarkerDraftNormalizationScript;
   const pillSelector = '[data-inline-selection-pill]';
 
   it('keeps an exact unsent draft without typing it twice', async () => {
     const insertText = vi.fn();
     const adapter = {
       webContents: { isDestroyed: () => false, insertText },
-      imageDraftNormalizationScript,
+      modeMarkerDraftNormalizationScript,
       executeScript: vi.fn().mockResolvedValue('already-entered'),
     };
     expect(await enter.call(adapter, '[contenteditable="true"]', 'A purple circle', pillSelector)).toEqual({ success: true });
@@ -88,7 +88,7 @@ describe('ChatGPT inline image composer', () => {
   it('inserts after the image pill and verifies both mode and prompt before success', async () => {
     const insertText = vi.fn();
     const executeScript = vi.fn().mockResolvedValueOnce('ready').mockResolvedValueOnce(true);
-    const adapter = { webContents: { isDestroyed: () => false, insertText }, executeScript, verifyImageDraft, imageDraftNormalizationScript };
+    const adapter = { webContents: { isDestroyed: () => false, insertText }, executeScript, verifyModeMarkerDraft, modeMarkerDraftNormalizationScript };
     expect(await enter.call(adapter, '[contenteditable="true"]', 'A purple circle', pillSelector)).toEqual({ success: true });
     expect(insertText).toHaveBeenCalledExactlyOnceWith('A purple circle');
     expect(executeScript.mock.calls[0][0]).toContain('range.setStartAfter(inlineControl)');
@@ -105,10 +105,10 @@ describe('ChatGPT inline image composer', () => {
       textContent: 'ImageA purple circleOn white',
     };
     const adapter = {
-      imageDraftNormalizationScript,
+      modeMarkerDraftNormalizationScript,
       executeScript: (script: string) => vm.runInNewContext(script, { document: {}, queryAll: () => [editor] }),
     };
-    const verify = (prompt: string) => verifyImageDraft.call(adapter, '[contenteditable]', prompt, pillSelector);
+    const verify = (prompt: string) => verifyModeMarkerDraft.call(adapter, '[contenteditable]', prompt, pillSelector);
     expect(await verify('A purple circle\r\nOn white')).toBe(true);
     expect(await verify('A purple circle')).toBe(false);
     editor.querySelector = () => null;
@@ -119,7 +119,7 @@ describe('ChatGPT inline image composer', () => {
     const insertText = vi.fn();
     const adapter = {
       webContents: { isDestroyed: () => false, insertText },
-      imageDraftNormalizationScript,
+      modeMarkerDraftNormalizationScript,
       executeScript: vi.fn().mockResolvedValue('occupied:12'),
     };
     expect(await enter.call(adapter, '[contenteditable="true"]', 'A purple circle', pillSelector)).toMatchObject({ success: false });

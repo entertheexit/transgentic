@@ -1,4 +1,5 @@
 import { WebContents } from 'electron';
+import { createHash } from 'node:crypto';
 import { ProviderId, TaskMode } from '../../shared/types.js';
 import { ProjectMetadata } from '../storage/projectManager.js';
 import { InputDispatcher } from '../security/inputDispatcher.js';
@@ -60,6 +61,8 @@ export interface PollGenerationOptions {
   onChunk?: (chunk: string) => void;
   metadata?: ProjectMetadata;
   excludedMediaUrls?: string[];
+  referenceImageHashes?: readonly string[];
+  grokChatImage?: boolean;
   previousResponse?: Pick<DomInspectionResult, 'text' | 'responseTurnCount' | 'providerFailureNotice'>;
   responseStartTimeoutMs?: number;
 }
@@ -424,7 +427,9 @@ export abstract class BaseProviderAdapter {
     let stableTicks = 0;
     let lastInspection: DomInspectionResult | undefined;
     let responseStarted = false;
-    const inspectScript = DomObserver.getInspectionScript(this.providerId, mode, (this as any).recipe, options.excludedMediaUrls, !expectsMedia);
+    const excludedMediaUrls = new Set(options.excludedMediaUrls);
+    const buildInspection = () => DomObserver.getInspectionScript(this.providerId, mode, (this as any).recipe, [...excludedMediaUrls], !expectsMedia, options.grokChatImage);
+    let inspectScript = buildInspection();
     const checkProviderState = (inspection: DomInspectionResult) => {
       if (inspection.error) {
         throw new Error(`[DOM_INSPECTION_FAILED] ${this.name}: ${inspection.error}`);
@@ -579,7 +584,9 @@ export abstract class BaseProviderAdapter {
           // Blob URLs belong to the provider view. Resolve them before the
           // result reaches the main process asset downloader.
           const isProviderBlob = finalMediaUrl?.startsWith('blob:') === true;
-          if (finalMediaUrl && (isProviderBlob || finalMediaUrl.includes('contribution.usercontent.google.com'))) {
+          const checkReference = mode === 'image' && !!options.referenceImageHashes?.length;
+          if (finalMediaUrl && (isProviderBlob || finalMediaUrl.includes('contribution.usercontent.google.com') ||
+            (checkReference && /^https?:\/\//.test(finalMediaUrl)))) {
             try {
               const inWebviewDataUrl = await this.executeScript<string | null>(`
                 (async function() {
@@ -605,6 +612,19 @@ export abstract class BaseProviderAdapter {
             } catch {}
             if (isProviderBlob && finalMediaUrl.startsWith('blob:')) {
               throw new Error('[MEDIA_DOWNLOAD_FAILED] The provider view could not read the generated media.');
+            }
+          }
+
+          if (checkReference && finalMediaUrl?.startsWith('data:')) {
+            const match = /^data:[^,]*;base64,([\s\S]+)$/i.exec(finalMediaUrl);
+            const digest = match && createHash('sha256').update(Buffer.from(match[1], 'base64')).digest('hex');
+            if (digest && options.referenceImageHashes?.includes(digest)) {
+              excludedMediaUrls.add(finalInspect.mediaUrl || effectiveMediaUrl);
+              inspectScript = buildInspection();
+              previousInspectionMediaUrl = undefined;
+              lastMediaUrl = '';
+              stableTicks = 0;
+              continue;
             }
           }
 

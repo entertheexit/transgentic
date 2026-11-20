@@ -14,6 +14,8 @@ describe('CLI process completion and cancellation', () => {
     expect(cliDiagnosticMessage('failed to initialize thread persistence: Operation not permitted')).toContain('thread storage');
     expect(cliDiagnosticMessage('sandbox_init: Operation not permitted')).toContain('sandbox could not start');
     expect(cliDiagnosticMessage('Failed to read auth configuration')).toBeUndefined();
+    expect(cliDiagnosticMessage('Error: Failed to load config: /private/example/config.toml cannot be read or parsed: Operation not permitted (os error 1)'))
+      .toBe('CLI startup requires a configuration file that Transgentic’s permission sandbox blocks.');
     expect(cliDiagnosticMessage('not logged in secret-token')).not.toContain('secret-token');
     expect(cliDiagnosticMessage('429 temporarily rate limited, retrying')).toBeUndefined();
   });
@@ -110,5 +112,34 @@ describe('Grok ACP adapter', () => {
     await executeAdapter('cli_grok', proc, { prompt: 'inspect', policy, attachments: [{ path: imagePath, name: 'source.png', mimeType: 'image/png', kind: 'image', size: 1, sha256: 'a' }] });
     const prompt = calls.find(([method]) => method === 'session/prompt')[1].prompt;
     expect(prompt.some((block: any) => block.type === 'image' && block.mimeType === 'image/png')).toBe(true);
+  });
+
+  it('sends plain text as an ACP text resource with an escaped file URI', async () => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'grok-acp-'));
+    const file = path.join(directory, 'test reference.txt');
+    fs.writeFileSync(file, 'Code: MCP-GROK-832');
+    try {
+      const proc = {
+        onEvent: () => () => {},
+        async request(method: string, params: { prompt?: unknown[] }) {
+          if (method === 'initialize') return { agentCapabilities: { promptCapabilities: { embeddedContext: true } } };
+          if (method === 'session/new') return { sessionId: 'text' };
+          expect(method).toBe('session/prompt');
+          expect(params.prompt?.[1]).toEqual({
+            type: 'resource',
+            resource: { uri: expect.stringMatching(/^file:.*test%20reference\.txt$/), mimeType: 'text/plain', text: 'Code: MCP-GROK-832' },
+          });
+          return { stopReason: 'end_turn' };
+        },
+      };
+      await executeAdapter('cli_grok', proc as unknown as CliProcess, {
+        prompt: 'Read the reference.',
+        policy,
+        attachments: [{ path: file, name: 'test reference.txt', mimeType: 'text/plain', kind: 'document', size: 18, sha256: 'a' }],
+      });
+    } finally {
+      fs.unlinkSync(file);
+      fs.rmdirSync(directory);
+    }
   });
 });

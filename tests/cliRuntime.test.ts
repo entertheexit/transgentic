@@ -104,6 +104,12 @@ describe('CLI permissions and registration', () => {
 });
 
 describe('CLI model discovery', () => {
+  it('ignores the Grok sign-in banner and keeps the default model', () => {
+    expect(parseCliModelText('You are logged in with grok.com.\ngrok-4.7 (default)\n')).toEqual([
+      { id: 'grok-4.7', name: '(default)' },
+    ]);
+  });
+
   it('parses native text catalogs and ignores headings and diagnostics', () => {
     expect(parseCliModelText(`Available models:\n\u001b[36mgemini-3.8-flash-high\u001b[0m  Gemini 3.8 Flash (High)\nmodel  display name\ngrok-4.6  Grok 4.6\nWARNING: refresh delayed\n`)).toEqual([
       { id: 'gemini-3.8-flash-high', name: 'Gemini 3.8 Flash (High)' },

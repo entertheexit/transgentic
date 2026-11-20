@@ -175,6 +175,19 @@ describe('Recipe Versioning, Storage & Self-Healing Tests', () => {
   });
 
   describe('Self-Healing Recipe Versioning, History & Rollback', () => {
+    it('restores the bundled Grok model picker for healed recipes that lack it', () => {
+      const bundled = recipeManager.getRecipe('grok')!;
+      const override = { ...bundled, selectors: { ...bundled.selectors, inputPrompt: '#healed-input' } };
+      delete override.modelSelection;
+      const healedDir = path.join(tempBaseDir, 'Recipes', 'Healed');
+      fs.mkdirSync(healedDir, { recursive: true });
+      fs.writeFileSync(path.join(healedDir, 'grok.json'), JSON.stringify(override), 'utf8');
+      recipeManager.initializeAllCustomRecipes();
+      expect(bundled.modelSelection).toBeDefined();
+      expect(recipeManager.getRecipe('grok')?.modelSelection).toEqual(bundled.modelSelection);
+      expect(recipeManager.getRecipe('grok')?.selectors.inputPrompt).toBe('#healed-input');
+    });
+
     it('keeps viewport width flexible by default for Gemini overrides and honors an explicit width', () => {
       const bundled = recipeManager.getRecipe('gemini')!;
       const override = { ...bundled, selectors: { ...bundled.selectors, inputPrompt: '#healed-input' } };

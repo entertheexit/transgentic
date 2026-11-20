@@ -13,6 +13,8 @@ Media requests use recipe-controlled tools and settings through Quick Prompt, MC
 | Gemini | Video | `aspect_ratio: "16:9"`; native duration and quality |
 | Grok Imagine | Image | `quality: "speed"`, `aspect_ratio: "1:1"` |
 | Grok Imagine | Video | `resolution: "480p"`, `duration_seconds: 6`, `aspect_ratio: "16:9"`, `sound: true` |
+
+Some Grok accounts land in an **Image and Video** chat composer when opening Imagine. In that composer, Transgentic requests the image aspect ratio or the video aspect ratio, duration, resolution, and sound in the prompt. Grok can return different output settings. Inspect the saved file to confirm its dimensions, duration, and audio. Image quality selection is available on the legacy Imagine surface.
 | ChatGPT | Image | Native automatic quality and aspect ratio; no verified configurable controls |
 | Meta AI | Image / Video | Prompt-directed; no verified explicit quality, duration, or aspect-ratio controls |
 

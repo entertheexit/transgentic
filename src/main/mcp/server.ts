@@ -2196,7 +2196,8 @@ export class TransgenticMcpServer {
               adapterResult.media.type,
               adapterResult.media.suggestedName,
               cookieHeader,
-              effectiveMode
+              effectiveMode,
+              attachments.map(file => file.sha256),
             );
             savedMediaRelPath = saved.filePath;
           }

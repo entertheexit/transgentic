@@ -19,6 +19,29 @@ async function inspect({ loaded = true, reference = false, excluded = false, por
 }
 
 describe('Grok Imagine completion', () => {
+  it.each([590, 1024])('only considers the generated image group on the Grok chat surface at %d px', async innerWidth => {
+    const loadedImage = (src: string) => ({
+      tagName: 'IMG', src, currentSrc: src, complete: true, naturalWidth: 784,
+      closest: () => null, getAttribute: () => src,
+    });
+    const reference = loadedImage('https://assets.grok.com/users/test/reference.png');
+    const generated = loadedImage(url);
+    const document = {
+      body: { innerText: '' },
+      querySelector: () => null,
+      querySelectorAll: (selector: string) => {
+        if (selector === '[data-testid="generated-image-row"] img') return [generated];
+        if (selector === BUILTIN_RECIPES.grok.response.modes.image!.contentSelector) return [reference, generated];
+        return [];
+      },
+    };
+    const result = await vm.runInNewContext(
+      DomObserver.getInspectionScript('grok', 'image', BUILTIN_RECIPES.grok, [], false, true),
+      { document, innerWidth, getComputedStyle: () => ({ display: 'block', visibility: 'visible', opacity: '1' }) },
+    );
+    expect(result).toMatchObject({ mediaUrl: url, mediaType: 'image' });
+  });
+
   it('reports a visible native entitlement dialog instead of accepting a prior gallery asset', async () => {
     expect(await inspect({ paywall: true })).toMatchObject({ mediaUnavailableReason: expect.any(String), text: '' });
     expect(await inspect({ paywall: true, hiddenPaywall: true })).toMatchObject({ mediaUrl: url });

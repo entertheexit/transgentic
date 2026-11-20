@@ -8,8 +8,8 @@ import { ProviderId, TaskMode } from '../../shared/types.js';
 import { CustomRecipe, normalizeSelectorList, toCombinedCssSelector, RecipeModes, RecipeAttachmentRevealStep, RecipeElementLocator, RecipeClickStep, SelectorCandidate } from '../../shared/types/recipe.js';
 import { ProjectMetadata } from '../storage/projectManager.js';
 import type { StagedAttachment } from '../../shared/attachments.js';
-import { mediaGenerationPrompt, resolveMediaSettings, type MediaSettings, type MediaMode } from '../../shared/media.js';
-import { applyMediaControls } from './mediaControls.js';
+import { mediaGenerationPrompt, resolveMediaSettings, type MediaSettings, type MediaMode, type RecipeGeneration } from '../../shared/media.js';
+import { applyMediaControls, inspectMediaControl } from './mediaControls.js';
 import { DomObserver, providerNoticeText, type DomInspectionResult } from './domObserver.js';
 
 function inlineAttachmentInspectionScript(selector: string, markerSelector: string, expectedCount: number): string {
@@ -642,8 +642,47 @@ export class CustomRecipeAdapter extends BaseProviderAdapter {
     const upload = modeConfig?.inputAttachments;
     const resolvedSettings = ['image', 'video', 'music'].includes(mode)
       ? resolveMediaSettings(this.recipe, mode as MediaMode, { settings: mediaSettings }, mediaModel) : {};
-    const verifyMedia = modeConfig?.generation
-      ? await applyMediaControls(modeConfig.generation, resolvedSettings, code => this.executeScript(code), abortSignal, () => { this.webContents?.sendInputEvent({ type: 'keyDown', keyCode: 'ESC' }); this.webContents?.sendInputEvent({ type: 'keyUp', keyCode: 'ESC' }); }, this.recipe.openShadowDom)
+    const grokEditor = '[contenteditable="true"][aria-label="Message Grok"]';
+    const grokMention = '.node-mention[data-mention-flow="text"][contenteditable="false"]';
+    const grokMediaMarker = { scope: grokEditor, selectors: grokMention, name: 'Image and Video' };
+    const grokMedia = this.providerId === 'grok' && modeConfig?.pageUrl === '/imagine' &&
+      (mode === 'image' || mode === 'video');
+    let grokMediaChat = false;
+    if (grokMedia) {
+      const inspect = (locator: Parameters<typeof inspectMediaControl>[1]) =>
+        inspectMediaControl(code => this.executeScript(code), locator, false, false, this.recipe.openShadowDom);
+      const deadline = Date.now() + 5_000;
+      do {
+        if (abortSignal?.aborted) throw Object.assign(new Error('Media setup cancelled.'), { name: 'AbortError' });
+        grokMediaChat = await inspect(grokMediaMarker);
+        if (grokMediaChat || await inspect({ selectors: '[role="group"][aria-label="Generation mode"]' })) break;
+        await new Promise(resolve => setTimeout(resolve, 150));
+      } while (Date.now() < deadline);
+    }
+    const generation: RecipeGeneration | undefined = grokMediaChat ? {
+      strategy: 'prompt',
+      readyWhen: grokMediaMarker,
+      promptInstruction: mode === 'video'
+        ? `Generate a video. Requested output: ${resolvedSettings.aspect_ratio} aspect ratio, ${resolvedSettings.duration_seconds} seconds, ${resolvedSettings.resolution}, ${resolvedSettings.sound ? 'with sound' : 'without sound'}.`
+        : `Generate an image with a ${resolvedSettings.aspect_ratio} aspect ratio.`,
+      activationSteps: [],
+      settings: [],
+    } : modeConfig?.generation;
+    const verifyMedia = generation
+      ? await applyMediaControls(generation, grokMediaChat ? {} : resolvedSettings, code => this.executeScript(code), abortSignal, () => { this.webContents?.sendInputEvent({ type: 'keyDown', keyCode: 'ESC' }); this.webContents?.sendInputEvent({ type: 'keyUp', keyCode: 'ESC' }); }, this.recipe.openShadowDom)
+        .catch(async error => {
+          if (!grokMedia || error?.name === 'AbortError' || !error?.message?.startsWith('[MEDIA_SETTINGS_FAILED]')) throw error;
+          const diagnostic = await this.executeScript<string>(`(() => {
+            const path = location.pathname;
+            const surface = path === '/' ? 'home' : path.startsWith('/imagine') ? 'Imagine' : 'other';
+            const editor = document.querySelector(${JSON.stringify(grokEditor)});
+            const mention = [...(editor?.querySelectorAll(${JSON.stringify(grokMention)}) || [])]
+              .some(node => node.textContent.trim() === 'Image and Video');
+            const radios = !!document.querySelector('[role="group"][aria-label="Generation mode"]');
+            return 'Surface: ' + surface + ', chat editor: ' + !!editor + ', media mention: ' + mention + ', legacy controls: ' + radios + '.';
+          })()`).catch(() => '');
+          throw diagnostic ? new Error(error.message + ' ' + diagnostic, { cause: error }) : error;
+        })
       : undefined;
     let attached = false;
     let submitted = false;
@@ -683,8 +722,8 @@ export class CustomRecipeAdapter extends BaseProviderAdapter {
 
       // Dispatch only after every attachment is present and ready.
       await verifyMedia?.();
-      const submittedPrompt = mediaGenerationPrompt(modeConfig?.generation, prompt);
-      const rawInput = modeConfig?.inputSelector || this.recipe.selectors.inputPrompt;
+      const submittedPrompt = mediaGenerationPrompt(generation, prompt);
+      const rawInput = grokMediaChat ? grokEditor : modeConfig?.inputSelector || this.recipe.selectors.inputPrompt;
       const inputSelector = toCombinedCssSelector(rawInput);
       if (editorGuard) {
         const marked = await this.executeScript<boolean>(`(() => {
@@ -695,13 +734,13 @@ export class CustomRecipeAdapter extends BaseProviderAdapter {
         })()`);
         if (!marked) throw new Error('[MEDIA_SETTINGS_FAILED] The verified composer is unavailable.');
       }
-      const imagePill = this.recipe.id === 'chatgpt' && mode === 'image'
+      const imagePill = grokMediaChat ? grokMention : this.recipe.id === 'chatgpt' && mode === 'image'
         ? toCombinedCssSelector(modeConfig?.generation?.activeWhen?.selectors)
         : '';
       const inputResult = attachments.length && upload?.preserveInComposer
         ? await this.dispatchPromptPreservingAttachments(inputSelector, submittedPrompt, toCombinedCssSelector(upload.preserveInComposer), attachments.length)
         : imagePill
-        ? await this.dispatchPromptAfterImagePill(inputSelector, submittedPrompt, imagePill)
+        ? await this.dispatchPromptAfterModeMarker(inputSelector, grokMediaChat ? ` ${submittedPrompt}` : submittedPrompt, imagePill)
         : await this.dispatchRealisticInput(inputSelector, submittedPrompt);
       if (!inputResult?.success) throw new Error(`Failed to inject prompt into "${this.name}": ${inputResult?.error || 'Target input not found'}`);
       await new Promise((r) => setTimeout(r, 250));
@@ -717,13 +756,13 @@ export class CustomRecipeAdapter extends BaseProviderAdapter {
         const existing = await this.executeScript<string[]>(`Array.from(queryAll(document, 'img,video,audio,source')).flatMap(el => [el.src, el.currentSrc, el.getAttribute('src')]).filter(Boolean)`);
         excludedMediaUrls = [...existing, ...(prior.mediaUrl ? [prior.mediaUrl] : [])];
       }
-      const rawSubmit = modeConfig?.submitSelector || this.recipe.selectors.submitButton;
+      const rawSubmit = grokMediaChat ? this.recipe.selectors.submitButton : modeConfig?.submitSelector || this.recipe.selectors.submitButton;
       const submitSelector = toCombinedCssSelector(rawSubmit);
       if (attachments.length && upload?.preserveInComposer && !await this.verifyInlineAttachmentPrompt(
         inputSelector, submittedPrompt, toCombinedCssSelector(upload.preserveInComposer), attachments.length,
       )) throw new Error('Inline attachments or prompt changed before submission.');
-      if (imagePill && !await this.verifyImageDraft(inputSelector, submittedPrompt, imagePill)) {
-        throw new Error('ChatGPT image composer or draft changed before submission.');
+      if (imagePill && !await this.verifyModeMarkerDraft(inputSelector, submittedPrompt, imagePill)) {
+        throw new Error('Media composer or draft changed before submission.');
       }
       if (editorGuard && attachments.length) {
         const readySelector = upload?.ready && toCombinedCssSelector(upload.ready);
@@ -798,6 +837,9 @@ export class CustomRecipeAdapter extends BaseProviderAdapter {
     try {
       const result = await this.pollGeneration({
         mode, metadata: project, onChunk, abortSignal, excludedMediaUrls, previousResponse,
+        grokChatImage: grokMediaChat && mode === 'image',
+        ...(grokMedia && mode === 'image' && attachments.length
+          ? { referenceImageHashes: attachments.map(file => file.sha256) } : {}),
         ...(verifyTextSubmission ? { responseStartTimeoutMs: 45_000 } : {}),
       });
       if (this.temporaryChatRequired && !await this.verifyTemporaryChat()) {
@@ -862,7 +904,7 @@ export class CustomRecipeAdapter extends BaseProviderAdapter {
   }
 
   /** Rich-text paragraphs can contribute extra visual newlines to innerText. */
-  private imageDraftNormalizationScript(): string {
+  private modeMarkerDraftNormalizationScript(): string {
     return `const normalize = text => String(text || '').replace(/\\r\\n?/g, '\\n')
       .replace(/\\u00a0/g, ' ').replace(/ *\\n(?: *\\n)* */g, '\\n').trim();
       const readDraft = (text, label) => {
@@ -870,15 +912,23 @@ export class CustomRecipeAdapter extends BaseProviderAdapter {
         const prefix = normalize(label);
         return prefix && full.startsWith(prefix) ? normalize(full.slice(prefix.length)) : full;
       };
-      const drafts = (editor, control) => [
-        readDraft(editor.innerText, control.innerText),
-        readDraft(editor.textContent, control.textContent),
-      ];`;
+      const drafts = (editor, control) => {
+        const placeholderSelector = '.ProseMirror-widget[aria-hidden="true"]';
+        if (editor.querySelectorAll?.(placeholderSelector).length) {
+          const copy = editor.cloneNode(true);
+          copy.querySelectorAll(placeholderSelector).forEach(el => el.remove());
+          return [readDraft(copy.textContent, control.textContent)];
+        }
+        return [
+          readDraft(editor.innerText, control.innerText),
+          readDraft(editor.textContent, control.textContent),
+        ];
+      };`;
   }
 
-  private async dispatchPromptAfterImagePill(selector: string, prompt: string, pillSelector: string): Promise<{ success: boolean; error?: string }> {
+  private async dispatchPromptAfterModeMarker(selector: string, prompt: string, pillSelector: string): Promise<{ success: boolean; error?: string }> {
     if (!this.webContents || this.webContents.isDestroyed()) {
-      return { success: false, error: 'ChatGPT composer is unavailable.' };
+      return { success: false, error: 'Media composer is unavailable.' };
     }
 
     const focusState = await this.executeScript<string>(`(() => {
@@ -889,7 +939,7 @@ export class CustomRecipeAdapter extends BaseProviderAdapter {
       const pill = editor?.querySelector(${JSON.stringify(pillSelector)});
       if (!editor || !pill) return 'missing';
       const inlineControl = pill.closest('[contenteditable="false"]') || pill;
-      ${this.imageDraftNormalizationScript()}
+      ${this.modeMarkerDraftNormalizationScript()}
       const [existingPrompt, plainDraft] = drafts(editor, inlineControl);
       const expected = normalize(${JSON.stringify(prompt)});
       if (existingPrompt === expected || plainDraft === expected) return 'already-entered';
@@ -904,19 +954,19 @@ export class CustomRecipeAdapter extends BaseProviderAdapter {
       return editor.getRootNode().activeElement === editor ? 'ready' : 'not-focused';
     })()`);
     if (focusState === 'already-entered') return { success: true };
-    if (focusState !== 'ready') return { success: false, error: `The selected ChatGPT image composer was not ready (${focusState}).` };
+    if (focusState !== 'ready') return { success: false, error: `The selected media composer was not ready (${focusState}).` };
 
-    // Image mode is an inline, non-editable pill. Replacing the editor's whole
+    // The media mode marker is inline and non-editable. Replacing the editor's whole
     // selection would erase it, so insert text after the pill and verify both.
     await this.webContents.insertText(prompt);
     for (let attempt = 0; attempt < 8; attempt++) {
-      if (await this.verifyImageDraft(selector, prompt, pillSelector)) return { success: true };
+      if (await this.verifyModeMarkerDraft(selector, prompt, pillSelector)) return { success: true };
       await new Promise(resolve => setTimeout(resolve, 80));
     }
-    return { success: false, error: 'ChatGPT did not retain the image mode and complete prompt after entry.' };
+    return { success: false, error: 'The provider did not retain the media mode and complete prompt after entry.' };
   }
 
-  private async verifyImageDraft(selector: string, prompt: string, pillSelector: string): Promise<boolean> {
+  private async verifyModeMarkerDraft(selector: string, prompt: string, pillSelector: string): Promise<boolean> {
     return this.executeScript<boolean>(`(() => {
       const editors = [...queryAll(document, ${JSON.stringify(selector)})].filter(editor =>
         editor.isContentEditable && editor.getClientRects().length &&
@@ -925,7 +975,7 @@ export class CustomRecipeAdapter extends BaseProviderAdapter {
       const editor = editors[0];
       const pill = editor.querySelector(${JSON.stringify(pillSelector)});
       const inlineControl = pill.closest('[contenteditable="false"]') || pill;
-      ${this.imageDraftNormalizationScript()}
+      ${this.modeMarkerDraftNormalizationScript()}
       const expected = normalize(${JSON.stringify(prompt)});
       return drafts(editor, inlineControl).includes(expected);
     })()`);

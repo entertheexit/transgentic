@@ -2,6 +2,7 @@ import type { CliProviderId } from '../../shared/cli.js';
 import type { ExecutionPolicy } from './executionPolicy.js';
 import { CliProcess } from './processRunner.js';
 import fs from 'node:fs';
+import { pathToFileURL } from 'node:url';
 import type { StagedAttachment } from '../../shared/attachments.js';
 
 export interface CliResult { wasNewChat?: boolean; text: string; sessionId?: string; modelUsed?: string; usage?: Record<string, number>; permissionDenied?: boolean; actions?: { commands: number; fileChanges: number } }
@@ -106,7 +107,14 @@ async function executeGrok(proc: CliProcess, input: AdapterInput): Promise<CliRe
         blocks.push({ type: 'image', mimeType: file.mimeType, data: fs.readFileSync(file.path).toString('base64') });
       } else {
         if (promptCapabilities.embeddedContext !== true) throw new Error('Grok ACP did not advertise embedded-resource prompt capability.');
-        blocks.push({ type: 'resource', resource: { uri: `file://${file.path}`, name: file.name, mimeType: file.mimeType, blob: fs.readFileSync(file.path).toString('base64') } });
+        const bytes = fs.readFileSync(file.path);
+        const contents = file.mimeType.startsWith('text/')
+          ? { text: bytes.toString('utf8') }
+          : { blob: bytes.toString('base64') };
+        blocks.push({
+          type: 'resource',
+          resource: { uri: pathToFileURL(file.path).href, mimeType: file.mimeType, ...contents },
+        });
       }
     }
     const result = await proc.request('session/prompt', { sessionId, prompt: blocks });

@@ -12,6 +12,7 @@ export function cliDiagnosticMessage(text: string): string | undefined {
   if (/authentication required|not logged in|not signed in|invalid_grant|login required/i.test(text)) return 'CLI authentication required. Sign in using its native CLI, then recheck.';
   if (/sandbox_init.*operation not permitted/i.test(text)) return 'CLI permission sandbox could not start. Restart Transgentic outside a nested process sandbox.';
   if (/failed to initialize thread persistence.*operation not permitted/i.test(text)) return 'CLI could not initialize native thread storage under the permission sandbox. Check CLI compatibility.';
+  if (/config(?: file)? unreadable[^\r\n]*operation not permitted|failed to load config:[^\r\n]*operation not permitted/i.test(text)) return 'CLI startup requires a configuration file that Transgentic’s permission sandbox blocks.';
   return undefined;
 }
 

@@ -62,7 +62,7 @@ export function parseCliModelText(output: string): CliModelOption[] {
   const candidates: Array<{ id: string; name: string }> = [];
   for (const rawLine of lines) {
     const line = rawLine.trim().replace(/^[>*•]\s*/, '');
-    if (!line || /^(?:error|warning|usage|flags?):/i.test(line)) continue;
+    if (!line || /^(?:error|warning|usage|flags?):|^you are logged in with\s/i.test(line)) continue;
     const columns = line.split(/\t+|\s{2,}/).map(value => value.trim()).filter(Boolean);
     if (!columns.length) continue;
     const firstParts = columns[0].split(/\s+/);
@@ -140,14 +140,15 @@ export class CliRuntimeManager {
   private config: CliConfig = normalizeCliConfig();
   private statuses: Partial<Record<CliProviderId, CliStatus>> = {};
   private active = new Map<string, { provider: CliProviderId; controller: AbortController }>();
-  private sessions = new Map<string, { id: string; lastUsed: number }>();
+  private sessions = new Map<string, { id: string; lastUsed: number; grokHome?: string }>();
+  private activeGrokHomes = new Set<string>();
   private modelCatalogCache = new Map<CliProviderId, { fingerprint: string; result: CliModelDiscovery; expiresAt: number }>();
   private modelCatalogRequests = new Map<CliProviderId, Promise<CliModelDiscovery>>();
   private listeners = new Set<() => void>();
   setConfig(config?: CliConfig) {
     const next = normalizeCliConfig(config);
     if (JSON.stringify(next) !== JSON.stringify(this.config)) {
-      this.dispose(); this.sessions.clear(); this.statuses = {}; this.config = next; this.emit();
+      this.dispose(); this.clearSessions(); this.statuses = {}; this.config = next; this.emit();
     }
   }
   getState(): CliState { return { config: structuredClone(this.config), statuses: structuredClone(this.statuses), sandboxAvailable: sandboxAvailable() }; }
@@ -272,7 +273,16 @@ export class CliRuntimeManager {
   }
   cancelProvider(id: CliProviderId) { for (const job of this.active.values()) if (job.provider === id) job.controller.abort(); }
   dispose() { for (const job of this.active.values()) job.controller.abort(); }
-  clearSessions(prefix?: string) { for (const key of this.sessions.keys()) if (!prefix || key.includes(prefix)) this.sessions.delete(key); }
+  private forgetSession(key: string) {
+    const home = this.sessions.get(key)?.grokHome;
+    this.sessions.delete(key);
+    if (home && !this.activeGrokHomes.has(home)) fs.rmSync(home, { recursive: true, force: true });
+  }
+  clearSessions(prefix?: string) {
+    for (const key of this.sessions.keys()) {
+      if (!prefix || key.includes(prefix)) this.forgetSession(key);
+    }
+  }
   async testConnection(id: CliProviderId): Promise<string> {
     await this.probe(id);
     const reqId = `cli_connection_test_${crypto.randomUUID()}`;
@@ -310,15 +320,36 @@ export class CliRuntimeManager {
         fs.mkdirSync(base, { recursive: true, mode: 0o700 });
         const scratch = fs.realpathSync(fs.mkdtempSync(path.join(base, 'run-')));
         let proc: CliProcess | undefined;
+        let grokHome: string | undefined;
+        let retainedGrokHome = false;
         let mayHaveSideEffects = false;
         try {
           const policy = resolvePolicy(config, id, options.request || {}, options.desktop === true, scratch, options.reviewer);
           const nativeStorage = [path.join(os.homedir(), id === 'cli_codex' ? '.codex' : id === 'cli_claude_code' ? '.claude' : id === 'cli_grok' ? '.grok' : '.gemini/antigravity-cli')];
           const fingerprint = crypto.createHash('sha256').update(JSON.stringify([executable, fs.statSync(executable).mtimeMs, config.services[id], options.model, options.effort, policy.workspaceId, policy.allowCommands, policy.allowProjectEditing])).digest('hex');
           const key = JSON.stringify([id, options.conversationKey, fingerprint]);
-          for (const [k, s] of this.sessions) if (Date.now() - s.lastUsed > 86400000) this.sessions.delete(k);
-          if (options.newThread) this.sessions.delete(key);
+          for (const [sessionKey, session] of this.sessions) {
+            if (Date.now() - session.lastUsed <= 86400000 && !(options.newThread && sessionKey === key)) continue;
+            this.forgetSession(sessionKey);
+          }
           const previous = this.sessions.get(key);
+          if (id === 'cli_grok') {
+            grokHome = previous?.grokHome;
+            retainedGrokHome = Boolean(grokHome);
+            if (!grokHome) {
+              // Keep Grok's user config out of the sandboxed process. The
+              // native login stays at its existing path and is never copied.
+              grokHome = fs.realpathSync(fs.mkdtempSync(path.join(base, 'grok-')));
+              fs.symlinkSync(path.join(nativeStorage[0], 'auth.json'), path.join(grokHome, 'auth.json'));
+            }
+            this.activeGrokHomes.add(grokHome);
+            if (!policy.workspaceId) {
+              // ACP session/load requires the same working directory as session/new.
+              const conversationCwd = path.join(grokHome, 'work');
+              fs.mkdirSync(conversationCwd, { recursive: true, mode: 0o700 });
+              policy.cwd = conversationCwd;
+            }
+          }
           const model = options.model && options.model !== 'default' ? options.model : config.services[id]?.model || undefined;
           const attachmentDir = path.join(scratch, 'attachments');
           const attachments: StagedAttachment[] = [];
@@ -338,7 +369,7 @@ export class CliRuntimeManager {
           const trustedAuthReadFiles = (id === 'cli_antigravity' || id === 'cli_claude_code') ? macosAuthReadFiles() : [];
           const nativeRuntimeRoots = id === 'cli_antigravity'
             ? [path.join(os.homedir(), '.gemini', 'config', 'projects')]
-            : [];
+            : grokHome ? [grokHome] : [];
           const diagnosticFile = id === 'cli_antigravity' ? path.join(scratch, 'native.log') : undefined;
           const args = adapterArgs(id, input);
           if (diagnosticFile) args.push('--log-file', diagnosticFile);
@@ -347,13 +378,16 @@ export class CliRuntimeManager {
           throwIfCancelled(controller.signal);
           this.setStatus(id, { state: 'busy', message: undefined });
           mayHaveSideEffects = policy.allowProjectEditing || policy.allowCommands;
-          proc = new CliProcess(launch.command, launch.args, { cwd: policy.cwd, env: { ...cliEnvironment(), TMPDIR: scratch }, timeoutMs: (config.services[id]?.timeoutSeconds || 300) * 1000, diagnosticFile, signal: controller.signal });
+          proc = new CliProcess(launch.command, launch.args, { cwd: policy.cwd, env: { ...cliEnvironment(), TMPDIR: scratch, ...(grokHome ? { GROK_HOME: grokHome } : {}) }, timeoutMs: (config.services[id]?.timeoutSeconds || 300) * 1000, diagnosticFile, signal: controller.signal });
           const result = await executeAdapter(id, proc, input);
           if (id !== 'cli_grok') await proc.waitForExit();
           throwIfCancelled(controller.signal);
           if (!result.text.trim()) throw new Error('CLI returned no answer.');
           if (result.permissionDenied) throw new Error('CLI could not perform an operation under the configured permissions. Review the activity and permission settings.');
-          if (result.sessionId) this.sessions.set(key, { id: result.sessionId, lastUsed: Date.now() });
+          if (result.sessionId && (!retainedGrokHome || this.sessions.get(key) === previous)) {
+            this.sessions.set(key, { id: result.sessionId, lastUsed: Date.now(), grokHome });
+            retainedGrokHome = Boolean(grokHome);
+          }
           this.setStatus(id, { state: 'ready', message: undefined, resetAt: undefined });
           return { ...result, modelUsed: result.modelUsed || model, wasNewChat: !previous };
         } catch (error) {
@@ -361,7 +395,16 @@ export class CliRuntimeManager {
           if (mayHaveSideEffects) { err.noFallback = true; err.message += ' Project actions may already have occurred. Inspect the workspace before retrying; Transgentic will not replay this request on a fallback.'; }
           this.setStatus(id, cliQuotaStatus(err.message) || { state: err.name === 'AbortError' ? 'available' : /authentication required|not logged in/i.test(err.message) ? 'authentication_required' : 'error', message: err.name === 'AbortError' ? 'Request stopped.' : err.message, resetAt: undefined });
           throw err;
-        } finally { if (proc) { proc.stop(); await proc.closed; } fs.rmSync(scratch, { recursive: true, force: true }); }
+        } finally {
+          if (proc) { proc.stop(); await proc.closed; }
+          if (grokHome) {
+            this.activeGrokHomes.delete(grokHome);
+            if (!retainedGrokHome || !Array.from(this.sessions.values()).some(session => session.grokHome === grokHome)) {
+              fs.rmSync(grokHome, { recursive: true, force: true });
+            }
+          }
+          fs.rmSync(scratch, { recursive: true, force: true });
+        }
       };
       const queued = AccountQueueManager.runTask(`${id}_native`, options.reqId, () => options.request?.workspaceId
         ? AccountQueueManager.runTask(`cli_workspace_${options.request.workspaceId}`, `${options.reqId}_workspace`, executeQueued)
