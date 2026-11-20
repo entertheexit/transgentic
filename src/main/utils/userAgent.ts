@@ -1,18 +1,10 @@
 import { SessionProfileManager } from '../security/antiDetection.js';
 
-let cachedHostChromeUA: string | null = null;
-
 /**
- * Discovers host installed Google Chrome version and generates a clean,
- * authentic desktop User-Agent string without any Electron tokens.
+ * Returns the engine-aligned desktop Chrome User-Agent without Electron tokens.
  */
 export function getHostChromeUserAgent(): string {
-  if (cachedHostChromeUA) {
-    return cachedHostChromeUA;
-  }
-
-  cachedHostChromeUA = SessionProfileManager.getNormalizedUserAgent();
-  return cachedHostChromeUA;
+  return SessionProfileManager.getNormalizedUserAgent();
 }
 
 /**
@@ -47,7 +39,15 @@ export function isValidDesktopUserAgent(ua?: string): boolean {
  * to bindHostUserAgentToPartition(partitionKey) which calls SessionProfileManager.getNormalizedUserAgent().
  */
 export async function bindUserAgentToPartition(partitionKey: string, customUA?: string): Promise<string> {
-  if (customUA && isValidDesktopUserAgent(customUA)) {
+  // Inside Electron, keep the partition aligned with the embedded Chromium
+  // version when an incoming synced Chrome UA is from a different major version
+  // (e.g. Chrome 157 synced into Chromium 132), preventing UA/Client-Hint/TLS mismatch.
+  const embeddedChrome = typeof process !== 'undefined' ? (process.versions as Record<string, string | undefined>)?.chrome : undefined;
+  const embeddedMajor = embeddedChrome?.split('.')[0];
+  const customMajor = customUA?.match(/Chrome\/(\d+)\./)?.[1];
+  const majorMatchesEngine = !embeddedMajor || !customMajor || embeddedMajor === customMajor;
+
+  if (customUA && isValidDesktopUserAgent(customUA) && majorMatchesEngine) {
     const uaToApply = customUA.trim();
     try {
       const { session } = await import('electron');
@@ -59,6 +59,6 @@ export async function bindUserAgentToPartition(partitionKey: string, customUA?: 
     return uaToApply;
   }
 
-  // Fallback: bind host Chrome UA using SessionProfileManager.getNormalizedUserAgent()
+  // Fallback: bind engine-aligned Chrome UA using SessionProfileManager.getNormalizedUserAgent()
   return await bindHostUserAgentToPartition(partitionKey);
 }

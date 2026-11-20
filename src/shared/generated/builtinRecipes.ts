@@ -381,8 +381,7 @@ export const BUILTIN_RECIPES: Record<"chatgpt" | "claude" | "gemini" | "grok" | 
     }
   },
   "gemini": {
-    "version": "1.1.14",
-    "viewportWidth": 590,
+    "version": "1.1.16",
     "id": "gemini",
     "title": "Google Gemini",
     "domainMatch": "gemini.google.com",
@@ -477,12 +476,13 @@ export const BUILTIN_RECIPES: Record<"chatgpt" | "claude" | "gemini" | "grok" | 
         "I'm having a hard time fulfilling your request. Can I help you with something else instead?",
         "Sorry, something went wrong. Please try your request again.",
         "I seem to be encountering an error. Can I try something else for you?",
-        "I encountered an error doing what you asked. Could you try again?"
+        "I encountered an error doing what you asked. Could you try again?",
+        "I'm sorry, I'm experiencing unusually high traffic right now generating videos and am at full capacity. Please try again later."
       ],
       "container": "model-response, response-container, structured-content-container, message-content",
       "textSelector": ".response-content-markdown, .markdown, .prose",
       "actionButtons": "button[aria-label*=\"Copy\" i], button[aria-label*=\"Download\" i], copy-button, share-button",
-      "generatingIndicator": "[data-test-id=\"image-loading-overlay\"]:not(.done-generating), .shimmer-overlay:not(.done-generating)",
+      "generatingIndicator": "[data-test-id=\"image-loading-overlay\"]:not(.done-generating), .shimmer-overlay:not(.done-generating), generated-video:not(:has(video[src])), video-loading-overlay:not(.done-generating), [data-test-id*=\"video-loading\"]:not(.done-generating)",
       "modes": {
         "text": {
           "enabled": true,
@@ -1071,6 +1071,7 @@ export const BUILTIN_RECIPES: Record<"chatgpt" | "claude" | "gemini" | "grok" | 
         },
         "video": {
           "enabled": true,
+          "pageUrl": "/app",
           "contentSelector": "generated-video video, video-player video, video",
           "downloadSelector": "button[aria-label*=\"Download video\" i]",
           "mediaKind": "video",

@@ -10,11 +10,18 @@ export class SessionProfileManager {
   private static cachedChromeVersion: string | null = null;
 
   /**
-   * Discovers the installed Google Chrome version on the host system via native CLI / registry,
-   * or falls back to a modern stable Chrome version.
+   * Returns the embedded Chromium version when running inside Electron so that
+   * User-Agent, Sec-CH-UA, navigator.userAgentData, and TLS/Blink fingerprints
+   * stay 100% consistent. Outside Electron, discovers the host Chrome version.
    */
   public static getChromeVersion(): string {
     if (this.cachedChromeVersion) {
+      return this.cachedChromeVersion;
+    }
+
+    const embeddedChrome = typeof process !== 'undefined' ? (process.versions as Record<string, string | undefined>)?.chrome : undefined;
+    if (embeddedChrome && /^\d+\.\d+\.\d+\.\d+$/.test(embeddedChrome)) {
+      this.cachedChromeVersion = embeddedChrome;
       return this.cachedChromeVersion;
     }
 
@@ -170,107 +177,23 @@ export class SessionProfileManager {
   }
 
   /**
-   * Standard browser compatibility initialization script injected into the session.
+   * Minimal non-invasive browser compatibility script.
+   * Avoid mutating Navigator.prototype, adding own properties to navigator, or
+   * injecting synthetic window.chrome functions — Electron with
+   * --disable-blink-features=AutomationControlled already exposes native
+   * navigator.webdriver === false, PluginArray, languages, and hardware info.
    */
   public static getPreloadCompatibilityScript(): string {
     return `
       (function() {
-        // 1. Clean navigator.webdriver
+        // Only patch navigator.webdriver if a runtime explicitly left it true.
         try {
-          if ('webdriver' in navigator) {
-            delete navigator.__proto__.webdriver;
-          }
-        } catch (e) {}
-
-        // 2. Dynamic Host OS Languages
-        try {
-          const hostLoc = typeof Intl !== 'undefined' ? Intl.DateTimeFormat().resolvedOptions().locale : 'en-US';
-          const langs = Array.from(new Set([hostLoc, 'th-TH', 'th', 'en-US', 'en']));
-          Object.defineProperty(navigator, 'languages', {
-            get: () => Object.freeze(langs),
-            configurable: true,
-          });
-          Object.defineProperty(navigator, 'language', {
-            get: () => hostLoc,
-            configurable: true,
-          });
-        } catch (e) {}
-
-        // 3. Hardware Concurrency & Memory Defaults
-        try {
-          Object.defineProperty(navigator, 'hardwareConcurrency', {
-            get: () => 8,
-            configurable: true,
-          });
-          Object.defineProperty(navigator, 'deviceMemory', {
-            get: () => 8,
-            configurable: true,
-          });
-        } catch (e) {}
-
-        // 4. Standard window.chrome Runtime Object (genuine Chrome shape)
-        try {
-          if (!window.chrome) {
-            window.chrome = {};
-          }
-          if (!window.chrome.app) {
-            window.chrome.app = {
-              isInstalled: false,
-              InstallState: { DISABLED: 'disabled', INSTALLED: 'installed', NOT_INSTALLED: 'not_installed' },
-              RunningState: { CANNOT_RUN: 'cannot_run', READY_TO_RUN: 'ready_to_run', RUNNING: 'running' },
-              getIsInstalled: function() { return false; },
-              getDetails: function() { return null; }
-            };
-          }
-          if (!window.chrome.loadTimes) {
-            window.chrome.loadTimes = function () {
-              const now = Date.now() / 1000;
-              return {
-                commitLoadTime: now,
-                connectionInfo: 'h2',
-                finishDocumentLoadTime: now + 0.2,
-                finishLoadTime: now + 0.4,
-                firstPaintAfterLoadTime: 0,
-                firstPaintTime: now + 0.1,
-                navigationType: 'Other',
-                npnNegotiatedProtocol: 'h2',
-                requestTime: now - 0.1,
-                startLoadTime: now,
-                wasAlternateProtocolAvailable: false,
-                wasFetchedViaSpdy: true,
-                wasNpnNegotiated: true,
-              };
-            };
-          }
-          if (!window.chrome.csi) {
-            window.chrome.csi = function () {
-              return {
-                onloadT: Date.now(),
-                pageT: performance.now(),
-                startE: Date.now() - performance.now(),
-                tran: 15,
-              };
-            };
-          }
-        } catch (e) {}
-
-        // 5. Standard Permissions Query Mock
-        try {
-          if (navigator.permissions && navigator.permissions.query) {
-            const origQuery = navigator.permissions.query.bind(navigator.permissions);
-            navigator.permissions.query = function (parameters) {
-              if (parameters && parameters.name === 'notifications') {
-                return Promise.resolve({
-                  state: 'default',
-                  onchange: null,
-                  name: 'notifications',
-                  addEventListener: function () {},
-                  removeEventListener: function () {},
-                  dispatchEvent: function () { return true; },
-                });
-              }
-              return origQuery(parameters);
-            };
+          if (navigator.webdriver === true) {
+            Object.defineProperty(Navigator.prototype, 'webdriver', {
+              get: () => false,
+              configurable: true,
+              enumerable: true,
+            });
           }
         } catch (e) {}
       })();

@@ -567,9 +567,13 @@ export abstract class BaseProviderAdapter {
             continue;
           }
           const rawFinal = (finalInspect.text && finalInspect.text.trim().length > 0) ? finalInspect.text : lastText;
-          const finalText = cleanModelOutput(rawFinal);
+          let finalText = cleanModelOutput(rawFinal);
 
           let finalMediaUrl = finalInspect.mediaUrl || effectiveMediaUrl;
+          const failureMessages = (this as { recipe?: CustomRecipe }).recipe?.response.failureMessages;
+          if (finalMediaUrl && failureMessages?.includes(finalText.replace(/\s+/g, ' ').trim().replace(/’/g, "'"))) {
+            finalText = '';
+          }
           let finalMediaType = finalInspect.mediaType || inspection.mediaType || (mode === 'video' ? 'video' : mode === 'music' ? 'audio' : mode === 'image' ? 'image' : undefined);
 
           // Blob URLs belong to the provider view. Resolve them before the

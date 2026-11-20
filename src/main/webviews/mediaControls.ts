@@ -4,7 +4,16 @@ import type { MediaLocator, RecipeGeneration, MediaSettings, MediaStep, MediaCho
 /** Self-contained so the same resolver can run in provider pages and DOM fixtures. */
 export function findMediaControl(locator: MediaLocator, anyVisible = false, query = (root: ParentNode, selector: string) => Array.from(root.querySelectorAll(selector))): Element | null {
   const l = innerWidth < 768 && locator.compact ? { ...locator, ...locator.compact } : locator;
-  const visible = (el: Element) => { const r = el.getBoundingClientRect(); const s = getComputedStyle(el); return r.width > 0 && r.height > 0 && s.display !== 'none' && s.visibility !== 'hidden' && s.opacity !== '0'; };
+  const visible = (el: Element) => {
+    for (let p = el.parentElement; p; p = p.parentElement) {
+      if (p.classList?.contains('companion-hidden')) return false;
+      const ps = getComputedStyle(p);
+      if (ps.display === 'none' || ps.visibility === 'hidden' || ps.opacity === '0') return false;
+    }
+    const r = el.getBoundingClientRect();
+    const s = getComputedStyle(el);
+    return r.width > 0 && r.height > 0 && s.display !== 'none' && s.visibility !== 'hidden' && s.opacity !== '0';
+  };
   const normalize = (v: string | null) => (v || '').replace(/\s+/g, ' ').trim().toLowerCase();
   let root: ParentNode = document;
   if (l.scope) { const scopes = query(document, l.scope).filter(visible); if (!scopes.length) return null; if (scopes.length !== 1) throw new Error('Media control scope is ambiguous.'); root = scopes[0]; }

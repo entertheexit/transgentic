@@ -52,6 +52,8 @@ A source checkout is not required. For custom development, the extension source 
 
 Synchronization imports session data into the desktop's provider partition. Chrome does not need to remain open after synchronization, but the provider may later require login or verification. Treat synchronized sessions as sensitive account access.
 
+See [Chrome Sync and browser compatibility](CHROME_SYNC.md) for how Chrome and Electron versions interact and how to diagnose a synced session.
+
 ## MCP authentication
 
 The default gateway is `http://127.0.0.1:58420`. Use the actual port shown in the app if it differs.

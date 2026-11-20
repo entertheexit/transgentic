@@ -175,7 +175,7 @@ describe('Recipe Versioning, Storage & Self-Healing Tests', () => {
   });
 
   describe('Self-Healing Recipe Versioning, History & Rollback', () => {
-    it('inherits the bundled viewport for an older Gemini override and honors an explicit width', () => {
+    it('keeps viewport width flexible by default for Gemini overrides and honors an explicit width', () => {
       const bundled = recipeManager.getRecipe('gemini')!;
       const override = { ...bundled, selectors: { ...bundled.selectors, inputPrompt: '#healed-input' } };
       delete override.viewportWidth;
@@ -184,9 +184,9 @@ describe('Recipe Versioning, Storage & Self-Healing Tests', () => {
       recipeManager.loadPersistedRecipes();
 
       expect(recipeManager.getRecipe('gemini')).toMatchObject({
-        viewportWidth: 590,
         selectors: { inputPrompt: '#healed-input' },
       });
+      expect(recipeManager.getRecipe('gemini')?.viewportWidth).toBeUndefined();
       expect(JSON.parse(fs.readFileSync(healedFile, 'utf8')).viewportWidth).toBeUndefined();
 
       fs.writeFileSync(healedFile, JSON.stringify({ ...override, viewportWidth: 640 }), 'utf8');

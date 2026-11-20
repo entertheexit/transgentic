@@ -102,4 +102,28 @@ describe('CookieSyncManager', () => {
     expect(sanitized['sec-electron-fetch']).toBeUndefined();
     expect(sanitized['x-electron-flag']).toBeUndefined();
   });
+
+  it('guards against overwriting an Electron partition UA with a mismatched synced Chrome major version', async () => {
+    const { bindUserAgentToPartition } = await import('../src/main/utils/userAgent.js');
+    const { SessionProfileManager } = await import('../src/main/security/antiDetection.js');
+    const versions = process.versions as Record<string, string | undefined>;
+    const originalChrome = versions.chrome;
+    const prevCachedVersion = (SessionProfileManager as any).cachedChromeVersion;
+    const prevCachedUA = (SessionProfileManager as any).cachedUserAgent;
+    try {
+      versions.chrome = '132.0.6834.210';
+      (SessionProfileManager as any).cachedChromeVersion = null;
+      (SessionProfileManager as any).cachedUserAgent = null;
+      const chrome157UA =
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157.0.8103.79 Safari/537.36';
+      const bound = await bindUserAgentToPartition('persist:transgentic_gemini', chrome157UA);
+      expect(bound).toContain('Chrome/132.0.6834.210');
+      expect(bound).not.toContain('Chrome/157.');
+    } finally {
+      if (originalChrome === undefined) delete versions.chrome;
+      else versions.chrome = originalChrome;
+      (SessionProfileManager as any).cachedChromeVersion = prevCachedVersion;
+      (SessionProfileManager as any).cachedUserAgent = prevCachedUA;
+    }
+  });
 });

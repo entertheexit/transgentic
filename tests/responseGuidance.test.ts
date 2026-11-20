@@ -414,6 +414,30 @@ describe('Actual provider answers with server-side reminders', () => {
     }
   });
 
+  it('keeps polling while Gemini video is still rendering and strips a sibling failure message once the video arrives', async () => {
+    const adapter = new CustomRecipeAdapter(BUILTIN_RECIPES.gemini);
+    const failureText = BUILTIN_RECIPES.gemini.response.failureMessages![1];
+    const videoUrl = 'https://contribution.usercontent.google.com/download?filename=video.mp4';
+    const inspect = vi.spyOn(adapter as any, 'executeScript')
+      .mockResolvedValueOnce({ text: failureText, isGenerating: true, isThinking: true, isMediaRendering: true, hasActionButtons: false, responseTurnCount: 1 })
+      .mockResolvedValueOnce({ text: failureText, isGenerating: false, isThinking: false, isMediaRendering: false, hasActionButtons: true, mediaUrl: videoUrl, mediaType: 'video', responseTurnCount: 1 })
+      .mockResolvedValueOnce({ text: failureText, isGenerating: false, isThinking: false, isMediaRendering: false, hasActionButtons: true, mediaUrl: videoUrl, mediaType: 'video', responseTurnCount: 1 })
+      .mockResolvedValueOnce({ text: failureText, isGenerating: false, isThinking: false, isMediaRendering: false, hasActionButtons: true, mediaUrl: videoUrl, mediaType: 'video', responseTurnCount: 1 })
+      .mockResolvedValueOnce('data:video/mp4;base64,AAAA');
+    vi.useFakeTimers();
+    try {
+      const polling = adapter.pollGeneration({ mode: 'video' });
+      await vi.advanceTimersByTimeAsync(5_000);
+      const result = await polling;
+      expect(result.media?.type).toBe('video');
+      expect(result.media?.data).toBe('data:video/mp4;base64,AAAA');
+      expect(result.text).toBe('');
+      expect(inspect).toHaveBeenCalledTimes(5);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it.each(['text', 'empty', 'long', 'uncertain', 'timeout', 'provider failure'])('never retries a submitted media request after a %s result', async kind => {
     configure(false, false, true);
     const provider = kind === 'timeout' ? 'chatgpt' : 'gemini';

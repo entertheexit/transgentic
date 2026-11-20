@@ -1847,10 +1847,18 @@ export class TransgenticMcpServer {
       const isMedia = effectiveMode === 'image' || effectiveMode === 'video' || effectiveMode === 'music';
       const mediaModels = isMedia && adapter instanceof CustomRecipeAdapter
         ? adapter.recipe.response.modes[effectiveMode]?.generation?.models : undefined;
-      const targetModel =
+      let targetModel =
         DynamicRouter.resolveTargetModel(providerId, effectiveMode, requestedModel, pipeline, mediaModels) ||
         (!isMedia ? ModelRegistryManager.getEffectiveModel(providerId, requestedModel) : undefined) ||
         undefined;
+      if (requestedModel && requestedModel !== 'default' && targetModel !== requestedModel &&
+          typeof globalSessionManager.refreshModels === 'function') {
+        await globalSessionManager.refreshModels(providerId, true).catch(() => {});
+        targetModel =
+          DynamicRouter.resolveTargetModel(providerId, effectiveMode, requestedModel, pipeline, mediaModels) ||
+          (!isMedia ? ModelRegistryManager.getEffectiveModel(providerId, requestedModel) : undefined) ||
+          undefined;
+      }
       if (requestedModel && requestedModel !== 'default' && targetModel !== requestedModel) {
         const error = new Error(`[MODEL_SELECTION_FAILED] The requested model ${requestedModel} is unavailable for ${providerId}. The prompt was not submitted.`);
         if (forcedProvider && attempts[i + 1]?.providerId !== providerId) throw error;
@@ -2023,7 +2031,11 @@ export class TransgenticMcpServer {
 
           if (executionAdapter instanceof CustomRecipeAdapter &&
               executionAdapter.recipe.auth?.requireLoggedInSelector &&
-              !await executionAdapter.checkAuthStatus()) {
+              !await executionAdapter.waitForAuthStatus(6_000, reqAbortController?.signal || abortSignal)) {
+            const currentUrl = (contents?.getURL() || '').toLowerCase();
+            if (currentUrl.includes('/sorry/')) {
+              throw new Error(`[PROVIDER_ACTION_REQUIRED] ${getProviderDisplayName(providerId)} requested a browser verification check. Open the provider drawer to complete it.`);
+            }
             throw new Error(`[PROVIDER_ACTION_REQUIRED] Sign in to ${getProviderDisplayName(providerId)} in Transgentic or use Chrome Sync before selecting a model or sending a prompt.`);
           }
 
@@ -2090,35 +2102,29 @@ export class TransgenticMcpServer {
             } catch (promptErr: any) {
               const retryGeminiVideo = params.isQuickPrompt && providerId === 'gemini' &&
                 effectiveMode === 'video' && mediaSubmissionAttempted && !candidateTemporaryChat &&
-                attachments.length === 0 && promptErr?.message?.startsWith('[PROVIDER_GENERATION_FAILED]');
-              const failedChatUrl = retryGeminiVideo ? contents?.getURL() || '' : '';
-              if (retryGeminiVideo && executionAdapter instanceof CustomRecipeAdapter &&
-                  /^https:\/\/gemini\.google\.com\/app\/[^/?#]+/.test(failedChatUrl) &&
-                  await executionAdapter.hasEmptyComposer(activeAccount.partitionKey) &&
-                  contents?.getURL() === failedChatUrl) {
+                promptErr?.message?.startsWith('[PROVIDER_GENERATION_FAILED]');
+              if (retryGeminiVideo && executionAdapter instanceof CustomRecipeAdapter) {
                 throwIfCancelled(reqAbortController?.signal || abortSignal);
                 const retrySignal = reqAbortController?.signal || abortSignal;
-                reportProgress?.('Checking the Gemini session before retrying in the same chat');
-                // Rebuild the composer and its media controls after the failed turn.
-                // The exact chat URL and empty composer were verified above.
-                await contents.loadURL(failedChatUrl).catch(() => {});
-                const authDeadline = Date.now() + 5_000;
-                while (contents.getURL() === failedChatUrl && Date.now() < authDeadline) {
+                reportProgress?.('Starting a fresh Gemini chat to retry video generation');
+                // Gemini hides video aspect-ratio companion chips (.companion-hidden)
+                // on existing /app/<chatId> threads, so always retry on a fresh /app chat.
+                await executionAdapter.navigateToNewChat({ forceReload: true, assumeLocked: true });
+                const authOk = await executionAdapter.waitForAuthStatus(8_000, retrySignal);
+                const composerDeadline = Date.now() + 5_000;
+                let composerEmpty = false;
+                while (authOk && Date.now() < composerDeadline) {
                   throwIfCancelled(retrySignal);
-                  if (await executionAdapter.checkAuthStatus() &&
-                      await executionAdapter.hasEmptyComposer(activeAccount.partitionKey)) break;
+                  composerEmpty = await executionAdapter.hasEmptyComposer(activeAccount.partitionKey);
+                  if (composerEmpty) break;
                   await new Promise(resolve => setTimeout(resolve, 250));
                 }
                 throwIfCancelled(retrySignal);
-                if (contents.getURL() !== failedChatUrl ||
-                    !await executionAdapter.hasEmptyComposer(activeAccount.partitionKey) ||
-                    contents.getURL() !== failedChatUrl ||
-                    !await executionAdapter.checkAuthStatus() ||
-                    contents.getURL() !== failedChatUrl) {
-                  throw new Error(`${promptErr.message} Same-chat retry stopped before Send because Gemini's chat, empty composer, or sign-in could not be verified.`);
+                if (!authOk || !composerEmpty) {
+                  throw new Error(`${promptErr.message} Fresh-chat retry stopped before Send because Gemini's fresh composer or sign-in could not be verified.`);
                 }
-                console.info('[Transgentic] Retrying one explicitly failed Gemini video in the same chat.');
-                reportProgress?.('Retrying video generation in the same Gemini chat');
+                console.info('[Transgentic] Retrying one explicitly failed Gemini video in a fresh chat.');
+                reportProgress?.('Retrying video generation in a fresh Gemini chat');
                 let retrySubmitted = false;
                 try {
                   adapterResult = await executionAdapter.executePrompt(promptToSend, effectiveMode, projectMeta, undefined, retrySignal, attachments, effectiveSettings, targetModel, () => {
@@ -2128,7 +2134,7 @@ export class TransgenticMcpServer {
                 } catch (retryError) {
                   throwIfCancelled(retrySignal);
                   if (retrySubmitted) throw retryError;
-                  throw new Error(`${promptErr.message} Same-chat retry stopped before Send: ${retryError instanceof Error ? retryError.message : String(retryError)}`);
+                  throw new Error(`${promptErr.message} Fresh-chat retry stopped before Send: ${retryError instanceof Error ? retryError.message : String(retryError)}`);
                 }
               } else if (!mediaSubmissionAttempted && !candidateTemporaryChat && promptErr?.message && /conversation (?:is getting|too) long|context[ _]length/i.test(promptErr.message)) {
                 await executionAdapter.navigateToNewChat({ forceReload: true, assumeLocked: true });

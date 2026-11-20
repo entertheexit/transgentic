@@ -23,7 +23,7 @@ const find = (l: MediaLocator, context: object) => vm.runInNewContext(`(${findMe
 
 describe('Declarative media recipe contracts', () => {
   it('preserves a fixed viewport through recipe validation and allows it to be omitted', () => {
-    expect(validateCustomRecipe(structuredClone(recipe)).recipe?.viewportWidth).toBe(590);
+    expect(validateCustomRecipe({ ...structuredClone(recipe), viewportWidth: 590 }).recipe?.viewportWidth).toBe(590);
     const legacy = structuredClone(recipe);
     delete legacy.viewportWidth;
     expect(validateCustomRecipe(legacy).recipe?.viewportWidth).toBeUndefined();
@@ -294,5 +294,19 @@ describe('Guarded media control resolution', () => {
     };
     await applyMediaControls(config, {}, run, undefined, () => {});
     expect(inspections).toBe(3);
+  });
+  it('treats controls inside a hidden companion-hidden ancestor as invisible', () => {
+    const context = fixture();
+    const hiddenParent = { classList: { contains: (cls: string) => cls === 'companion-hidden' }, parentElement: null };
+    const chipButton = {
+      tagName: 'BUTTON',
+      textContent: '',
+      parentElement: hiddenParent,
+      getAttribute: () => 'Aspect ratio',
+      hasAttribute: () => false,
+      getBoundingClientRect: () => ({ width: 120, height: 40 }),
+    };
+    context.document.querySelectorAll = (selector: string) => selector === '#chip' ? [chipButton] as any : [];
+    expect(find({ selectors: '#chip' }, context)).toBeNull();
   });
 });

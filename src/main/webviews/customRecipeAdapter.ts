@@ -452,6 +452,34 @@ export class CustomRecipeAdapter extends BaseProviderAdapter {
     }
   }
 
+  /**
+   * Waits for provider hydration when DOM-verified sign-in (`requireLoggedInSelector`)
+   * is enabled. Returns immediately if already authenticated or if an explicit
+   * sign-in/off-origin redirect is observed.
+   */
+  public async waitForAuthStatus(timeoutMs = 6_000, abortSignal?: AbortSignal): Promise<boolean> {
+    if (await this.checkAuthStatus()) return true;
+    if (!this.recipe.auth?.requireLoggedInSelector) return false;
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      if (abortSignal?.aborted) {
+        throw Object.assign(new Error('Request cancelled.'), { name: 'AbortError' });
+      }
+      const view = this.getWebContents();
+      if (!view || view.isDestroyed()) return false;
+      const currentUrl = (view.getURL() || '').toLowerCase();
+      try {
+        if (new URL(currentUrl).origin !== new URL(this.url).origin) return false;
+      } catch {
+        return false;
+      }
+      if (this.recipe.auth.loginUrls?.some(u => currentUrl.includes(u.toLowerCase()))) return false;
+      await new Promise(resolve => setTimeout(resolve, 250));
+      if (await this.checkAuthStatus()) return true;
+    }
+    return false;
+  }
+
   async checkRateLimit(): Promise<{ isRateLimited: boolean; reason?: string }> {
     const rateCfg = this.recipe.rateLimit;
     const defaultPatterns = [
@@ -578,8 +606,14 @@ export class CustomRecipeAdapter extends BaseProviderAdapter {
       } catch {}
     }
 
-    const isAuth = await this.checkAuthStatus();
+    const isAuth = this.recipe.auth?.requireLoggedInSelector
+      ? await this.waitForAuthStatus(6_000, abortSignal)
+      : await this.checkAuthStatus();
     if (!isAuth) {
+      const currentUrl = (contents.getURL() || '').toLowerCase();
+      if (currentUrl.includes('/sorry/')) {
+        throw new Error(`[PROVIDER_ACTION_REQUIRED] ${this.name} requested a browser verification check. Open the provider drawer to complete it.`);
+      }
       throw new Error(`Custom provider "${this.name}" is not authenticated. Please open the provider drawer to log in or sync cookies.`);
     }
 

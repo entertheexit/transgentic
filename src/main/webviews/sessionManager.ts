@@ -156,16 +156,28 @@ export class SessionManager {
       const activeUA = sess.getUserAgent() || normalizedUA;
       let requestHeaders = SessionProfileManager.sanitizeHeaders({ ...details.requestHeaders }, activeUA) as Record<string, string>;
       requestHeaders['User-Agent'] = activeUA;
-      requestHeaders['Sec-Fetch-Dest'] = details.requestHeaders['Sec-Fetch-Dest'] || 'document';
-      requestHeaders['Sec-Fetch-Mode'] = details.requestHeaders['Sec-Fetch-Mode'] || 'navigate';
-      requestHeaders['Sec-Fetch-Site'] = details.requestHeaders['Sec-Fetch-Site'] || 'none';
-      requestHeaders['Sec-Fetch-User'] = details.requestHeaders['Sec-Fetch-User'] || '?1';
+      // Only supply top-level navigation Fetch Metadata defaults on mainFrame
+      // navigations. Injecting Sec-Fetch-User on XHR/fetch/iframe requests is
+      // non-standard and breaks Google's RotateCookiesPage / streaming RPCs.
+      if (details.resourceType === 'mainFrame') {
+        requestHeaders['Sec-Fetch-Dest'] = details.requestHeaders['Sec-Fetch-Dest'] || 'document';
+        requestHeaders['Sec-Fetch-Mode'] = details.requestHeaders['Sec-Fetch-Mode'] || 'navigate';
+        requestHeaders['Sec-Fetch-Site'] = details.requestHeaders['Sec-Fetch-Site'] || 'none';
+        requestHeaders['Sec-Fetch-User'] = details.requestHeaders['Sec-Fetch-User'] || '?1';
+      }
 
       callback({ cancel: false, requestHeaders });
     });
 
-    // Strip headers that prevent embedding in webviews
+    // Strip framing headers only when needed; preserve CSP/framing headers on
+    // Google origins where webviews render as top-level frames and Trusted Types
+    // / BotGuard checks expect unmodified security headers.
     sess.webRequest.onHeadersReceived((details, callback) => {
+      const url = details.url || '';
+      if (/^https:\/\/(?:[^/]+\.)?(?:google|googleusercontent|gstatic)\.com(?:\/|$)/i.test(url)) {
+        callback({ cancel: false });
+        return;
+      }
       const responseHeaders = { ...details.responseHeaders };
       for (const key of Object.keys(responseHeaders)) {
         const lower = key.toLowerCase();
@@ -624,7 +636,7 @@ export class SessionManager {
           if (target.isDestroyed()) return [];
           if (adapter.recipe.auth?.requireLoggedInSelector) {
             const probeAdapter = adapter.createPinnedExecutionAdapter(target.webContents, context.partition);
-            probeAuthenticated = await probeAdapter.checkAuthStatus();
+            probeAuthenticated = await probeAdapter.waitForAuthStatus(8_000);
             if (!probeAuthenticated) return [];
           }
           const switchDeadline = Date.now() + 24_000;
@@ -723,7 +735,9 @@ export class SessionManager {
     const task = async () => {
       let observed: Awaited<ReturnType<typeof inspectTemporaryChatInBackground>>;
       try {
-        const window = this.createAvailabilityProbeWindow(context.partition, adapter.recipe.viewportWidth);
+        const window = adapter.recipe.viewportWidth !== undefined
+          ? this.createAvailabilityProbeWindow(context.partition, adapter.recipe.viewportWidth)
+          : this.createAvailabilityProbeWindow(context.partition);
         observed = await inspectTemporaryChatInBackground(adapter, window, context.partition);
       } catch { /* Surface a failed check without changing account authentication. */ }
       const active = this.adapters.get(id);

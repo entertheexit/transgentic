@@ -118,7 +118,7 @@ export class ModelScraperEngine {
         return (label?.textContent || item.getAttribute('aria-label') ||
           item.firstElementChild?.textContent || item.textContent || '').trim().split('\\n')[0].trim();
       };
-      const disabled = item => item.matches('[aria-disabled="true"], [disabled], [data-disabled]') ||
+      const disabled = item => item.matches('[aria-disabled="true"], [disabled], [data-disabled], [data-mode-id^="upsell_"]') ||
         Boolean(config.disabledText && (item.getAttribute('aria-label') + ' ' + item.textContent).toLowerCase().includes(config.disabledText.toLowerCase()));
       const isSelected = item => item.getAttribute('aria-checked') === 'true' ||
         item.getAttribute('aria-selected') === 'true' || item.getAttribute('data-state') === 'checked' ||

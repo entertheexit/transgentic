@@ -650,33 +650,62 @@ export class DomObserver {
                   '.shimmer-overlay:not(.done-generating)'
                 );
 
-                if (hasGeminiImageGenerating) {
+                // Gemini hands off Veo/music jobs from StreamGenerate to an async
+                // <generated-video>/<generated-music> component that polls after the
+                // composer Stop button disappears. Keep media rendering active until
+                // the playable <video>/<audio> src arrives.
+                const hasGeminiVideoGenerating = !hasDoneVideo && !!turnContainer.querySelector(
+                  'generated-video:not(.done-generating), ' +
+                  'video-loading-overlay:not(.done-generating), ' +
+                  '[data-test-id*="video-loading"]:not(.done-generating)'
+                );
+
+                const hasGeminiMusicGenerating = !hasDoneMusic && !!turnContainer.querySelector(
+                  'generated-music:not(.done-generating), ' +
+                  '[data-test-id*="music-loading"]:not(.done-generating)'
+                );
+
+                const hasGeminiBusy = !hasDoneImage && !hasDoneVideo && !hasDoneMusic &&
+                  !!turnContainer.querySelector('[aria-busy="true"]');
+
+                const hasGeminiMediaGenerating = hasGeminiImageGenerating || hasGeminiVideoGenerating || hasGeminiMusicGenerating || hasGeminiBusy;
+
+                if (hasGeminiMediaGenerating) {
                   isMediaRendering = true;
                   isGenerating = true;
                   isThinking = true;
                 }
 
                 lastText = extractCleanText(targetNode);
-                hasActionButtons = !isGenerating && !hasGeminiImageGenerating && (
-                  hasDoneImage || hasDoneVideo || hasDoneMusic ||
-                  !!turnContainer.querySelector(
-                    'button[aria-label*="Copy" i], ' +
-                    'button[aria-label*="Good response" i], ' +
-                    'button[aria-label*="Download" i], ' +
-                    'button[aria-label*="Download video" i], ' +
-                    'button[aria-label*="Play video" i], ' +
-                    'button[aria-label*="Share video" i], ' +
-                    'button[aria-label*="Download track" i], ' +
-                    'button[aria-label*="Play music" i], ' +
-                    'button[aria-label*="Share track" i], ' +
-                    'button[aria-label*="Share image" i], ' +
-                    'button[aria-label*="Copy image" i], ' +
-                    'button[aria-label*="Download full size image" i], ' +
-                    '[data-test-id="download-generated-image-button"], ' +
-                    'download-generated-image-button, ' +
-                    'copy-button, ' +
-                    'share-button'
-                  )
+                const hasTurnActionButtons = !!turnContainer.querySelector(
+                  'button[aria-label*="Copy" i], ' +
+                  'button[aria-label*="Good response" i], ' +
+                  'button[aria-label*="Download" i], ' +
+                  'button[aria-label*="Download video" i], ' +
+                  'button[aria-label*="Play video" i], ' +
+                  'button[aria-label*="Share video" i], ' +
+                  'button[aria-label*="Download track" i], ' +
+                  'button[aria-label*="Play music" i], ' +
+                  'button[aria-label*="Share track" i], ' +
+                  'button[aria-label*="Share image" i], ' +
+                  'button[aria-label*="Copy image" i], ' +
+                  'button[aria-label*="Download full size image" i], ' +
+                  '[data-test-id="download-generated-image-button"], ' +
+                  'download-generated-image-button, ' +
+                  'copy-button, ' +
+                  'share-button'
+                );
+                // Gemini can leave the composer Stop button stuck after rendering
+                // a completed capacity/failure turn with action buttons and no media.
+                const normalizedGeminiText = lastText.replace(/\\s+/g, ' ').trim().replace(/’/g, "'");
+                if (!hasGeminiMediaGenerating && !hasDoneImage && !hasDoneVideo && !hasDoneMusic &&
+                    hasTurnActionButtons && recipe?.response?.failureMessages?.includes(normalizedGeminiText)) {
+                  isGenerating = false;
+                  isThinking = false;
+                  isMediaRendering = false;
+                }
+                hasActionButtons = !isGenerating && !hasGeminiMediaGenerating && (
+                  hasDoneImage || hasDoneVideo || hasDoneMusic || hasTurnActionButtons
                 );
 
                 const musicEl = turnContainer.querySelector(

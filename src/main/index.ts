@@ -72,7 +72,6 @@ process.env.ELECTRON_DISABLE_SECURITY_WARNINGS = 'true';
 
 // 1. Standard host-aligned Chromium runtime configuration
 app.commandLine.appendSwitch('disable-blink-features', 'AutomationControlled');
-app.commandLine.appendSwitch('disable-features', 'IsolateOrigins,site-per-process');
 app.userAgentFallback = SessionProfileManager.getNormalizedUserAgent();
 
 let trayManager: TrayManager | null = null;
