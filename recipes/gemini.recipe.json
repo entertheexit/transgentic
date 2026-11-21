@@ -1,5 +1,5 @@
 {
-  "version": "1.1.16",
+  "version": "1.1.17",
   "id": "gemini",
   "title": "Google Gemini",
   "domainMatch": "gemini.google.com",
@@ -717,23 +717,45 @@
         "generation": {
           "activationSteps": [
             {
-              "action": "click",
+              "action": "waitAbsent",
               "target": {
-                "selectors": "button[jslog^=\"300142;\"]"
+                "selectors": "body:not(:has(button[jslog^=\"300142;\"]))"
+              }
+            },
+            {
+              "action": "clickIfPresent",
+              "target": {
+                "selectors": "button[jslog^=\"300142;\"]:not([aria-expanded=\"true\"])"
+              }
+            },
+            {
+              "action": "waitAbsent",
+              "target": {
+                "selectors": "body:not(:has([role=\"menuitemcheckbox\"]:is([jslog^=\"255043;\"], [aria-label=\"Create video\" i]), [role=\"menuitem\"][jslog^=\"308513;\"]))"
+              }
+            },
+            {
+              "action": "clickIfPresent",
+              "target": {
+                "selectors": "[role=\"menu\"]:not(:has([role=\"menuitemcheckbox\"]:is([jslog^=\"255043;\"], [aria-label=\"Create video\" i]))) [role=\"menuitem\"][jslog^=\"308513;\"]"
               }
             },
             {
               "action": "click",
               "target": {
-                "selectors": "[role=\"menuitemcheckbox\"][jslog^=\"255043;\"]"
+                "selectors": "[role=\"menuitemcheckbox\"]:is([jslog^=\"255043;\"], [aria-label=\"Create video\" i]):not([aria-checked=\"true\"])"
               }
             }
           ],
           "activeWhen": {
-            "selectors": "input-companion-chip button[jslog^=\"316870;\"]"
+            "selectors": [
+              "button[aria-label=\"Deselect Videos\" i]",
+              "button[aria-label=\"close Videos\" i]",
+              "input-companion-chip button[jslog^=\"316870;\"]"
+            ]
           },
           "unavailableWhen": {
-            "selectors": ":is(.cdk-overlay-pane, mat-bottom-sheet-container):has([role=\"menuitemcheckbox\"][jslog^=\"255043;\"]:is([aria-disabled=\"true\"], .disabled))"
+            "selectors": ":is(.cdk-overlay-pane, mat-bottom-sheet-container, [role=\"menu\"]):has([role=\"menuitemcheckbox\"]:is([jslog^=\"255043;\"], [aria-label=\"Create video\" i]):is([aria-disabled=\"true\"], .disabled))"
           },
           "unavailableMessage": "Gemini currently disables Create video for this account. Check the Video option in Gemini before retrying.",
           "settings": [

@@ -245,6 +245,11 @@ export class RecipeManager {
         const video = recipe.response.modes.video;
         const generation = video?.generation;
         const bundledVideo = bundled.response.modes.video?.generation;
+        const legacySteps = generation?.activationSteps;
+        const legacyControls = ['button[jslog^="300142;"]', '[role="menuitemcheckbox"][jslog^="255043;"]'];
+        const usesLegacyActivation = legacySteps?.length === legacyControls.length &&
+          legacySteps.every((step, i) => step.action === 'click' &&
+            Object.keys(step.target).length === 1 && step.target.selectors === legacyControls[i]);
         const aspectRatio = bundledVideo?.settings?.find(setting => setting.key === 'aspect_ratio');
         const settings = generation?.settings?.map(setting =>
           aspectRatio && setting.key === 'aspect_ratio' &&
@@ -254,8 +259,11 @@ export class RecipeManager {
           failureMessages: [...new Set([...recipe.response.failureMessages ?? [], ...bundled.response.failureMessages ?? []])],
           modes: {
             ...recipe.response.modes,
-            ...(video && generation && bundledVideo ? { video: { ...video, generation: {
+            ...(video && generation && generation.strategy !== 'prompt' && bundledVideo?.activeWhen ? { video: { ...video, generation: {
               ...generation,
+              ...(usesLegacyActivation ? { activationSteps: bundledVideo.activationSteps } : {}),
+              ...(generation.activeWhen.selectors === 'input-companion-chip button[jslog^="316870;"]' &&
+                Object.keys(generation.activeWhen).length === 1 ? { activeWhen: bundledVideo.activeWhen } : {}),
               unavailableWhen: generation.unavailableWhen ?? bundledVideo.unavailableWhen,
               unavailableMessage: generation.unavailableMessage ?? bundledVideo.unavailableMessage,
               settings: settings ?? generation.settings,

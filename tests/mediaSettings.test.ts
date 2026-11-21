@@ -51,6 +51,7 @@ describe('Declarative media recipe contracts', () => {
         selected = true;
         return true as T;
       }
+      if (Array.isArray(target.selectors) && target.selectors.includes('button[aria-label="Deselect Videos" i]')) return true as T;
       if (target.selectors === portrait.selectedWhen.selectors) return selected as T;
       if (target.selectors === 'input-companion-chip button[jslog^="316870;"]') {
         if (click) menuOpened++;
@@ -75,6 +76,15 @@ describe('Declarative media recipe contracts', () => {
   it('uses recipe defaults then common settings then provider overrides', () => {
     expect(resolveMediaSettings(recipe, 'music')).toEqual({ length: 'standard', vocals: 'custom', genre: 'custom' });
     expect(resolveMediaSettings(recipe, 'music', { settings: { length: 'short', genre: 'pop' }, provider_settings: { gemini: { genre: 'jazz_blues' } } })).toEqual({ length: 'short', vocals: 'custom', genre: 'jazz_blues' });
+  });
+  it('applies an explicit output direction when media settings are omitted and preserves structured overrides', () => {
+    const prompt = 'Preserve the reference. Eight seconds, vertical 9:16. Let the cat blink.';
+    const ratio = (text: string, settings?: Record<string, string>) =>
+      resolveMediaSettings(recipe, 'video', { settings }, undefined, 'gemini', text).aspect_ratio;
+    expect(ratio(prompt)).toBe('9:16');
+    expect(ratio(prompt, { aspect_ratio: '16:9' })).toBe('16:9');
+    expect(ratio('The reference is a vertical 9:16 photograph.')).toBe('16:9');
+    expect(ratio('Portrait 9:16. Landscape 16:9.')).toBe('16:9');
   });
   it('rejects incompatible fallback values unless a valid semantic override exists', () => {
     expect(() => resolveMediaSettings(BUILTIN_RECIPES.grok, 'image', { settings: { aspect_ratio: '3:4' } })).toThrow('MEDIA_SETTINGS_UNSUPPORTED');

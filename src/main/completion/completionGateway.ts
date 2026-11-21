@@ -608,7 +608,8 @@ export class CompletionGateway {
           throw new Error('[MODEL_SELECTION_FAILED] No compatible model is available for this media request.');
         }
         const mediaSettings = mode === 'image' || mode === 'video' || mode === 'music'
-          ? resolveMediaSettings(handle.adapter.recipe, mode, {}, targetModel, provider) : undefined;
+          ? resolveMediaSettings(handle.adapter.recipe, mode, {}, targetModel, provider,
+            textContent(messagesWithoutBinaryParts(request.messages).filter(message => message.role === 'user').at(-1)?.content)) : undefined;
         const tools = request.tool_choice === 'none' ? undefined : request.tools;
         const prompt = serializeCompletionForProvider(messagesWithoutBinaryParts(request.messages), tools, Boolean(binding && !forceNew), request.tool_choice, true);
         const release = await handle.adapter.acquireDomLock();

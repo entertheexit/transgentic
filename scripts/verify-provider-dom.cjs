@@ -14,6 +14,7 @@ app.whenReady().then(async () => {
   const { HealingManager } = await import('../dist-electron/main/healing/healingManager.js');
   const { DomObserver } = await import('../dist-electron/main/webviews/domObserver.js');
   const { BUILTIN_RECIPES } = await import('../dist-electron/shared/types/recipe.js');
+  const { applyMediaControls } = await import('../dist-electron/main/webviews/mediaControls.js');
   const { InputDispatcher } = await import('../dist-electron/main/security/inputDispatcher.js');
   const win = new BrowserWindow({ show: false, webPreferences: { nodeIntegration: false, contextIsolation: true } });
   let checks = 0;
@@ -28,6 +29,29 @@ app.whenReady().then(async () => {
   try {
     for (const width of [390, 1280]) {
       win.setContentSize(width, 844);
+      // Gemini can open with Videos selected, with the tools menu open, or with
+      // Create video behind More tools. Delay menu rendering as the provider does.
+      for (const initial of ['active', 'closed', 'open', 'overflow']) {
+        const video = '<button role="menuitemcheckbox" jslog="255043;" onclick="activate()">Create video</button>';
+        const more = '<button role="menuitem" jslog="308513;" onclick="showVideo()">More tools</button>';
+        const html = `<button id="tools" jslog="300142;" aria-expanded="false" onclick="toggleMenu()">Upload &amp; tools</button>
+          <section id="panel"></section><script>
+            function activate() { panel.innerHTML = '<button aria-label="Deselect Videos">Videos</button>'; }
+            function showVideo() { setTimeout(() => panel.innerHTML = '<div role="menu">' + ${JSON.stringify(video)} + '</div>', 30); }
+            function toggleMenu() {
+              if (tools.getAttribute('aria-expanded') === 'true') throw Error('Closed an open tools menu');
+              tools.setAttribute('aria-expanded', 'true');
+              setTimeout(() => panel.innerHTML = '<div role="menu">' + ${JSON.stringify(initial === 'overflow' ? more : video)} + '</div>', 30);
+            }
+            ${initial === 'active' ? 'activate()' : initial === 'open' ? 'toggleMenu()' : ''}
+          </script>`;
+        await win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html));
+        const verify = await applyMediaControls(BUILTIN_RECIPES.gemini.response.modes.video.generation, {},
+          code => win.webContents.executeJavaScript(code));
+        await verify(true);
+        assert.equal(await win.webContents.executeJavaScript("!!document.querySelector('[aria-label=\"Deselect Videos\"]')"), true);
+        checks++;
+      }
       // Meta retains hidden composers and completed thinking panels in the DOM.
       await inspect('meta', '<button aria-label="Cancel">Cancel rename</button><main><div data-testid="assistant-message"><div data-testid="thinking-status">Completed thinking</div><div data-testid="subagent-cot-list">PRIVATE REASONING</div><div class="prose ur-markdown">Meta answer</div><button aria-label="Copy response">Copy</button></div><div data-testid="assistant-message" style="display:none"><div class="prose ur-markdown">STALE ANSWER</div></div></main>', 'Meta answer');
       await win.loadURL('data:text/html,' + encodeURIComponent('<main><div data-testid="assistant-message"><div class="prose ur-markdown">Reference description</div><img src="blob:reference-preview"></div></main>'));

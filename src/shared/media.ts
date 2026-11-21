@@ -136,10 +136,17 @@ export function mediaCapability(recipe: CustomRecipe, mode: MediaMode, model?: s
   };
 }
 
-export function resolveMediaSettings(recipe: CustomRecipe, mode: MediaMode, preferences: MediaPreferences = {}, model?: string, providerId = recipe.id): MediaSettings {
+export function resolveMediaSettings(recipe: CustomRecipe, mode: MediaMode, preferences: MediaPreferences = {}, model?: string, providerId = recipe.id, prompt?: string): MediaSettings {
   const capability = mediaCapability(recipe, mode, model);
   if (!capability?.available) throw new Error(`[MEDIA_SETTINGS_UNSUPPORTED] ${recipe.title}: ${capability?.unavailable_reason || `does not support ${mode}`}`);
   const explicit = { ...preferences.settings, ...preferences.provider_settings?.[providerId] };
+  // A standalone output direction such as "Eight seconds, vertical 9:16."
+  // can supply the ratio when the caller did not send a structured preference.
+  if (prompt && explicit.aspect_ratio === undefined && capability.settings.some(setting => setting.key === 'aspect_ratio')) {
+    const directions = prompt.matchAll(/(?:^|[.!?;\n])\s*(?:(?:[\w-]+) seconds?,\s*)?(?:vertical|portrait|horizontal|landscape|square|(?:output )?aspect ratio)\s*[:=]?\s*(\d{1,2}:\d{1,2})(?=\s*(?:[.!?;\n]|$))/gi);
+    const ratios = new Set(Array.from(directions, match => match[1]));
+    if (ratios.size === 1) explicit.aspect_ratio = [...ratios][0];
+  }
   const resolved: MediaSettings = Object.fromEntries(capability.settings.map(s => [s.key, s.default]));
   for (const [key, value] of Object.entries(explicit)) {
     const setting = capability.settings.find(s => s.key === key);

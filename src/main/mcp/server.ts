@@ -962,7 +962,7 @@ export class TransgenticMcpServer {
           if (!(adapter instanceof CustomRecipeAdapter)) throw new Error('Provider has no media recipe.');
           const model = DynamicRouter.resolveTargetModel(id, request.mode, request.model, 'main', adapter.recipe.response.modes[request.mode]?.generation?.models) || undefined;
           if (request.model && !model) throw new Error('[MODEL_SELECTION_FAILED] The requested model is unavailable for this media mode.');
-          resolveMediaSettings(adapter.recipe, request.mode, request, model, id);
+          resolveMediaSettings(adapter.recipe, request.mode, request, model, id, request.prompt);
           if (files?.length) {
             const upload = adapter.recipe.response.modes[request.mode]?.inputAttachments;
             if (!upload || (!upload.multiple && files.length > 1) || files.some(file => !upload.acceptedKinds.includes(file.kind) || upload.acceptedMimeTypes?.length && !upload.acceptedMimeTypes.some(mime => mime === file.mimeType || mime.endsWith('/*') && file.mimeType.startsWith(mime.slice(0, -1))))) throw new Error('The provider does not accept these reference attachments.');
@@ -1873,7 +1873,7 @@ export class TransgenticMcpServer {
           if ((requestedModel && targetModel !== requestedModel) || (mediaModels?.length && !targetModel)) {
             throw new Error('[MODEL_SELECTION_FAILED] No compatible model is available for this media request.');
           }
-          effectiveSettings = resolveMediaSettings(adapter.recipe, effectiveMode as MediaMode, params.requestEnvelope?.mediaPreferences, targetModel, providerId);
+          effectiveSettings = resolveMediaSettings(adapter.recipe, effectiveMode as MediaMode, params.requestEnvelope?.mediaPreferences, targetModel, providerId, maskedText);
         } catch (error) { lastCandidateError = error; if (forcedProvider && attempts[i + 1]?.providerId !== providerId) throw error; continue; }
         params.onMediaState?.({ provider: providerId, model: targetModel, settings: effectiveSettings });
       }
